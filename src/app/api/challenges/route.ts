@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { query } from "@/lib/db";
 
 export async function GET(request: Request) {
   try {
@@ -8,28 +8,31 @@ export async function GET(request: Request) {
     const difficulty = searchParams.get("difficulty");
     const type = searchParams.get("type");
 
-    const where: Record<string, unknown> = { isActive: true };
-    if (category) where.category = category;
-    if (difficulty) where.difficulty = difficulty;
-    if (type) where.type = type;
+    const conditions: string[] = ['"isActive" = true'];
+    const params: unknown[] = [];
+    let idx = 1;
 
-    const challenges = await db.challenge.findMany({
-      where,
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        difficulty: true,
-        type: true,
-        category: true,
-        xpReward: true,
-        order: true,
-        skillId: true,
-      },
-      orderBy: { order: "asc" },
-    });
+    if (category) {
+      conditions.push(`category = $${idx++}`);
+      params.push(category);
+    }
+    if (difficulty) {
+      conditions.push(`difficulty = $${idx++}`);
+      params.push(difficulty);
+    }
+    if (type) {
+      conditions.push(`type = $${idx++}`);
+      params.push(type);
+    }
 
-    return NextResponse.json(challenges);
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const result = await query(
+      `SELECT id, title, description, difficulty, type, category, "xpReward", "order", "skillId" FROM challenges ${whereClause} ORDER BY "order" ASC`,
+      params,
+    );
+
+    return NextResponse.json(result.rows);
   } catch (error) {
     console.error("Challenges list error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });

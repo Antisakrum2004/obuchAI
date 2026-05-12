@@ -1,12 +1,24 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { xpForDifficulty, streakBonus, calculateLevel, isStreakBroken } from "@/lib/gamification";
+import { query } from "@/lib/db";
+import {
+  xpForDifficulty,
+  streakBonus,
+  calculateLevel,
+  isStreakBroken,
+} from "@/lib/gamification";
+
+// Generate a CUID-like ID
+function genId(): string {
+  return (
+    "c" + Date.now().toString(36) + Math.random().toString(36).substring(2, 10)
+  );
+}
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -20,13 +32,16 @@ export async function POST(
     const { answer, timeSpent } = body;
 
     // Get challenge
-    const challenge = await db.challenge.findUnique({
-      where: { id },
-    });
+    const challengeResult = await query(
+      `SELECT * FROM challenges WHERE id = $1`,
+      [id],
+    );
 
-    if (!challenge) {
+    if (challengeResult.rows.length === 0) {
       return NextResponse.json({ error: "Задача не найдена" }, { status: 404 });
     }
+
+    const challenge = challengeResult.rows[0];
 
     // Validate answer
     let isCorrect = false;
@@ -35,19 +50,29 @@ export async function POST(
       const correctAnswer = JSON.parse(challenge.correctAnswer);
       if (challenge.type === "multiple_choice") {
         isCorrect = answer === correctAnswer;
-      } else if (challenge.type === "ordering" || challenge.type === "workflow_build") {
+      } else if (
+        challenge.type === "ordering" ||
+        challenge.type === "workflow_build"
+      ) {
         const userAnswer = Array.isArray(answer) ? answer : JSON.parse(answer);
-        isCorrect = JSON.stringify(userAnswer) === JSON.stringify(correctAnswer);
+        isCorrect =
+          JSON.stringify(userAnswer) === JSON.stringify(correctAnswer);
       } else {
         // text_input, prompt_fix
-        isCorrect = answer.trim().toLowerCase() === String(correctAnswer).trim().toLowerCase();
+        isCorrect =
+          answer.trim().toLowerCase() ===
+          String(correctAnswer).trim().toLowerCase();
       }
     } else if (challenge.validationType === "pattern") {
-      const config = challenge.validationConfig ? JSON.parse(challenge.validationConfig) : {};
+      const config = challenge.validationConfig
+        ? JSON.parse(challenge.validationConfig)
+        : {};
       const keywords: string[] = config.keywords || [];
       if (keywords.length > 0) {
         const answerLower = answer.toLowerCase();
-        isCorrect = keywords.every((kw: string) => answerLower.includes(kw.toLowerCase()));
+        isCorrect = keywords.every((kw: string) =>
+          answerLower.includes(kw.toLowerCase()),
+        );
       }
     }
 
@@ -56,20 +81,29 @@ export async function POST(
     const xpEarned = isCorrect ? baseXp : 0;
 
     // Create attempt
-    const attempt = await db.challengeAttempt.create({
-      data: {
+    const attemptId = genId();
+    await query(
+      `INSERT INTO challenge_attempts (id, "userId", "challengeId", answer, "isCorrect", "xpEarned", "timeSpent")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        attemptId,
         userId,
-        challengeId: id,
-        answer: JSON.stringify(answer),
+        id,
+        JSON.stringify(answer),
         isCorrect,
         xpEarned,
-        timeSpent: timeSpent || null,
-      },
-    });
+        timeSpent || null,
+      ],
+    );
 
     // If correct, award XP and update user
     if (isCorrect) {
-      const user = await db.user.findUnique({ where: { id: userId } });
+      const userResult = await query(
+        `SELECT xp, level, streak, "maxStreak", "lastActiveAt" FROM users WHERE id = $1`,
+        [userId],
+      );
+      const user = userResult.rows[0];
+
       if (user) {
         const newXp = user.xp + xpEarned;
         const newLevel = calculateLevel(newXp);
@@ -83,13 +117,11 @@ export async function POST(
           // Check if already completed something today
           const todayStart = new Date();
           todayStart.setHours(0, 0, 0, 0);
-          const todayAttempts = await db.challengeAttempt.count({
-            where: {
-              userId,
-              isCorrect: true,
-              createdAt: { gte: todayStart },
-            },
-          });
+          const todayAttemptsResult = await query(
+            `SELECT COUNT(*) AS count FROM challenge_attempts WHERE "userId" = $1 AND "isCorrect" = true AND "createdAt" >= $2`,
+            [userId, todayStart],
+          );
+          const todayAttempts = Number(todayAttemptsResult.rows[0].count);
           if (todayAttempts <= 1) {
             newStreak = user.streak + 1;
           }
@@ -101,78 +133,66 @@ export async function POST(
         const finalLevel = calculateLevel(finalXp);
         const maxStreak = Math.max(user.maxStreak, newStreak);
 
-        await db.user.update({
-          where: { id: userId },
-          data: {
-            xp: finalXp,
-            level: finalLevel,
-            streak: newStreak,
-            maxStreak,
-            lastActiveAt: new Date(),
-          },
-        });
+        await query(
+          `UPDATE users SET xp = $1, level = $2, streak = $3, "maxStreak" = $4, "lastActiveAt" = $5 WHERE id = $6`,
+          [finalXp, finalLevel, newStreak, maxStreak, new Date(), userId],
+        );
 
-        // XP log
-        await db.xPLog.create({
-          data: {
-            userId,
-            amount: xpEarned,
-            reason: "challenge",
-            referenceId: id,
-          },
-        });
+        // XP log for challenge
+        const xpLogId1 = genId();
+        await query(
+          `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, $3, $4, $5)`,
+          [xpLogId1, userId, xpEarned, "challenge", id],
+        );
 
         if (bonusXp > 0) {
-          await db.xPLog.create({
-            data: {
-              userId,
-              amount: bonusXp,
-              reason: "streak_bonus",
-            },
-          });
+          const xpLogId2 = genId();
+          await query(
+            `INSERT INTO xp_logs (id, "userId", amount, reason) VALUES ($1, $2, $3, $4)`,
+            [xpLogId2, userId, bonusXp, "streak_bonus"],
+          );
         }
 
         // Mark daily challenge as completed if applicable
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        await db.dailyChallengeAssignment.updateMany({
-          where: {
-            userId,
-            challengeId: id,
-            date: { gte: today },
-            completed: false,
-          },
-          data: {
-            completed: true,
-            completedAt: new Date(),
-          },
-        });
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        await query(
+          `UPDATE daily_challenge_assignments
+           SET completed = true, "completedAt" = $1
+           WHERE "userId" = $2 AND "challengeId" = $3 AND date >= $4 AND date < $5 AND completed = false`,
+          [new Date(), userId, id, today, tomorrow],
+        );
 
         // Update user skill XP if challenge has a skill
         if (challenge.skillId) {
-          const existingSkill = await db.userSkill.findUnique({
-            where: { userId_skillId: { userId, skillId: challenge.skillId } },
-          });
-          if (existingSkill) {
-            await db.userSkill.update({
-              where: { id: existingSkill.id },
-              data: { xp: existingSkill.xp + xpEarned },
-            });
+          const existingSkillResult = await query(
+            `SELECT id, xp FROM user_skills WHERE "userId" = $1 AND "skillId" = $2`,
+            [userId, challenge.skillId],
+          );
+
+          if (existingSkillResult.rows.length > 0) {
+            const existingSkill = existingSkillResult.rows[0];
+            await query(
+              `UPDATE user_skills SET xp = $1 WHERE id = $2`,
+              [existingSkill.xp + xpEarned, existingSkill.id],
+            );
           } else {
-            await db.userSkill.create({
-              data: {
-                userId,
-                skillId: challenge.skillId,
-                xp: xpEarned,
-              },
-            });
+            const userSkillId = genId();
+            await query(
+              `INSERT INTO user_skills (id, "userId", "skillId", xp, level) VALUES ($1, $2, $3, $4, 0)`,
+              [userSkillId, userId, challenge.skillId, xpEarned],
+            );
           }
         }
 
         // Check achievements
-        const totalCorrect = await db.challengeAttempt.count({
-          where: { userId, isCorrect: true },
-        });
+        const totalCorrectResult = await query(
+          `SELECT COUNT(*) AS count FROM challenge_attempts WHERE "userId" = $1 AND "isCorrect" = true`,
+          [userId],
+        );
+        const totalCorrect = Number(totalCorrectResult.rows[0].count);
 
         const achievementConditions = [
           { slug: "first-challenge", check: totalCorrect >= 1 },
@@ -184,35 +204,32 @@ export async function POST(
 
         for (const cond of achievementConditions) {
           if (cond.check) {
-            const achievement = await db.achievement.findUnique({
-              where: { slug: cond.slug },
-            });
-            if (achievement) {
-              const existing = await db.userAchievement.findUnique({
-                where: {
-                  userId_achievementId: {
-                    userId,
-                    achievementId: achievement.id,
-                  },
-                },
-              });
-              if (!existing) {
-                await db.userAchievement.create({
-                  data: { userId, achievementId: achievement.id },
-                });
+            const achievementResult = await query(
+              `SELECT id, "xpReward" FROM achievements WHERE slug = $1`,
+              [cond.slug],
+            );
+            if (achievementResult.rows.length > 0) {
+              const achievement = achievementResult.rows[0];
+              const existingResult = await query(
+                `SELECT id FROM user_achievements WHERE "userId" = $1 AND "achievementId" = $2`,
+                [userId, achievement.id],
+              );
+              if (existingResult.rows.length === 0) {
+                const uaId = genId();
+                await query(
+                  `INSERT INTO user_achievements (id, "userId", "achievementId") VALUES ($1, $2, $3)`,
+                  [uaId, userId, achievement.id],
+                );
                 if (achievement.xpReward > 0) {
-                  await db.user.update({
-                    where: { id: userId },
-                    data: { xp: { increment: achievement.xpReward } },
-                  });
-                  await db.xPLog.create({
-                    data: {
-                      userId,
-                      amount: achievement.xpReward,
-                      reason: "achievement",
-                      referenceId: achievement.id,
-                    },
-                  });
+                  await query(
+                    `UPDATE users SET xp = xp + $1 WHERE id = $2`,
+                    [achievement.xpReward, userId],
+                  );
+                  const achXpLogId = genId();
+                  await query(
+                    `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, $3, $4, $5)`,
+                    [achXpLogId, userId, achievement.xpReward, "achievement", achievement.id],
+                  );
                 }
               }
             }

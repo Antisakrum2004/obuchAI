@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { query } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -11,36 +11,32 @@ export async function GET() {
     }
 
     const userId = (session.user as Record<string, unknown>).id as string;
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        image: true,
-        role: true,
-        xp: true,
-        level: true,
-        streak: true,
-        maxStreak: true,
-        lastActiveAt: true,
-      },
-    });
 
-    if (!user) {
+    const userResult = await query(
+      `SELECT id, name, email, image, role, xp, level, streak, "maxStreak", "lastActiveAt"
+       FROM users WHERE id = $1`,
+      [userId],
+    );
+
+    if (userResult.rows.length === 0) {
       return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
     }
 
+    const user = userResult.rows[0];
+
     // Calculate rank
-    const usersWithHigherXp = await db.user.count({
-      where: { xp: { gt: user.xp } },
-    });
-    const rank = usersWithHigherXp + 1;
+    const rankResult = await query(
+      `SELECT COUNT(*) + 1 AS rank FROM users WHERE xp > $1`,
+      [user.xp],
+    );
+    const rank = Number(rankResult.rows[0].rank);
 
     // Completed challenges count
-    const completedChallenges = await db.challengeAttempt.count({
-      where: { userId, isCorrect: true },
-    });
+    const completedResult = await query(
+      `SELECT COUNT(*) AS count FROM challenge_attempts WHERE "userId" = $1 AND "isCorrect" = true`,
+      [userId],
+    );
+    const completedChallenges = Number(completedResult.rows[0].count);
 
     return NextResponse.json({
       ...user,
