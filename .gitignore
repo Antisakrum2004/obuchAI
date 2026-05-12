@@ -70,4 +70,4 @@ server.log
 /examples/
 
 # Worklog
-worklog.md
+worklog.md.env.vercel
