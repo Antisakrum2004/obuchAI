@@ -52,3 +52,20 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Database
+/db/
+*.db
+*.db-journal
+
+# Z scripts
+/.zscripts/
+
+# Download dir
+/download/
+
+# Examples
+/examples/
+
+# Worklog
+worklog.md
