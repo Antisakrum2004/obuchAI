@@ -1,0 +1,251 @@
+// AI Training Platform for 1C Developers - Prisma Schema
+// MVP: Single company, SQLite (production: PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTH
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  image         String?
+  role          String   @default("user") // "user" | "admin"
+  githubId      String?  @unique
+  emailVerified DateTime?
+
+  // Gamification
+  xp            Int      @default(0)
+  level         Int      @default(1)
+  streak        Int      @default(0)
+  maxStreak     Int      @default(0)
+  lastActiveAt  DateTime?
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  attempts      ChallengeAttempt[]
+  xpLogs        XPLog[]
+  userSkills    UserSkill[]
+  achievements  UserAchievement[]
+  dailyChallenges DailyChallengeAssignment[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================
+// SKILLS & SKILL TREE
+// ============================================
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String
+  icon        String?
+  category    String   // "prompting" | "agents" | "tools" | "automation" | "1c"
+  order       Int      @default(0)
+  parentId    String?
+  requiredXp  Int      @default(100)
+
+  parent      Skill?   @relation("SkillTree", fields: [parentId], references: [id])
+  children    Skill[]  @relation("SkillTree")
+  userSkills  UserSkill[]
+  challenges  Challenge[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("skills")
+}
+
+model UserSkill {
+  id        String   @id @default(cuid())
+  userId    String
+  skillId   String
+  xp        Int      @default(0)
+  level     Int      @default(0)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillId])
+  @@map("user_skills")
+}
+
+// ============================================
+// CHALLENGES
+// ============================================
+
+model Challenge {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  difficulty    String   // "easy" | "medium" | "hard"
+  type          String   // "multiple_choice" | "prompt_fix" | "text_input" | "ordering" | "workflow_build"
+  category      String   // "prompting" | "agents" | "debugging" | "workflow" | "1c" | "review"
+  xpReward      Int      @default(25)
+
+  // Challenge content (JSON strings)
+  content       String   // Main content/question as JSON
+  options       String?  // Options for multiple choice as JSON array
+  correctAnswer String   // Correct answer(s) as JSON
+  explanation   String?  // Explanation shown after answer
+  hints         String?  // Hints as JSON array
+
+  // Validation
+  validationType String  @default("static") // "static" | "pattern"
+  validationConfig String? // Additional validation config as JSON (keywords, structure, etc.)
+
+  // Relations
+  skillId       String?
+  skill         Skill?   @relation(fields: [skillId], references: [id])
+  attempts      ChallengeAttempt[]
+  dailyAssignments DailyChallengeAssignment[]
+
+  // Metadata
+  order         Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("challenges")
+}
+
+model ChallengeAttempt {
+  id          String   @id @default(cuid())
+  userId      String
+  challengeId String
+  answer      String
+  isCorrect   Boolean
+  xpEarned    Int      @default(0)
+  timeSpent   Int?     // seconds
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@map("challenge_attempts")
+}
+
+// ============================================
+// DAILY CHALLENGES
+// ============================================
+
+model DailyChallengeAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  challengeId String
+  date        DateTime // The date this challenge was assigned
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("daily_challenge_assignments")
+}
+
+// ============================================
+// XP & GAMIFICATION
+// ============================================
+
+model XPLog {
+  id          String   @id @default(cuid())
+  userId      String
+  amount      Int
+  reason      String   // "challenge" | "daily" | "streak_bonus" | "achievement" | "admin"
+  referenceId String?  // ID of related entity (challenge, achievement, etc.)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@map("xp_logs")
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String
+  icon        String
+  category    String   // "streak" | "challenges" | "skills" | "special"
+  requirement String   // JSON describing the requirement
+  xpReward    Int      @default(0)
+
+  userAchievements UserAchievement[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime @default(now())
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
