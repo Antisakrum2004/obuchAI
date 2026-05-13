@@ -70,4 +70,8 @@ server.log
 /examples/
 
 # Worklog
-worklog.md.env.vercel
+worklog.md
+
+# Vercel env files
+.env.vercel
+.env.production

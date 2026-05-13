@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn } from "next-auth";
+import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Zap, Target, Trophy, TreePine, Flame } from "lucide-react";
 import { motion } from "framer-motion";
