@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { pool } from "@/lib/db";
 
-// Check if Google OAuth is properly configured (not placeholder values)
+// Check if Google OAuth is properly configured
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 const isGoogleConfigured =
@@ -12,7 +12,7 @@ const isGoogleConfigured =
   googleClientSecret.length > 10 &&
   !googleClientSecret.startsWith("placeholder");
 
-// Build providers array — only include Google if properly configured
+// Build providers array
 const providers: NextAuthOptions["providers"] = [];
 
 if (isGoogleConfigured) {
@@ -20,12 +20,17 @@ if (isGoogleConfigured) {
     GoogleProvider({
       clientId: googleClientId,
       clientSecret: googleClientSecret,
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code",
+        },
+      },
     })
   );
 } else {
-  console.warn(
-    "[Auth] Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET with real values to enable Google login."
-  );
+  console.warn("[Auth] Google OAuth not configured.");
 }
 
 providers.push(
@@ -66,20 +71,16 @@ function genId(): string {
 }
 
 export const authOptions: NextAuthOptions = {
-  // NO PrismaAdapter — it breaks on Vercel serverless with Neon
-  // We handle user creation/linking manually in signIn callback via raw SQL
   providers,
   callbacks: {
     async signIn({ user, account, profile }) {
-      // For credentials provider, just allow sign in
       if (account?.provider === "credentials") {
         return true;
       }
 
-      // For Google OAuth — create or link user in DB via raw SQL
       if (account?.provider === "google" && user.email) {
         try {
-          // 1. Check if user already exists by email
+          // Find or create user in DB
           const userResult = await pool.query(
             `SELECT id, email, role, xp, level, streak FROM users WHERE email = $1`,
             [user.email]
@@ -88,10 +89,8 @@ export const authOptions: NextAuthOptions = {
           let userId: string;
 
           if (userResult.rows[0]) {
-            // User exists — use their ID
             userId = userResult.rows[0].id;
-
-            // Update name/image if Google provided new ones
+            // Update name/image from Google
             if (user.name || user.image) {
               await pool.query(
                 `UPDATE users SET name = COALESCE($1, name), image = COALESCE($2, image), "lastActiveAt" = NOW() WHERE id = $3`,
@@ -99,7 +98,7 @@ export const authOptions: NextAuthOptions = {
               );
             }
           } else {
-            // New user — create in DB
+            // New user
             userId = genId();
             await pool.query(
               `INSERT INTO users (id, email, name, image, role, xp, level, streak, "maxStreak", "lastActiveAt") VALUES ($1, $2, $3, $4, 'user', 0, 1, 0, 0, NOW())`,
@@ -107,40 +106,53 @@ export const authOptions: NextAuthOptions = {
             );
           }
 
-          // 2. Create or update Account record (links Google to user)
-          await pool.query(
-            `INSERT INTO accounts (id, "userId", type, provider, "providerAccountId", "access_token", "refresh_token", "expires_at", "token_type", scope, "id_token", "session_state")
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-             ON CONFLICT (provider, "providerAccountId") DO UPDATE SET
-               "access_token" = EXCLUDED."access_token",
-               "refresh_token" = EXCLUDED."refresh_token",
-               "expires_at" = EXCLUDED."expires_at",
-               "id_token" = EXCLUDED."id_token",
-               "session_state" = EXCLUDED."session_state"`,
-            [
-              genId(),
-              userId,
-              account.type,
-              account.provider,
-              account.providerAccountId,
-              account.access_token || null,
-              account.refresh_token || null,
-              account.expires_at || null,
-              account.token_type || null,
-              account.scope || null,
-              account.id_token || null,
-              account.session_state || null,
-            ]
-          );
+          // CRITICAL: Override user.id with our DB user ID
+          // Without adapter, NextAuth sets user.id from Google's sub claim
+          // We need to set it to our DB id so JWT gets the right value
+          user.id = userId;
 
-          // 3. Store user ID on the user object for JWT callback
-          (user as Record<string, unknown>).dbId = userId;
+          // Store user data on user object for JWT callback
+          (user as Record<string, unknown>).role = userResult.rows[0]?.role || "user";
+          (user as Record<string, unknown>).xp = userResult.rows[0]?.xp || 0;
+          (user as Record<string, unknown>).level = userResult.rows[0]?.level || 1;
+          (user as Record<string, unknown>).streak = userResult.rows[0]?.streak || 0;
 
-          console.log("[Auth] Google sign-in successful for:", user.email);
+          // Upsert account record
+          try {
+            await pool.query(
+              `INSERT INTO accounts (id, "userId", type, provider, "providerAccountId", "access_token", "refresh_token", "expires_at", "token_type", scope, "id_token", "session_state")
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (provider, "providerAccountId") DO UPDATE SET
+                 "access_token" = EXCLUDED."access_token",
+                 "refresh_token" = EXCLUDED."refresh_token",
+                 "expires_at" = EXCLUDED."expires_at",
+                 "id_token" = EXCLUDED."id_token",
+                 "session_state" = EXCLUDED."session_state"`,
+              [
+                genId(),
+                userId,
+                account.type,
+                account.provider,
+                account.providerAccountId,
+                account.access_token || null,
+                account.refresh_token || null,
+                account.expires_at || null,
+                account.token_type || null,
+                account.scope || null,
+                account.id_token || null,
+                account.session_state || null,
+              ]
+            );
+          } catch (accErr) {
+            // Account insert failure should NOT block sign-in
+            console.error("[Auth] Account upsert failed (non-critical):", accErr);
+          }
+
+          console.log("[Auth] Google sign-in OK:", user.email, "userId:", userId);
           return true;
         } catch (e) {
-          console.error("[Auth] Google sign-in DB error:", e);
-          // Still allow sign-in even if DB write fails — JWT will have basic data
+          console.error("[Auth] Google sign-in error:", e);
+          // Return true anyway — user can still use the app with JWT-only data
           return true;
         }
       }
@@ -149,61 +161,43 @@ export const authOptions: NextAuthOptions = {
     },
 
     async jwt({ token, user, account }) {
-      // Initial sign in — user object is available
+      // On initial sign-in, user object is available
       if (user) {
-        // For Google OAuth, we stored dbId in signIn callback
-        const dbId = (user as Record<string, unknown>).dbId;
-        if (dbId) {
-          token.id = dbId;
-        } else if (user.id) {
-          token.id = user.id;
-        }
-
-        // Try to get role/xp/level from user object (credentials provider)
+        token.id = user.id;
+        // Copy custom fields from user (set in signIn callback for Google)
         const role = (user as Record<string, unknown>).role;
         if (role) {
           token.role = role;
           token.xp = (user as Record<string, unknown>).xp || 0;
           token.level = (user as Record<string, unknown>).level || 1;
           token.streak = (user as Record<string, unknown>).streak || 0;
-        }
-      }
-
-      // For OAuth first login, fetch additional user data from DB
-      if (account?.provider === "google" && user?.email) {
-        try {
-          const result = await pool.query(
-            `SELECT id, role, xp, level, streak FROM users WHERE email = $1`,
-            [user.email]
-          );
-          if (result.rows[0]) {
-            const dbUser = result.rows[0];
-            token.id = dbUser.id;
-            token.role = dbUser.role || "user";
-            token.xp = dbUser.xp || 0;
-            token.level = dbUser.level || 1;
-            token.streak = dbUser.streak || 0;
-          } else {
-            // User might not be in DB yet — set defaults
-            token.role = "user";
-            token.xp = 0;
-            token.level = 1;
-            token.streak = 0;
+        } else {
+          // Fallback: fetch from DB if not set
+          if (user.email) {
+            try {
+              const result = await pool.query(
+                `SELECT id, role, xp, level, streak FROM users WHERE email = $1`,
+                [user.email]
+              );
+              if (result.rows[0]) {
+                token.id = result.rows[0].id;
+                token.role = result.rows[0].role || "user";
+                token.xp = result.rows[0].xp || 0;
+                token.level = result.rows[0].level || 1;
+                token.streak = result.rows[0].streak || 0;
+              }
+            } catch {
+              // Ignore DB errors
+            }
           }
-        } catch (e) {
-          console.error("[Auth] Failed to fetch user data for Google login:", e);
-          token.role = "user";
-          token.xp = 0;
-          token.level = 1;
-          token.streak = 0;
         }
       }
 
-      // Ensure defaults are always set
+      // Ensure defaults
       if (!token.role) token.role = "user";
-      if (!token.xp) token.xp = 0;
+      if (token.xp === undefined) token.xp = 0;
       if (!token.level) token.level = 1;
-      if (!token.streak) token.streak = 0;
+      if (token.streak === undefined) token.streak = 0;
 
       return token;
     },
@@ -218,6 +212,16 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+
+    // Explicit redirect callback to prevent redirect loops
+    async redirect({ url, baseUrl }) {
+      // If url is relative, prepend baseUrl
+      if (url.startsWith("/")) return baseUrl + url;
+      // If url is on same domain, allow it
+      if (new URL(url).origin === baseUrl) return url;
+      // Default redirect to dashboard after sign-in
+      return baseUrl + "/dashboard";
+    },
   },
   session: { strategy: "jwt" },
   pages: {
@@ -226,5 +230,4 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === "development",
 };
 
-// Export flag for UI to know if Google login is available
 export { isGoogleConfigured };
