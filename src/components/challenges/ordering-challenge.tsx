@@ -1,10 +1,26 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Lightbulb } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface OrderingChallengeProps {
   items: string[];
@@ -13,6 +29,91 @@ interface OrderingChallengeProps {
   disabled?: boolean;
   hints?: string[];
   className?: string;
+}
+
+function SortableItem({
+  id,
+  itemIndex,
+  position,
+  text,
+  disabled,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
+}: {
+  id: number;
+  itemIndex: number;
+  position: number;
+  text: string;
+  disabled: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-3 rounded-lg border bg-white/[0.03] p-3 transition-all",
+        isDragging
+          ? "z-50 border-emerald-500/40 bg-emerald-500/[0.08] shadow-lg shadow-emerald-500/10 scale-[1.02]"
+          : "border-white/5 hover:bg-white/[0.06]"
+      )}
+    >
+      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400">
+        {position + 1}
+      </div>
+      <div
+        {...(!disabled ? { ...attributes, ...listeners } : {})}
+        className={cn(
+          "flex items-center gap-2 flex-1",
+          !disabled && "cursor-grab active:cursor-grabbing"
+        )}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="text-sm select-none">{text}</span>
+      </div>
+      {!disabled && (
+        <div className="flex gap-1 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onMoveUp}
+            disabled={isFirst}
+          >
+            ↑
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onMoveDown}
+            disabled={isLast}
+          >
+            ↓
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function OrderingChallenge({
@@ -26,62 +127,85 @@ export function OrderingChallenge({
   const [showHints, setShowHints] = useState(false);
   const order = value.length > 0 ? value : items.map((_, i) => i);
 
-  const moveUp = (index: number) => {
-    if (index === 0) return;
-    const newOrder = [...order];
-    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-    onChange(newOrder);
-  };
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-  const moveDown = (index: number) => {
-    if (index === order.length - 1) return;
-    const newOrder = [...order];
-    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-    onChange(newOrder);
-  };
+  const moveUp = useCallback(
+    (index: number) => {
+      if (index === 0) return;
+      const newOrder = [...order];
+      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+      onChange(newOrder);
+    },
+    [order, onChange]
+  );
+
+  const moveDown = useCallback(
+    (index: number) => {
+      if (index === order.length - 1) return;
+      const newOrder = [...order];
+      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+      onChange(newOrder);
+    },
+    [order, onChange]
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const oldIndex = order.indexOf(active.id as number);
+      const newIndex = order.indexOf(over.id as number);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const newOrder = arrayMove(order, oldIndex, newIndex);
+      onChange(newOrder);
+    },
+    [order, onChange]
+  );
 
   return (
     <div className={cn("space-y-4", className)}>
       <p className="text-sm text-muted-foreground mb-2">
-        Расставьте элементы в правильном порядке (сверху вниз):
+        Перетащите элементы мышкой или используйте кнопки ↑↓, чтобы расставить их в правильном порядке:
       </p>
 
-      <div className="space-y-2">
-        {order.map((itemIndex, position) => (
-          <div
-            key={itemIndex}
-            className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3 transition-all hover:bg-white/[0.06]"
-          >
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400">
-              {position + 1}
-            </div>
-            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="flex-1 text-sm">{items[itemIndex]}</span>
-            {!disabled && (
-              <div className="flex gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => moveUp(position)}
-                  disabled={position === 0}
-                >
-                  ↑
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => moveDown(position)}
-                  disabled={position === order.length - 1}
-                >
-                  ↓
-                </Button>
-              </div>
-            )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={order}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="space-y-2">
+            {order.map((itemIndex, position) => (
+              <SortableItem
+                key={itemIndex}
+                id={itemIndex}
+                itemIndex={itemIndex}
+                position={position}
+                text={items[itemIndex]}
+                disabled={disabled}
+                isFirst={position === 0}
+                isLast={position === order.length - 1}
+                onMoveUp={() => moveUp(position)}
+                onMoveDown={() => moveDown(position)}
+              />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
 
       {hints && hints.length > 0 && (
         <>
