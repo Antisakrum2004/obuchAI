@@ -4,45 +4,68 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db } from "@/lib/db";
 
+// Check if Google OAuth is properly configured (not placeholder values)
+const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+const isGoogleConfigured =
+  googleClientId.length > 30 &&
+  googleClientId.includes(".googleusercontent.com") &&
+  googleClientSecret.length > 10 &&
+  !googleClientSecret.startsWith("placeholder");
+
+// Build providers array — only include Google if properly configured
+const providers: NextAuthOptions["providers"] = [];
+
+if (isGoogleConfigured) {
+  providers.push(
+    GoogleProvider({
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+    })
+  );
+} else {
+  console.warn(
+    "[Auth] Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET with real values to enable Google login."
+  );
+}
+
+providers.push(
+  CredentialsProvider({
+    id: "credentials",
+    name: "Демо вход",
+    credentials: {
+      email: { label: "Email", type: "email", placeholder: "admin@ai-trainer.dev" },
+    },
+    async authorize(credentials) {
+      if (!credentials?.email) return null;
+
+      // Direct DB query via raw SQL to avoid Prisma adapter issues
+      const { pool } = await import("@/lib/db");
+      const result = await pool.query(
+        `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1`,
+        [credentials.email]
+      );
+
+      const user = result.rows[0];
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image,
+        role: user.role,
+        xp: user.xp,
+        level: user.level,
+        streak: user.streak,
+      };
+    },
+  })
+);
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || "dummy",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "dummy",
-    }),
-    CredentialsProvider({
-      id: "credentials",
-      name: "Демо вход",
-      credentials: {
-        email: { label: "Email", type: "email", placeholder: "admin@ai-trainer.dev" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email) return null;
-
-        // Direct DB query via raw SQL to avoid Prisma adapter issues
-        const { pool } = await import("@/lib/db");
-        const result = await pool.query(
-          `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1`,
-          [credentials.email]
-        );
-
-        const user = result.rows[0];
-        if (!user) return null;
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          role: user.role,
-          xp: user.xp,
-          level: user.level,
-          streak: user.streak,
-        };
-      },
-    }),
-  ],
+  providers,
   callbacks: {
     async signIn({ user, account }) {
       // For credentials provider, just allow sign in
@@ -100,3 +123,6 @@ export const authOptions: NextAuthOptions = {
   },
   debug: process.env.NODE_ENV === "development",
 };
+
+// Export flag for UI to know if Google login is available
+export { isGoogleConfigured };
