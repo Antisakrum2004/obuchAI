@@ -33,6 +33,7 @@ if (isGoogleConfigured) {
   console.warn("[Auth] Google OAuth not configured.");
 }
 
+// Demo login — for quick access
 providers.push(
   CredentialsProvider({
     id: "credentials",
@@ -65,6 +66,50 @@ providers.push(
   })
 );
 
+// Admin login — separate credentials provider with login/password
+providers.push(
+  CredentialsProvider({
+    id: "admin-credentials",
+    name: "Админ вход",
+    credentials: {
+      username: { label: "Логин", type: "text", placeholder: "admin" },
+      password: { label: "Пароль", type: "password" },
+    },
+    async authorize(credentials) {
+      // Hardcoded admin credentials
+      const ADMIN_USER = "admin";
+      const ADMIN_PASS = "admin123";
+
+      if (
+        credentials?.username !== ADMIN_USER ||
+        credentials?.password !== ADMIN_PASS
+      ) {
+        return null;
+      }
+
+      // Find admin user in DB
+      const result = await pool.query(
+        `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1 AND role = 'admin'`,
+        ["admin@ai-trainer.dev"]
+      );
+
+      const user = result.rows[0];
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name || "Администратор",
+        image: user.image,
+        role: "admin",
+        xp: user.xp,
+        level: user.level,
+        streak: user.streak,
+      };
+    },
+  })
+);
+
 // Helper: generate CUID-like ID
 function genId(): string {
   return "c" + Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
@@ -74,7 +119,7 @@ export const authOptions: NextAuthOptions = {
   providers,
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (account?.provider === "credentials") {
+      if (account?.provider === "credentials" || account?.provider === "admin-credentials") {
         return true;
       }
 
@@ -107,8 +152,6 @@ export const authOptions: NextAuthOptions = {
           }
 
           // CRITICAL: Override user.id with our DB user ID
-          // Without adapter, NextAuth sets user.id from Google's sub claim
-          // We need to set it to our DB id so JWT gets the right value
           user.id = userId;
 
           // Store user data on user object for JWT callback
@@ -144,7 +187,6 @@ export const authOptions: NextAuthOptions = {
               ]
             );
           } catch (accErr) {
-            // Account insert failure should NOT block sign-in
             console.error("[Auth] Account upsert failed (non-critical):", accErr);
           }
 
@@ -152,7 +194,6 @@ export const authOptions: NextAuthOptions = {
           return true;
         } catch (e) {
           console.error("[Auth] Google sign-in error:", e);
-          // Return true anyway — user can still use the app with JWT-only data
           return true;
         }
       }

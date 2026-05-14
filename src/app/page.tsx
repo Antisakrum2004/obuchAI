@@ -167,7 +167,7 @@ export default function LandingPage() {
             <Zap className="h-4 w-4 text-emerald-400" />
             <span className="text-sm text-muted-foreground">AI Тренажёр для 1C</span>
           </div>
-          <p className="text-xs text-muted-foreground">© 2025</p>
+          <p className="text-xs text-muted-foreground">© 2026</p>
         </div>
       </footer>
     </div>
