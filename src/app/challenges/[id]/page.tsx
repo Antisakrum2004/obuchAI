@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
-import { MultipleChoice } from "@/components/challenges/multiple-choice";
+import { MultipleChoice, shuffleOptions } from "@/components/challenges/multiple-choice";
 import { PromptFix } from "@/components/challenges/prompt-fix";
 import { TextInput } from "@/components/challenges/text-input";
 import { OrderingChallenge } from "@/components/challenges/ordering-challenge";
@@ -13,7 +13,7 @@ import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, ty
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Lock, Timer } from "lucide-react";
+import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 
@@ -56,6 +56,22 @@ function formatCountdown(isoDate: string): string {
   return `${minutes} мин`;
 }
 
+/**
+ * Simple hash function to create a deterministic seed from userId + challengeId.
+ * This ensures the same user sees the same option order for the same challenge,
+ * but different users see different orders.
+ */
+function hashSeed(a: string, b: string): number {
+  let hash = 0;
+  const str = a + b;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
+
 export default function ChallengePage() {
   const params = useParams();
   const router = useRouter();
@@ -64,8 +80,9 @@ export default function ChallengePage() {
   const [challenge, setChallenge] = useState<ChallengeData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>("");
 
-  // Answer states
+  // Answer states — store ORIGINAL index for multiple_choice
   const [multipleChoiceAnswer, setMultipleChoiceAnswer] = useState<string | null>(null);
   const [promptFixAnswer, setPromptFixAnswer] = useState("");
   const [textInputAnswer, setTextInputAnswer] = useState("");
@@ -90,6 +107,14 @@ export default function ChallengePage() {
         if (res.ok) {
           const data = await res.json();
           setChallenge(data);
+
+          // Get userId from session for seeded shuffle
+          const sessionRes = await fetch("/api/auth/session");
+          if (sessionRes.ok) {
+            const session = await sessionRes.json();
+            const uid = (session?.user as Record<string, unknown>)?.id as string;
+            if (uid) setUserId(uid);
+          }
 
           if (data.type === "prompt_fix") {
             try {
@@ -120,6 +145,19 @@ export default function ChallengePage() {
     setCooldownText(formatCountdown(challenge.cooldownUntil));
     return () => clearInterval(interval);
   }, [challenge?.cooldownUntil]);
+
+  // Shuffle multiple choice options deterministically based on userId + challengeId
+  const shuffledOptions = useMemo(() => {
+    if (!challenge || challenge.type !== "multiple_choice" || !challenge.options) return [];
+    try {
+      const options = JSON.parse(challenge.options);
+      if (!Array.isArray(options)) return [];
+      const seed = hashSeed(userId || "anon", challenge.id);
+      return shuffleOptions(options, seed);
+    } catch {
+      return [];
+    }
+  }, [challenge, userId]);
 
   const getAnswer = useCallback(() => {
     if (!challenge) return null;
@@ -208,7 +246,6 @@ export default function ChallengePage() {
     );
   }
 
-  const parsedOptions = challenge.options ? JSON.parse(challenge.options) : [];
   const parsedHints = challenge.hints ? JSON.parse(challenge.hints) : null;
   const parsedContent = (() => {
     try {
@@ -218,8 +255,32 @@ export default function ChallengePage() {
     }
   })();
 
+  // For ordering/workflow: parse options here
+  const parsedOrderingOptions = useMemo(() => {
+    if ((challenge.type === "ordering" || challenge.type === "workflow_build") && challenge.options) {
+      try {
+        return JSON.parse(challenge.options);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [challenge]);
+
   const isSolved = challenge.isSolved;
   const onCooldown = challenge.cooldownUntil && new Date(challenge.cooldownUntil) > new Date();
+
+  // Check if answer is provided
+  const hasAnswer = (() => {
+    switch (challenge.type) {
+      case "multiple_choice": return multipleChoiceAnswer !== null;
+      case "prompt_fix": return promptFixAnswer.trim().length > 0;
+      case "text_input": return textInputAnswer.trim().length > 0;
+      case "ordering":
+      case "workflow_build": return orderingAnswer.length > 0 || workflowAnswer.length > 0;
+      default: return false;
+    }
+  })();
 
   return (
     <AppLayout>
@@ -363,7 +424,7 @@ export default function ChallengePage() {
             {/* Type-specific UI */}
             {challenge.type === "multiple_choice" && (
               <MultipleChoice
-                options={parsedOptions}
+                shuffledOptions={shuffledOptions}
                 value={multipleChoiceAnswer}
                 onChange={setMultipleChoiceAnswer}
               />
@@ -389,7 +450,7 @@ export default function ChallengePage() {
 
             {challenge.type === "ordering" && (
               <OrderingChallenge
-                items={parsedOptions}
+                items={parsedOrderingOptions}
                 value={orderingAnswer}
                 onChange={setOrderingAnswer}
                 hints={parsedHints}
@@ -398,7 +459,7 @@ export default function ChallengePage() {
 
             {challenge.type === "workflow_build" && (
               <OrderingChallenge
-                items={parsedOptions}
+                items={parsedOrderingOptions}
                 value={workflowAnswer}
                 onChange={setWorkflowAnswer}
                 hints={parsedHints}
@@ -416,7 +477,7 @@ export default function ChallengePage() {
             <div className="mt-6 flex justify-end">
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting || !getAnswer()}
+                disabled={isSubmitting || !hasAnswer}
                 className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
               >
                 {isSubmitting ? (

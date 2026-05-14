@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 
 // --- Types ---
@@ -99,6 +99,7 @@ export default function AdminPage() {
 
   // Toast state
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
@@ -122,6 +123,30 @@ export default function AdminPage() {
     }
     checkAdmin();
   }, []);
+
+  // --- Seed data ---
+  const handleSeed = async () => {
+    if (!confirm("Это пересоздаст все задачи, навыки и достижения. Продолжить?")) return;
+    setIsSeeding(true);
+    try {
+      const res = await fetch("/api/admin/seed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`Данные обновлены: ${data.stats?.challenges || 0} задач`);
+        fetchData();
+      } else {
+        showToast("Ошибка при заполнении данных", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   // --- Data fetching ---
   const fetchData = useCallback(() => {
@@ -329,11 +354,31 @@ export default function AdminPage() {
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Settings className="h-6 w-6 text-emerald-400" />
-            <h1 className="text-2xl font-bold">Управление</h1>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Settings className="h-6 w-6 text-emerald-400" />
+              <h1 className="text-2xl font-bold">Управление</h1>
+            </div>
+            <Button
+              onClick={handleSeed}
+              disabled={isSeeding}
+              className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 h-9"
+            >
+              {isSeeding ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent mr-2" />
+              ) : (
+                <Database className="h-4 w-4 mr-1" />
+              )}
+              Заполнить данными
+            </Button>
           </div>
           <p className="text-muted-foreground">Панель администратора</p>
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+            <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-400/80">
+              Кнопка «Заполнить данными» пересоздаёт все задачи, навыки и достижения. Прогресс пользователей сохраняется. Используйте после обновления кода.
+            </p>
+          </div>
         </motion.div>
 
         {/* Stats overview */}

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { Pool, neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 
@@ -24,9 +26,15 @@ const SKILL_SLUGS = [
 
 export async function POST(request: Request) {
   try {
+    // Check admin session OR secret key
+    const session = await getServerSession(authOptions)
+    const isAdmin = session?.user && (session.user as Record<string, unknown>).role === 'admin'
+    
     const body = await request.json().catch(() => ({}))
     const adminSecret = process.env.NEXTAUTH_SECRET
-    if (body.secret !== adminSecret) {
+    const hasSecret = body.secret === adminSecret
+
+    if (!isAdmin && !hasSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

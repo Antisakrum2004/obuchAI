@@ -14,14 +14,15 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useSession } from "next-auth/react";
 
-const navItems = [
-  { href: "/dashboard", label: "Главная", icon: Home },
-  { href: "/challenges", label: "Задачи", icon: Target },
-  { href: "/skills", label: "Навыки", icon: TreePine },
-  { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
-  { href: "/playground", label: "Песочница", icon: FlaskConical },
-  { href: "/admin", label: "Управление", icon: Settings },
+const allNavItems = [
+  { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
+  { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
+  { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
+  { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
+  { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },
+  { href: "/admin", label: "Управление", icon: Settings, adminOnly: true },
 ];
 
 interface AppSidebarProps {
@@ -31,6 +32,9 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as Record<string, unknown>)?.role === "admin";
+  const navItems = allNavItems.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
@@ -85,7 +89,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           </Button>
         </Link>
         <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
-          v0.4.0
+          v0.5.0
         </p>
       </div>
     </div>
