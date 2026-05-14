@@ -11,7 +11,6 @@ export default function LoginPage() {
   const [hasGoogle, setHasGoogle] = useState(false);
 
   useEffect(() => {
-    // Check if Google provider is available (configured with real credentials)
     getProviders().then((providers) => {
       setHasGoogle(!!providers?.google);
     });
@@ -21,7 +20,7 @@ export default function LoginPage() {
     setIsLoading("demo");
     try {
       await signIn("credentials", {
-        email: "admin@ai-trainer.dev",
+        email: "demo@ai-trainer.dev",
         redirect: true,
         callbackUrl: "/dashboard",
       });
@@ -64,7 +63,7 @@ export default function LoginPage() {
           <h2 className="text-center text-lg font-semibold mb-6">Войти в аккаунт</h2>
 
           <div className="space-y-3">
-            {/* Google Login — only show if Google OAuth is configured */}
+            {/* Google Login */}
             {hasGoogle && (
               <>
                 <Button
@@ -97,7 +96,7 @@ export default function LoginPage() {
               </>
             )}
 
-            {/* Demo Login — always available */}
+            {/* Demo Login — regular user, NOT admin */}
             <Button
               onClick={handleDemoLogin}
               disabled={isLoading !== null}
@@ -108,16 +107,15 @@ export default function LoginPage() {
               ) : (
                 <Zap className="mr-2 h-5 w-5" />
               )}
-              Демо: Администратор
+              Демо-вход
             </Button>
           </div>
 
-          {/* Info about Google OAuth setup */}
           {!hasGoogle && (
             <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
               <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
               <p className="text-xs text-amber-400/80">
-                Вход через Google будет доступен после настройки Google OAuth. Сейчас работает демо-вход.
+                Вход через Google будет доступен после настройки OAuth. Сейчас работает демо-вход.
               </p>
             </div>
           )}

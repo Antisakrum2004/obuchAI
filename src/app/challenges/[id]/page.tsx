@@ -13,7 +13,7 @@ import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, ty
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Zap, Clock, ArrowLeft, Send } from "lucide-react";
+import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Lock, Timer } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 
@@ -32,6 +32,8 @@ interface ChallengeData {
   hints: string | null;
   validationType: string;
   validationConfig: string | null;
+  isSolved?: boolean;
+  cooldownUntil?: string | null;
 }
 
 interface SubmitResult {
@@ -43,6 +45,15 @@ interface SubmitResult {
   newLevel: number;
   newStreak: number;
   leveledUp: boolean;
+}
+
+function formatCountdown(isoDate: string): string {
+  const diff = new Date(isoDate).getTime() - Date.now();
+  if (diff <= 0) return "доступно";
+  const hours = Math.floor(diff / 3600000);
+  const minutes = Math.ceil((diff % 3600000) / 60000);
+  if (hours > 0) return `${hours}ч ${minutes}м`;
+  return `${minutes} мин`;
 }
 
 export default function ChallengePage() {
@@ -66,6 +77,10 @@ export default function ChallengePage() {
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [startTime] = useState(Date.now());
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Cooldown timer
+  const [cooldownText, setCooldownText] = useState<string>("");
 
   useEffect(() => {
     async function fetchChallenge() {
@@ -76,7 +91,6 @@ export default function ChallengePage() {
           const data = await res.json();
           setChallenge(data);
 
-          // Parse content
           if (data.type === "prompt_fix") {
             try {
               const content = JSON.parse(data.content);
@@ -96,6 +110,16 @@ export default function ChallengePage() {
     }
     fetchChallenge();
   }, [challengeId]);
+
+  // Update cooldown timer every second
+  useEffect(() => {
+    if (!challenge?.cooldownUntil) return;
+    const interval = setInterval(() => {
+      setCooldownText(formatCountdown(challenge.cooldownUntil!));
+    }, 1000);
+    setCooldownText(formatCountdown(challenge.cooldownUntil));
+    return () => clearInterval(interval);
+  }, [challenge?.cooldownUntil]);
 
   const getAnswer = useCallback(() => {
     if (!challenge) return null;
@@ -120,6 +144,7 @@ export default function ChallengePage() {
     if (!answer || !challenge) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const timeSpent = Math.floor((Date.now() - startTime) / 1000);
       const res = await fetch(`/api/challenges/${challenge.id}/submit`, {
@@ -134,9 +159,20 @@ export default function ChallengePage() {
         if (data.isCorrect && data.xpEarned > 0) {
           setShowXpAnimation(true);
         }
+      } else {
+        const errData = await res.json();
+        setSubmitError(errData.error || "Ошибка отправки");
+        // If already solved, update challenge state
+        if (errData.alreadySolved) {
+          setChallenge({ ...challenge, isSolved: true });
+        }
+        // If on cooldown, update
+        if (errData.cooldownUntil) {
+          setChallenge({ ...challenge, cooldownUntil: errData.cooldownUntil });
+        }
       }
     } catch {
-      // silently fail
+      setSubmitError("Ошибка сети");
     } finally {
       setIsSubmitting(false);
     }
@@ -182,6 +218,9 @@ export default function ChallengePage() {
     }
   })();
 
+  const isSolved = challenge.isSolved;
+  const onCooldown = challenge.cooldownUntil && new Date(challenge.cooldownUntil) > new Date();
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-3xl relative">
@@ -210,15 +249,23 @@ export default function ChallengePage() {
             <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
               {typeLabel(challenge.type)}
             </Badge>
+            {isSolved && (
+              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Решено
+              </Badge>
+            )}
           </div>
 
-          <h1 className="text-2xl font-bold mb-2">{challenge.title}</h1>
+          <h1 className={cn("text-2xl font-bold mb-2", isSolved && "text-muted-foreground")}>
+            {challenge.title}
+          </h1>
           <p className="text-muted-foreground">{challenge.description}</p>
 
           <Separator className="bg-white/5 my-4" />
 
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-emerald-400">
+            <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
               <Zap className="h-4 w-4" />
               <span className="text-sm font-semibold">+{challenge.xpReward} XP</span>
             </div>
@@ -229,8 +276,68 @@ export default function ChallengePage() {
           </div>
         </motion.div>
 
-        {/* Challenge Content */}
-        {!result && (
+        {/* SOLVED OVERLAY */}
+        {isSolved && !result && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass rounded-2xl p-8 mb-6 text-center"
+          >
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+              </div>
+            </div>
+            <h2 className="text-xl font-bold mb-2">Задача решена</h2>
+            <p className="text-muted-foreground mb-4">
+              Вы уже правильно решили эту задачу. Повторная отправка недоступна.
+            </p>
+            {challenge.explanation && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-left mb-4">
+                <p className="text-xs text-emerald-400 mb-1 font-medium">Пояснение:</p>
+                <p className="text-sm text-muted-foreground">{challenge.explanation}</p>
+              </div>
+            )}
+            <Link href="/challenges">
+              <Button className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                К списку задач
+              </Button>
+            </Link>
+          </motion.div>
+        )}
+
+        {/* COOLDOWN OVERLAY */}
+        {onCooldown && !isSolved && !result && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass rounded-2xl p-8 mb-6 text-center"
+          >
+            <div className="flex justify-center mb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/20">
+                <Timer className="h-8 w-8 text-amber-400" />
+              </div>
+            </div>
+            <h2 className="text-xl font-bold mb-2">Ответ был неверным</h2>
+            <p className="text-muted-foreground mb-2">
+              Повторная попытка будет доступна через:
+            </p>
+            <p className="text-2xl font-bold text-amber-400 mb-4">{cooldownText}</p>
+            <p className="text-sm text-muted-foreground">
+              Пока ожидаете — попробуйте другие задачи
+            </p>
+            <Link href="/challenges">
+              <Button variant="outline" className="mt-4 border-white/10">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                К списку задач
+              </Button>
+            </Link>
+          </motion.div>
+        )}
+
+        {/* Challenge Content — only if NOT solved and NOT on cooldown */}
+        {!result && !isSolved && !onCooldown && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -298,6 +405,13 @@ export default function ChallengePage() {
               />
             )}
 
+            {/* Submit error */}
+            {submitError && (
+              <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                <p className="text-sm text-red-400">{submitError}</p>
+              </div>
+            )}
+
             {/* Submit Button */}
             <div className="mt-6 flex justify-end">
               <Button
@@ -338,4 +452,8 @@ export default function ChallengePage() {
       </div>
     </AppLayout>
   );
+}
+
+function cn(...classes: (string | boolean | undefined | null)[]) {
+  return classes.filter(Boolean).join(" ");
 }

@@ -65,7 +65,38 @@ export async function GET(
         : null,
     };
 
-    return NextResponse.json(challenge);
+    // Add user attempt status if logged in
+    let isSolved = false;
+    let cooldownUntil: string | null = null;
+    const COOLDOWN_MS = 4 * 60 * 60 * 1000;
+
+    const session = await getServerSession(authOptions);
+    if (session?.user) {
+      const userId = (session.user as Record<string, unknown>).id as string;
+      if (userId) {
+        const solvedResult = await query(
+          `SELECT id FROM challenge_attempts WHERE "userId" = $1 AND "challengeId" = $2 AND "isCorrect" = true LIMIT 1`,
+          [userId, id]
+        );
+        isSolved = solvedResult.rows.length > 0;
+
+        if (!isSolved) {
+          const lastWrongResult = await query(
+            `SELECT "createdAt" FROM challenge_attempts WHERE "userId" = $1 AND "challengeId" = $2 AND "isCorrect" = false ORDER BY "createdAt" DESC LIMIT 1`,
+            [userId, id]
+          );
+          if (lastWrongResult.rows.length > 0) {
+            const lastWrongAt = new Date(lastWrongResult.rows[0].createdAt);
+            const cooldownEnd = new Date(lastWrongAt.getTime() + COOLDOWN_MS);
+            if (cooldownEnd > new Date()) {
+              cooldownUntil = cooldownEnd.toISOString();
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({ ...challenge, isSolved, cooldownUntil });
   } catch (error) {
     console.error("Challenge get error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });

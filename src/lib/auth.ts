@@ -33,21 +33,34 @@ if (isGoogleConfigured) {
   console.warn("[Auth] Google OAuth not configured.");
 }
 
-// Demo login — for quick access
+// Demo login — for quick access as regular user (NOT admin)
 providers.push(
   CredentialsProvider({
     id: "credentials",
     name: "Демо вход",
     credentials: {
-      email: { label: "Email", type: "email", placeholder: "admin@ai-trainer.dev" },
+      email: { label: "Email", type: "email", placeholder: "demo@ai-trainer.dev" },
     },
     async authorize(credentials) {
       if (!credentials?.email) return null;
 
-      const result = await pool.query(
+      let result = await pool.query(
         `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1`,
         [credentials.email]
       );
+
+      // Auto-create demo user if not exists
+      if (!result.rows[0] && credentials.email === "demo@ai-trainer.dev") {
+        const id = genId();
+        await pool.query(
+          `INSERT INTO users (id, email, name, role, xp, level, streak, "maxStreak", "lastActiveAt") VALUES ($1, $2, $3, 'user', 0, 1, 0, 0, NOW())`,
+          [id, "demo@ai-trainer.dev", "Демо-пользователь"]
+        );
+        result = await pool.query(
+          `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1`,
+          [credentials.email]
+        );
+      }
 
       const user = result.rows[0];
       if (!user) return null;

@@ -16,6 +16,9 @@ function genId(): string {
   );
 }
 
+// 4-hour cooldown for wrong answers
+const COOLDOWN_MS = 4 * 60 * 60 * 1000;
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -42,6 +45,42 @@ export async function POST(
     }
 
     const challenge = challengeResult.rows[0];
+
+    // CHECK 1: Already solved correctly → block
+    const solvedResult = await query(
+      `SELECT id FROM challenge_attempts WHERE "userId" = $1 AND "challengeId" = $2 AND "isCorrect" = true LIMIT 1`,
+      [userId, id],
+    );
+    if (solvedResult.rows.length > 0) {
+      return NextResponse.json(
+        { error: "Вы уже решили эту задачу. Повторная отправка невозможна.", alreadySolved: true },
+        { status: 400 },
+      );
+    }
+
+    // CHECK 2: Wrong answer cooldown (4 hours)
+    const lastWrongResult = await query(
+      `SELECT "createdAt" FROM challenge_attempts WHERE "userId" = $1 AND "challengeId" = $2 AND "isCorrect" = false ORDER BY "createdAt" DESC LIMIT 1`,
+      [userId, id],
+    );
+    if (lastWrongResult.rows.length > 0) {
+      const lastWrongAt = new Date(lastWrongResult.rows[0].createdAt);
+      const cooldownEnd = new Date(lastWrongAt.getTime() + COOLDOWN_MS);
+      const now = new Date();
+
+      if (now < cooldownEnd) {
+        const remainingMs = cooldownEnd.getTime() - now.getTime();
+        const remainingMinutes = Math.ceil(remainingMs / 60000);
+        return NextResponse.json(
+          {
+            error: `Повторная попытка будет доступна через ${remainingMinutes} мин.`,
+            cooldownUntil: cooldownEnd.toISOString(),
+            cooldownRemainingMinutes: remainingMinutes,
+          },
+          { status: 429 },
+        );
+      }
+    }
 
     // Validate answer
     let isCorrect = false;
@@ -114,7 +153,6 @@ export async function POST(
         if (broken) {
           newStreak = 1;
         } else {
-          // Check if already completed something today
           const todayStart = new Date();
           todayStart.setHours(0, 0, 0, 0);
           const todayAttemptsResult = await query(

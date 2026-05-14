@@ -18,6 +18,8 @@ interface ChallengeListItem {
   type: string;
   category: string;
   xpReward: number;
+  isSolved?: boolean;
+  cooldownUntil?: string | null;
 }
 
 export default function ChallengesPage() {
@@ -200,7 +202,7 @@ export default function ChallengesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
               >
-                <ChallengeCard {...challenge} />
+                <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
               </motion.div>
             ))}
           </div>
