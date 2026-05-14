@@ -9,6 +9,7 @@ import {
   closestCenter,
   PointerSensor,
   KeyboardSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -33,7 +34,6 @@ interface OrderingChallengeProps {
 
 function SortableItem({
   id,
-  itemIndex,
   position,
   text,
   disabled,
@@ -43,7 +43,6 @@ function SortableItem({
   onMoveDown,
 }: {
   id: number;
-  itemIndex: number;
   position: number;
   text: string;
   disabled: boolean;
@@ -61,9 +60,15 @@ function SortableItem({
     isDragging,
   } = useSortable({ id, disabled });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
+  // Combine dnd-kit transform with scale for dragging effect
+  // We must merge them because inline style transform overrides Tailwind scale class
+  const style: React.CSSProperties = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${isDragging ? 1.02 : 1})`
+      : undefined,
     transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: "relative",
   };
 
   return (
@@ -71,32 +76,40 @@ function SortableItem({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-3 rounded-lg border bg-white/[0.03] p-3 transition-all",
+        "flex items-center gap-3 rounded-lg border p-3",
         isDragging
-          ? "z-50 border-emerald-500/40 bg-emerald-500/[0.08] shadow-lg shadow-emerald-500/10 scale-[1.02]"
-          : "border-white/5 hover:bg-white/[0.06]"
+          ? "border-emerald-500/40 bg-emerald-500/[0.08] shadow-lg shadow-emerald-500/10"
+          : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
       )}
     >
+      {/* Number badge */}
       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400">
         {position + 1}
       </div>
+
+      {/* Drag handle + text — this is the draggable area */}
       <div
         {...(!disabled ? { ...attributes, ...listeners } : {})}
         className={cn(
           "flex items-center gap-2 flex-1",
-          !disabled && "cursor-grab active:cursor-grabbing"
+          !disabled && "cursor-grab active:cursor-grabbing select-none"
         )}
       >
         <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="text-sm select-none">{text}</span>
+        <span className="text-sm">{text}</span>
       </div>
+
+      {/* Up/Down buttons — NOT draggable, they are clickable */}
       {!disabled && (
         <div className="flex gap-1 shrink-0">
           <Button
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onMoveUp}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveUp();
+            }}
             disabled={isFirst}
           >
             ↑
@@ -105,7 +118,10 @@ function SortableItem({
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onMoveDown}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveDown();
+            }}
             disabled={isLast}
           >
             ↓
@@ -130,7 +146,13 @@ export function OrderingChallenge({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5,
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -193,7 +215,6 @@ export function OrderingChallenge({
               <SortableItem
                 key={itemIndex}
                 id={itemIndex}
-                itemIndex={itemIndex}
                 position={position}
                 text={items[itemIndex]}
                 disabled={disabled}

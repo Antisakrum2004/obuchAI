@@ -84,6 +84,9 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             Ежедневная задача
           </Button>
         </Link>
+        <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
+          v0.3.0
+        </p>
       </div>
     </div>
   );
