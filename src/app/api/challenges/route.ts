@@ -78,11 +78,23 @@ export async function GET(request: Request) {
       return { ...ch, isSolved: Boolean(isSolved), cooldownUntil: cooldownUntil || null };
     });
 
-    // ★ Sort: unsolved first, solved at the bottom
-    challengesWithStatus.sort((a: { isSolved: boolean; order?: number }, b: { isSolved: boolean; order?: number }) => {
-      if (a.isSolved && !b.isSolved) return 1;
-      if (!a.isSolved && b.isSolved) return -1;
-      return 0;
+    // ★ Sort: active first, then blocked (cooldown), then solved at the bottom
+    // Tiebreaker: preserve original "order" within each tier
+    const now = new Date();
+    challengesWithStatus.sort((a: { isSolved: boolean; cooldownUntil: string | null; order?: number }, b: { isSolved: boolean; cooldownUntil: string | null; order?: number }) => {
+      const aSolved = a.isSolved;
+      const bSolved = b.isSolved;
+      const aBlocked = !aSolved && a.cooldownUntil && new Date(a.cooldownUntil) > now;
+      const bBlocked = !bSolved && b.cooldownUntil && new Date(b.cooldownUntil) > now;
+
+      // Tier priority: active(0) > blocked(1) > solved(2)
+      const aTier = aSolved ? 2 : aBlocked ? 1 : 0;
+      const bTier = bSolved ? 2 : bBlocked ? 1 : 0;
+
+      if (aTier !== bTier) return aTier - bTier;
+
+      // Within same tier, keep original order
+      return (a.order ?? 0) - (b.order ?? 0);
     });
 
     return NextResponse.json(challengesWithStatus);

@@ -53,8 +53,14 @@ export function ChallengeCard({
     prefetchChallenge(id);
   }, [id]);
 
+  // ★ Set slide direction for View Transitions API
+  const handleClick = useCallback(() => {
+    document.documentElement.classList.remove("slide-back");
+    document.documentElement.classList.add("slide-forward");
+  }, []);
+
   return (
-    <Link href={`/challenges/${id}`}>
+    <Link href={`/challenges/${id}`} onClick={handleClick}>
       <div
         className={cn(
           "group glass rounded-xl p-4 transition-colors duration-150 cursor-pointer select-none",

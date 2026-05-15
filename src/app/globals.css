@@ -271,6 +271,59 @@
   animation: speed-glow 1.5s ease-in-out infinite;
 }
 
+/* ═══ View Transitions API — smooth page navigation ═══ */
+::view-transition-old(root) {
+  animation: vt-fade-out 0.2s ease-out both;
+}
+::view-transition-new(root) {
+  animation: vt-fade-in 0.2s ease-out both;
+}
+
+/* Forward navigation: slide left */
+.slide-forward ::view-transition-old(root) {
+  animation: vt-slide-out-left 0.25s ease-out both;
+}
+.slide-forward ::view-transition-new(root) {
+  animation: vt-slide-in-right 0.25s ease-out both;
+}
+
+/* Backward navigation: slide right */
+.slide-back ::view-transition-old(root) {
+  animation: vt-slide-out-right 0.25s ease-out both;
+}
+.slide-back ::view-transition-new(root) {
+  animation: vt-slide-in-left 0.25s ease-out both;
+}
+
+@keyframes vt-fade-out {
+  to { opacity: 0; }
+}
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vt-slide-out-left {
+  to { opacity: 0; transform: translateX(-30px); }
+}
+@keyframes vt-slide-in-right {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes vt-slide-out-right {
+  to { opacity: 0; transform: translateX(30px); }
+}
+@keyframes vt-slide-in-left {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
 /* Hide Vercel Toolbar — aggressive approach targeting Shadow DOM host */
 [data-testid="vercel-toolbar"],
 .vc-bottom-bar,

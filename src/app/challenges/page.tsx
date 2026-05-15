@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Target, Search, CheckCircle2, RefreshCw } from "lucide-react";
+import { Target, Search, CheckCircle2, Clock, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +68,7 @@ export default function ChallengesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryFilter, difficultyFilter, typeFilter]);
 
-  // Sort challenges: unsolved first, solved at the bottom
+  // Sort challenges: active first, then blocked (cooldown), then solved at the bottom
   const sortedChallenges = useMemo(() => {
     const source = searchQuery.trim()
       ? challenges.filter(
@@ -78,19 +78,26 @@ export default function ChallengesPage() {
         )
       : challenges;
 
+    const now = new Date();
     return [...source].sort((a, b) => {
-      // Solved challenges go to the bottom — strict boolean check
       const aSolved = a.isSolved === true;
       const bSolved = b.isSolved === true;
-      if (aSolved && !bSolved) return 1;
-      if (!aSolved && bSolved) return -1;
-      // Within same solved status, keep original order
+      const aBlocked = !aSolved && !!a.cooldownUntil && new Date(a.cooldownUntil) > now;
+      const bBlocked = !bSolved && !!b.cooldownUntil && new Date(b.cooldownUntil) > now;
+
+      // Tier priority: active(0) > blocked(1) > solved(2)
+      const aTier = aSolved ? 2 : aBlocked ? 1 : 0;
+      const bTier = bSolved ? 2 : bBlocked ? 1 : 0;
+
+      if (aTier !== bTier) return aTier - bTier;
+      // Within same tier, keep original order
       return 0;
     });
   }, [searchQuery, challenges]);
 
   // Split into groups for visual separator
-  const unsolvedChallenges = useMemo(() => sortedChallenges.filter(c => !c.isSolved), [sortedChallenges]);
+  const unsolvedChallenges = useMemo(() => sortedChallenges.filter(c => !c.isSolved && !(c.cooldownUntil && new Date(c.cooldownUntil) > new Date())), [sortedChallenges]);
+  const blockedChallenges = useMemo(() => sortedChallenges.filter(c => !c.isSolved && c.cooldownUntil && new Date(c.cooldownUntil) > new Date()), [sortedChallenges]);
   const solvedChallenges = useMemo(() => sortedChallenges.filter(c => c.isSolved), [sortedChallenges]);
 
   const categories = [
@@ -206,9 +213,9 @@ export default function ChallengesPage() {
 
           <div className="mt-3 text-xs text-muted-foreground">
             Найдено задач: {sortedChallenges.length}
-            {solvedChallenges.length > 0 && (
+            {(blockedChallenges.length > 0 || solvedChallenges.length > 0) && (
               <span className="ml-2 text-emerald-400/60">
-                ({unsolvedChallenges.length} доступно, {solvedChallenges.length} решено)
+                ({unsolvedChallenges.length} доступно{blockedChallenges.length > 0 ? `, ${blockedChallenges.length} на перезарядке` : ''}{solvedChallenges.length > 0 ? `, ${solvedChallenges.length} решено` : ''})
               </span>
             )}
           </div>
@@ -243,8 +250,32 @@ export default function ChallengesPage() {
               </motion.div>
             ))}
 
+            {/* Blocked section separator */}
+            {blockedChallenges.length > 0 && (unsolvedChallenges.length > 0) && (
+              <div className="flex items-center gap-3 py-4">
+                <div className="flex-1 h-px bg-amber-500/20" />
+                <div className="flex items-center gap-2 text-amber-400/60">
+                  <Clock className="h-4 w-4" />
+                  <span className="text-xs font-medium">На перезарядке ({blockedChallenges.length})</span>
+                </div>
+                <div className="flex-1 h-px bg-amber-500/20" />
+              </div>
+            )}
+
+            {/* Blocked challenges */}
+            {blockedChallenges.map((challenge, index) => (
+              <motion.div
+                key={challenge.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(index * 0.02, 0.2) }}
+              >
+                <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
+              </motion.div>
+            ))}
+
             {/* Solved section separator */}
-            {solvedChallenges.length > 0 && unsolvedChallenges.length > 0 && (
+            {solvedChallenges.length > 0 && (unsolvedChallenges.length > 0 || blockedChallenges.length > 0) && (
               <div className="flex items-center gap-3 py-4">
                 <div className="flex-1 h-px bg-emerald-500/20" />
                 <div className="flex items-center gap-2 text-emerald-400/60">
