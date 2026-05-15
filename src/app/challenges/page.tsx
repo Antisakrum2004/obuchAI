@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { ChallengeCard } from "@/components/challenges/challenge-card";
 import { Button } from "@/components/ui/button";
@@ -55,20 +55,28 @@ export default function ChallengesPage() {
     fetchChallenges();
   }, [categoryFilter, difficultyFilter, typeFilter]);
 
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredChallenges(challenges);
-      return;
-    }
-    const query = searchQuery.toLowerCase();
-    setFilteredChallenges(
-      challenges.filter(
-        (c) =>
-          c.title.toLowerCase().includes(query) ||
-          c.description.toLowerCase().includes(query)
-      )
-    );
+  // Sort challenges: unsolved first, solved at the bottom
+  const sortedChallenges = useMemo(() => {
+    const source = searchQuery.trim()
+      ? challenges.filter(
+          (c) =>
+            c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.description.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : challenges;
+
+    return [...source].sort((a, b) => {
+      // Solved challenges go to the bottom
+      if (a.isSolved && !b.isSolved) return 1;
+      if (!a.isSolved && b.isSolved) return -1;
+      // Within same solved status, keep original order
+      return 0;
+    });
   }, [searchQuery, challenges]);
+
+  useEffect(() => {
+    setFilteredChallenges(sortedChallenges);
+  }, [sortedChallenges]);
 
   const categories = [
     { value: "all", label: "Все категории" },

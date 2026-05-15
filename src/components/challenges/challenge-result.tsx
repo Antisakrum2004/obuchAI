@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Check, X, Zap, ArrowRight, Sparkles } from "lucide-react";
+import { Check, X, Zap, ArrowRight, Sparkles, Clock, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -15,6 +15,8 @@ interface ChallengeResultProps {
   newLevel?: number;
   newStreak?: number;
   leveledUp: boolean;
+  timeMultiplier?: number;
+  heartsMultiplier?: number;
   onNext?: () => void;
   className?: string;
 }
@@ -28,9 +30,14 @@ export function ChallengeResult({
   newLevel,
   newStreak,
   leveledUp,
+  timeMultiplier,
+  heartsMultiplier,
   onNext,
   className,
 }: ChallengeResultProps) {
+  const hasTimePenalty = timeMultiplier !== undefined && timeMultiplier < 1.0;
+  const hasHeartsPenalty = heartsMultiplier !== undefined && heartsMultiplier < 1.0;
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -85,6 +92,32 @@ export function ChallengeResult({
           >
             <Zap className="h-5 w-5 text-amber-400" />
             <span className="text-lg font-bold text-amber-400">+{xpEarned} XP</span>
+          </motion.div>
+        )}
+
+        {/* XP breakdown */}
+        {isCorrect && (hasTimePenalty || hasHeartsPenalty) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="mt-2 text-sm space-y-1"
+          >
+            <p className="text-muted-foreground">
+              Базовый опыт: {baseXp} XP
+            </p>
+            {hasTimePenalty && (
+              <p className="text-amber-400 flex items-center justify-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                Скорость: {Math.round(timeMultiplier! * 100)}% → {Math.round(baseXp * timeMultiplier!)} XP
+              </p>
+            )}
+            {hasHeartsPenalty && (
+              <p className="text-red-400 flex items-center justify-center gap-1">
+                <Heart className="h-3.5 w-3.5" />
+                Без жизней: {Math.round(heartsMultiplier! * 100)}% → {Math.round(baseXp * (timeMultiplier ?? 1) * heartsMultiplier!)} XP
+              </p>
+            )}
           </motion.div>
         )}
 

@@ -43,6 +43,22 @@ export function xpForDifficulty(difficulty: string): number {
   }
 }
 
+// Time-based XP multiplier:
+// Solved in <= 30s  → 100% XP
+// Every additional 30s → -10% XP (minimum 10%)
+// So: 0-30s=100%, 30-60s=90%, 60-90s=80%, ... min 10%
+export function timeXpMultiplier(secondsSpent: number): number {
+  if (secondsSpent <= 30) return 1.0;
+  const extra30sBlocks = Math.floor((secondsSpent - 30) / 30);
+  const multiplier = 1.0 - extra30sBlocks * 0.1;
+  return Math.max(multiplier, 0.1); // minimum 10%
+}
+
+// No-hearts penalty: 50% XP when lives are depleted
+export function noHeartsXpMultiplier(hasHearts: boolean): number {
+  return hasHearts ? 1.0 : 0.5;
+}
+
 // Streak bonus XP
 export function streakBonus(streak: number): number {
   if (streak > 0 && streak % 30 === 0) return 1000;

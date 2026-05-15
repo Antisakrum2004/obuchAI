@@ -48,6 +48,8 @@ interface SubmitResult {
   newLevel: number;
   newStreak: number;
   leveledUp: boolean;
+  timeMultiplier?: number;
+  heartsMultiplier?: number;
 }
 
 function formatCountdown(isoDate: string): string {
@@ -340,6 +342,16 @@ export default function ChallengePage() {
   const isQuick = timeSpent > 0 && timeSpent < 30;
   const isMedium = timeSpent > 0 && timeSpent >= 30 && timeSpent < 120;
 
+  // Current time-based XP multiplier (for display)
+  const currentTimeMultiplier = (() => {
+    if (timeSpent <= 0) return 1.0;
+    if (timeSpent <= 30) return 1.0;
+    const blocks = Math.floor((timeSpent - 30) / 30);
+    return Math.max(1.0 - blocks * 0.1, 0.1);
+  })();
+
+  const noHearts = hearts <= 0;
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-3xl relative">
@@ -393,9 +405,19 @@ export default function ChallengePage() {
           <div className="flex items-center justify-between">
             <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
               <Zap className="h-4 w-4" />
-              <span className="text-sm font-semibold">+{challenge.xpReward} XP</span>
+              <span className="text-sm font-semibold">
+                +{Math.round(challenge.xpReward * currentTimeMultiplier * (noHearts ? 0.5 : 1))} XP
+              </span>
+              {currentTimeMultiplier < 1.0 && !result && !isSolved && (
+                <span className="text-xs text-amber-400 ml-1">
+                  ⏱ {Math.round(currentTimeMultiplier * 100)}%
+                </span>
+              )}
               {isQuick && !result && (
-                <span className="text-xs text-amber-400 ml-1">⚡ Скорость бонус</span>
+                <span className="text-xs text-amber-400 ml-1">⚡ Макс. XP!</span>
+              )}
+              {noHearts && !result && !isSolved && (
+                <span className="text-xs text-red-400 ml-1">💔 -50% XP</span>
               )}
             </div>
             <div className="flex items-center gap-3">
@@ -403,7 +425,7 @@ export default function ChallengePage() {
               {!result && !isSolved && !onCooldown && (
                 <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
                   <Timer className="h-4 w-4" />
-                  <span className={cn("font-mono", isQuick && "text-amber-400")}>
+                  <span className={cn("font-mono", isQuick && "text-amber-400", timeSpent > 30 && timeSpent <= 60 && "text-amber-400/70", timeSpent > 60 && "text-red-400/70")}>
                     {formatTimeSpent(timeSpent)}
                   </span>
                 </div>
@@ -524,6 +546,24 @@ export default function ChallengePage() {
               </div>
             )}
 
+            {/* No hearts warning */}
+            {noHearts && (
+              <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                <p className="text-sm text-amber-400">
+                  ⚠️ Жизни истрачены! Решать можно, но опыт — 50%
+                </p>
+              </div>
+            )}
+
+            {/* Time penalty warning */}
+            {currentTimeMultiplier < 1.0 && !noHearts && (
+              <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                <p className="text-sm text-amber-400">
+                  ⏱ Опыт уменьшается: {Math.round(currentTimeMultiplier * 100)}% от базового. Решайте быстрее!
+                </p>
+              </div>
+            )}
+
             <div className="mt-6 flex justify-end">
               <Button
                 onClick={handleSubmit}
@@ -557,6 +597,8 @@ export default function ChallengePage() {
             newLevel={result.newLevel}
             newStreak={result.newStreak}
             leveledUp={result.leveledUp}
+            timeMultiplier={result.timeMultiplier}
+            heartsMultiplier={result.heartsMultiplier}
             onNext={handleNext}
           />
         )}

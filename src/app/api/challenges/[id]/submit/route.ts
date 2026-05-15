@@ -7,6 +7,8 @@ import {
   streakBonus,
   calculateLevel,
   isStreakBroken,
+  timeXpMultiplier,
+  noHeartsXpMultiplier,
 } from "@/lib/gamification";
 
 // Generate a CUID-like ID
@@ -117,7 +119,20 @@ export async function POST(
 
     // Calculate XP
     const baseXp = xpForDifficulty(challenge.difficulty);
-    const xpEarned = isCorrect ? baseXp : 0;
+
+    // Time-based XP multiplier: full XP in ≤30s, -10% per additional 30s
+    const timeMultiplier = isCorrect ? timeXpMultiplier(timeSpent || 0) : 0;
+
+    // Check if user has hearts (lives)
+    const userForHearts = await query(
+      `SELECT hearts FROM users WHERE id = $1`,
+      [userId]
+    );
+    const currentHearts = userForHearts.rows[0]?.hearts ?? 3;
+    const heartsMultiplier = isCorrect ? noHeartsXpMultiplier(currentHearts > 0) : 0;
+
+    // Final XP = base * timeMultiplier * heartsMultiplier
+    const xpEarned = isCorrect ? Math.max(Math.round(baseXp * timeMultiplier * heartsMultiplier), 1) : 0;
 
     // Create attempt
     const attemptId = genId();
@@ -283,6 +298,8 @@ export async function POST(
           newLevel: finalLevel,
           newStreak,
           leveledUp: finalLevel > user.level,
+          timeMultiplier,
+          heartsMultiplier,
         });
       }
 
