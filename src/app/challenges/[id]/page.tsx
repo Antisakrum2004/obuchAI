@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
 import { MultipleChoice, shuffleOptions } from "@/components/challenges/multiple-choice";
@@ -15,8 +15,8 @@ import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, ty
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer, Trophy } from "lucide-react";
-import { motion } from "framer-motion";
+import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer, Trophy, ArrowRight } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,7 @@ interface ChallengeData {
   validationConfig: string | null;
   isSolved?: boolean;
   cooldownUntil?: string | null;
+  order?: number;
 }
 
 interface SubmitResult {
@@ -50,6 +51,13 @@ interface SubmitResult {
   leveledUp: boolean;
   timeMultiplier?: number;
   heartsMultiplier?: number;
+}
+
+interface ChallengeListItem {
+  id: string;
+  isSolved?: boolean;
+  cooldownUntil?: string | null;
+  order?: number;
 }
 
 function formatCountdown(isoDate: string): string {
@@ -79,6 +87,25 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
+// Animation variants for slide transitions
+const slideVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 300 : -300,
+    opacity: 0,
+    scale: 0.95,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+    scale: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction < 0 ? 300 : -300,
+    opacity: 0,
+    scale: 0.95,
+  }),
+};
+
 export default function ChallengePage() {
   const params = useParams();
   const router = useRouter();
@@ -100,7 +127,6 @@ export default function ChallengePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [showXpAnimation, setShowXpAnimation] = useState(false);
-  const [startTime] = useState(Date.now());
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [timeSpent, setTimeSpent] = useState(0);
 
@@ -116,14 +142,22 @@ export default function ChallengePage() {
   const [hearts, setHearts] = useState(3);
   const [nextHeartAt, setNextHeartAt] = useState<string | null>(null);
 
+  // Navigation: next challenge & animation direction
+  const [challengeList, setChallengeList] = useState<ChallengeListItem[]>([]);
+  const [nextChallengeId, setNextChallengeId] = useState<string | null>(null);
+  const [direction, setDirection] = useState(0);
+  const [animKey, setAnimKey] = useState(0);
+  const startTimeRef = useRef(Date.now());
+  const isTransitioningRef = useRef(false);
+
   // Timer: track elapsed time
   useEffect(() => {
     if (!challenge || result || challenge.isSolved || onCooldown) return;
     const interval = setInterval(() => {
-      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
+      setTimeSpent(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
     return () => clearInterval(interval);
-  }, [challenge, result, startTime, onCooldown]);
+  }, [challenge, result, onCooldown]);
 
   // Fetch challenge data
   useEffect(() => {
@@ -161,6 +195,48 @@ export default function ChallengePage() {
     }
     fetchChallenge();
   }, [challengeId]);
+
+  // Fetch challenge list for "next" navigation (once, cached)
+  useEffect(() => {
+    fetch("/api/challenges")
+      .then((r) => r.json())
+      .then((data: ChallengeListItem[]) => {
+        setChallengeList(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Calculate next unsolved challenge
+  useEffect(() => {
+    if (!challenge || challengeList.length === 0) return;
+
+    // Sort: unsolved first (same logic as challenges page), then by order
+    const sorted = [...challengeList].sort((a, b) => {
+      if (a.isSolved && !b.isSolved) return 1;
+      if (!a.isSolved && b.isSolved) return -1;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
+
+    const currentIdx = sorted.findIndex((c) => c.id === challenge.id);
+    // Find next unsolved after current
+    let nextId: string | null = null;
+    for (let i = currentIdx + 1; i < sorted.length; i++) {
+      if (!sorted[i].isSolved) {
+        nextId = sorted[i].id;
+        break;
+      }
+    }
+    // If not found after, wrap around and find first unsolved
+    if (!nextId) {
+      for (let i = 0; i < currentIdx; i++) {
+        if (!sorted[i].isSolved) {
+          nextId = sorted[i].id;
+          break;
+        }
+      }
+    }
+    setNextChallengeId(nextId);
+  }, [challenge, challengeList]);
 
   // Fetch hearts
   useEffect(() => {
@@ -231,6 +307,23 @@ export default function ChallengePage() {
     }
   }, [challenge, multipleChoiceAnswer, promptFixAnswer, textInputAnswer, orderingAnswer, workflowAnswer]);
 
+  // Reset all answer/submit states for a new challenge
+  const resetForNewChallenge = useCallback(() => {
+    setMultipleChoiceAnswer(null);
+    setPromptFixAnswer("");
+    setTextInputAnswer("");
+    setOrderingAnswer([]);
+    setWorkflowAnswer([]);
+    setIsSubmitting(false);
+    setResult(null);
+    setShowXpAnimation(false);
+    setSubmitError(null);
+    setTimeSpent(0);
+    setOnCooldown(false);
+    setCooldownText("");
+    startTimeRef.current = Date.now();
+  }, []);
+
   const handleSubmit = async () => {
     const answer = getAnswer();
     if (!answer || !challenge) return;
@@ -239,7 +332,7 @@ export default function ChallengePage() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const spent = Math.floor((Date.now() - startTime) / 1000);
+      const spent = Math.floor((Date.now() - startTimeRef.current) / 1000);
       const res = await fetch(`/api/challenges/${challenge.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -283,9 +376,69 @@ export default function ChallengePage() {
     }
   };
 
-  const handleNext = () => {
-    router.push("/challenges");
-  };
+  // Navigate to next challenge with smooth animation
+  const handleNext = useCallback(async () => {
+    if (isTransitioningRef.current) return;
+
+    if (nextChallengeId) {
+      isTransitioningRef.current = true;
+      setDirection(1); // slide left-to-right (forward)
+      setAnimKey((k) => k + 1);
+
+      // Small delay for exit animation, then load new challenge
+      await new Promise((r) => setTimeout(r, 150));
+
+      // Navigate via router (updates URL)
+      router.push(`/challenges/${nextChallengeId}`);
+
+      // Reset states for new challenge
+      resetForNewChallenge();
+      setChallenge(null);
+      setIsLoading(true);
+
+      // Fetch new challenge data
+      try {
+        const res = await fetch(`/api/challenges/${nextChallengeId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setChallenge(data);
+
+          if (data.type === "prompt_fix") {
+            try {
+              const content = JSON.parse(data.content);
+              setPromptFixAnswer(content.originalPrompt || "");
+            } catch {
+              setPromptFixAnswer("");
+            }
+          }
+
+          // Re-fetch hearts for new challenge
+          fetch("/api/user/activity")
+            .then((r) => r.json())
+            .then((d) => {
+              if (typeof d.hearts === "number") setHearts(d.hearts);
+              if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+            })
+            .catch(() => {});
+
+          // Refresh challenge list to get updated solved status
+          const listRes = await fetch("/api/challenges");
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            setChallengeList(listData);
+          }
+        }
+      } catch {
+        setError("Ошибка загрузки");
+      } finally {
+        setIsLoading(false);
+        isTransitioningRef.current = false;
+      }
+    } else {
+      // No more unsolved challenges — go to list
+      router.push("/challenges");
+    }
+  }, [nextChallengeId, router, resetForNewChallenge]);
 
   // === CONDITIONAL RETURNS ===
 
@@ -354,7 +507,7 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-3xl relative">
+      <div className="mx-auto max-w-3xl relative overflow-hidden">
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -370,238 +523,249 @@ export default function ChallengePage() {
           Все задачи
         </Link>
 
-        {/* Challenge Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass rounded-2xl p-6 mb-6"
-        >
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-lg">{categoryEmoji(challenge.category)}</span>
-            <Badge variant="outline" className={difficultyBadgeClass(challenge.difficulty)}>
-              {difficultyLabel(challenge.difficulty)}
-            </Badge>
-            <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
-              {categoryLabel(challenge.category)}
-            </Badge>
-            <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
-              {typeLabel(challenge.type)}
-            </Badge>
-            {isSolved && (
-              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Решено
-              </Badge>
-            )}
-          </div>
-
-          <h1 className={cn("text-2xl font-bold mb-2", isSolved && "text-muted-foreground")}>
-            {challenge.title}
-          </h1>
-          <p className="text-muted-foreground">{challenge.description}</p>
-
-          <Separator className="bg-white/5 my-4" />
-
-          <div className="flex items-center justify-between">
-            <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
-              <Zap className="h-4 w-4" />
-              <span className="text-sm font-semibold">
-                +{Math.round(challenge.xpReward * currentTimeMultiplier * (noHearts ? 0.5 : 1))} XP
-              </span>
-              {currentTimeMultiplier < 1.0 && !result && !isSolved && (
-                <span className="text-xs text-amber-400 ml-1">
-                  ⏱ {Math.round(currentTimeMultiplier * 100)}%
-                </span>
-              )}
-              {isQuick && !result && (
-                <span className="text-xs text-amber-400 ml-1">⚡ Макс. XP!</span>
-              )}
-              {noHearts && !result && !isSolved && (
-                <span className="text-xs text-red-400 ml-1">💔 -50% XP</span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Timer display */}
-              {!result && !isSolved && !onCooldown && (
-                <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
-                  <Timer className="h-4 w-4" />
-                  <span className={cn("font-mono", isQuick && "text-amber-400", timeSpent > 30 && timeSpent <= 60 && "text-amber-400/70", timeSpent > 60 && "text-red-400/70")}>
-                    {formatTimeSpent(timeSpent)}
-                  </span>
-                </div>
-              )}
-              {/* Hearts */}
-              {!isSolved && !onCooldown && (
-                <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
-              )}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* SOLVED OVERLAY */}
-        {isSolved && !result && (
+        <AnimatePresence mode="wait" custom={direction}>
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-2xl p-8 mb-6 text-center"
+            key={animKey}
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: { type: "spring", stiffness: 300, damping: 30 },
+              opacity: { duration: 0.2 },
+              scale: { duration: 0.2 },
+            }}
           >
-            <div className="flex justify-center mb-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-                <Trophy className="h-8 w-8 text-emerald-400" />
-              </div>
-            </div>
-            <h2 className="text-xl font-bold mb-2">Задача решена</h2>
-            <p className="text-muted-foreground mb-4">
-              Вы уже правильно решили эту задачу. Повторная отправка недоступна.
-            </p>
-            {challenge.explanation && (
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-left mb-4">
-                <p className="text-xs text-emerald-400 mb-1 font-medium">Пояснение:</p>
-                <p className="text-sm text-muted-foreground">{challenge.explanation}</p>
-              </div>
-            )}
-            <Link href="/challenges">
-              <Button className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                К списку задач
-              </Button>
-            </Link>
-          </motion.div>
-        )}
-
-        {/* COOLDOWN OVERLAY */}
-        {onCooldown && !isSolved && !result && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-2xl p-8 mb-6 text-center"
-          >
-            <div className="flex justify-center mb-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/20">
-                <Timer className="h-8 w-8 text-amber-400" />
-              </div>
-            </div>
-            <h2 className="text-xl font-bold mb-2">Ответ был неверным</h2>
-            <p className="text-muted-foreground mb-2">
-              Повторная попытка будет доступна через:
-            </p>
-            <p className="text-2xl font-bold text-amber-400 mb-4">{cooldownText}</p>
-            <p className="text-sm text-muted-foreground">
-              Пока ожидаете — попробуйте другие задачи
-            </p>
-            <Link href="/challenges">
-              <Button variant="outline" className="mt-4 border-white/10">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                К списку задач
-              </Button>
-            </Link>
-          </motion.div>
-        )}
-
-        {/* Challenge Content */}
-        {!result && !isSolved && !onCooldown && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="glass rounded-2xl p-6 mb-6"
-          >
-            {parsedContent.text && (
-              <div className="mb-6">
-                <p className="text-foreground leading-relaxed">{parsedContent.text}</p>
-              </div>
-            )}
-
-            {parsedContent.code && (
-              <div className="rounded-lg bg-black/40 border border-white/5 p-4 mb-6 overflow-x-auto">
-                <pre className="text-sm text-muted-foreground font-mono whitespace-pre-wrap">
-                  {parsedContent.code}
-                </pre>
-              </div>
-            )}
-
-            {challenge.type === "multiple_choice" && (
-              <MultipleChoice shuffledOptions={shuffledOptions} value={multipleChoiceAnswer} onChange={setMultipleChoiceAnswer} />
-            )}
-
-            {challenge.type === "prompt_fix" && (
-              <PromptFix originalPrompt={parsedContent.originalPrompt || ""} value={promptFixAnswer} onChange={setPromptFixAnswer} hints={parsedHints} />
-            )}
-
-            {challenge.type === "text_input" && (
-              <TextInput value={textInputAnswer} onChange={setTextInputAnswer} placeholder={parsedContent.placeholder || "Введите ответ..."} hints={parsedHints} />
-            )}
-
-            {challenge.type === "ordering" && (
-              <OrderingChallenge items={parsedOrderingOptions} value={orderingAnswer} onChange={setOrderingAnswer} hints={parsedHints} />
-            )}
-
-            {challenge.type === "workflow_build" && (
-              <OrderingChallenge items={parsedOrderingOptions} value={workflowAnswer} onChange={setWorkflowAnswer} hints={parsedHints} />
-            )}
-
-            {submitError && (
-              <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-                <p className="text-sm text-red-400">{submitError}</p>
-              </div>
-            )}
-
-            {/* No hearts warning */}
-            {noHearts && (
-              <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="text-sm text-amber-400">
-                  ⚠️ Жизни истрачены! Решать можно, но опыт — 50%
-                </p>
-              </div>
-            )}
-
-            {/* Time penalty warning */}
-            {currentTimeMultiplier < 1.0 && !noHearts && (
-              <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="text-sm text-amber-400">
-                  ⏱ Опыт уменьшается: {Math.round(currentTimeMultiplier * 100)}% от базового. Решайте быстрее!
-                </p>
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end">
-              <Button
-                onClick={handleSubmit}
-                disabled={isSubmitting || !hasAnswer}
-                className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
-                    Проверка...
-                  </span>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-4 w-4" />
-                    Отправить
-                  </>
+            {/* Challenge Header */}
+            <div className="glass rounded-2xl p-6 mb-6">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-lg">{categoryEmoji(challenge.category)}</span>
+                <Badge variant="outline" className={difficultyBadgeClass(challenge.difficulty)}>
+                  {difficultyLabel(challenge.difficulty)}
+                </Badge>
+                <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
+                  {categoryLabel(challenge.category)}
+                </Badge>
+                <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
+                  {typeLabel(challenge.type)}
+                </Badge>
+                {isSolved && (
+                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Решено
+                  </Badge>
                 )}
-              </Button>
-            </div>
-          </motion.div>
-        )}
+              </div>
 
-        {/* Result */}
-        {result && (
-          <ChallengeResult
-            isCorrect={result.isCorrect}
-            xpEarned={result.xpEarned}
-            baseXp={result.baseXp}
-            bonusXp={result.bonusXp}
-            explanation={result.explanation}
-            newLevel={result.newLevel}
-            newStreak={result.newStreak}
-            leveledUp={result.leveledUp}
-            timeMultiplier={result.timeMultiplier}
-            heartsMultiplier={result.heartsMultiplier}
-            onNext={handleNext}
-          />
-        )}
+              <h1 className={cn("text-2xl font-bold mb-2", isSolved && "text-muted-foreground")}>
+                {challenge.title}
+              </h1>
+              <p className="text-muted-foreground">{challenge.description}</p>
+
+              <Separator className="bg-white/5 my-4" />
+
+              <div className="flex items-center justify-between">
+                <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
+                  <Zap className="h-4 w-4" />
+                  <span className="text-sm font-semibold">
+                    +{Math.round(challenge.xpReward * currentTimeMultiplier * (noHearts ? 0.5 : 1))} XP
+                  </span>
+                  {currentTimeMultiplier < 1.0 && !result && !isSolved && (
+                    <span className="text-xs text-amber-400 ml-1">
+                      ⏱ {Math.round(currentTimeMultiplier * 100)}%
+                    </span>
+                  )}
+                  {isQuick && !result && (
+                    <span className="text-xs text-amber-400 ml-1">⚡ Макс. XP!</span>
+                  )}
+                  {noHearts && !result && !isSolved && (
+                    <span className="text-xs text-red-400 ml-1">💔 -50% XP</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Timer display */}
+                  {!result && !isSolved && !onCooldown && (
+                    <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
+                      <Timer className="h-4 w-4" />
+                      <span className={cn("font-mono", isQuick && "text-amber-400", timeSpent > 30 && timeSpent <= 60 && "text-amber-400/70", timeSpent > 60 && "text-red-400/70")}>
+                        {formatTimeSpent(timeSpent)}
+                      </span>
+                    </div>
+                  )}
+                  {/* Hearts */}
+                  {!isSolved && !onCooldown && (
+                    <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* SOLVED OVERLAY */}
+            {isSolved && !result && (
+              <div className="glass rounded-2xl p-8 mb-6 text-center">
+                <div className="flex justify-center mb-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+                    <Trophy className="h-8 w-8 text-emerald-400" />
+                  </div>
+                </div>
+                <h2 className="text-xl font-bold mb-2">Задача решена</h2>
+                <p className="text-muted-foreground mb-4">
+                  Вы уже правильно решили эту задачу. Повторная отправка недоступна.
+                </p>
+                {challenge.explanation && (
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4 text-left mb-4">
+                    <p className="text-xs text-emerald-400 mb-1 font-medium">Пояснение:</p>
+                    <p className="text-sm text-muted-foreground">{challenge.explanation}</p>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 justify-center">
+                  <Link href="/challenges">
+                    <Button variant="outline" className="border-white/10 hover:bg-white/5">
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      К списку задач
+                    </Button>
+                  </Link>
+                  {nextChallengeId && (
+                    <Button
+                      onClick={handleNext}
+                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                    >
+                      Следующая задача
+                      <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* COOLDOWN OVERLAY */}
+            {onCooldown && !isSolved && !result && (
+              <div className="glass rounded-2xl p-8 mb-6 text-center">
+                <div className="flex justify-center mb-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/20">
+                    <Timer className="h-8 w-8 text-amber-400" />
+                  </div>
+                </div>
+                <h2 className="text-xl font-bold mb-2">Ответ был неверным</h2>
+                <p className="text-muted-foreground mb-2">
+                  Повторная попытка будет доступна через:
+                </p>
+                <p className="text-2xl font-bold text-amber-400 mb-4">{cooldownText}</p>
+                <p className="text-sm text-muted-foreground">
+                  Пока ожидаете — попробуйте другие задачи
+                </p>
+                <Link href="/challenges">
+                  <Button variant="outline" className="mt-4 border-white/10">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    К списку задач
+                  </Button>
+                </Link>
+              </div>
+            )}
+
+            {/* Challenge Content */}
+            {!result && !isSolved && !onCooldown && (
+              <div className="glass rounded-2xl p-6 mb-6">
+                {parsedContent.text && (
+                  <div className="mb-6">
+                    <p className="text-foreground leading-relaxed">{parsedContent.text}</p>
+                  </div>
+                )}
+
+                {parsedContent.code && (
+                  <div className="rounded-lg bg-black/40 border border-white/5 p-4 mb-6 overflow-x-auto">
+                    <pre className="text-sm text-muted-foreground font-mono whitespace-pre-wrap">
+                      {parsedContent.code}
+                    </pre>
+                  </div>
+                )}
+
+                {challenge.type === "multiple_choice" && (
+                  <MultipleChoice shuffledOptions={shuffledOptions} value={multipleChoiceAnswer} onChange={setMultipleChoiceAnswer} />
+                )}
+
+                {challenge.type === "prompt_fix" && (
+                  <PromptFix originalPrompt={parsedContent.originalPrompt || ""} value={promptFixAnswer} onChange={setPromptFixAnswer} hints={parsedHints} />
+                )}
+
+                {challenge.type === "text_input" && (
+                  <TextInput value={textInputAnswer} onChange={setTextInputAnswer} placeholder={parsedContent.placeholder || "Введите ответ..."} hints={parsedHints} />
+                )}
+
+                {challenge.type === "ordering" && (
+                  <OrderingChallenge items={parsedOrderingOptions} value={orderingAnswer} onChange={setOrderingAnswer} hints={parsedHints} />
+                )}
+
+                {challenge.type === "workflow_build" && (
+                  <OrderingChallenge items={parsedOrderingOptions} value={workflowAnswer} onChange={setWorkflowAnswer} hints={parsedHints} />
+                )}
+
+                {submitError && (
+                  <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                    <p className="text-sm text-red-400">{submitError}</p>
+                  </div>
+                )}
+
+                {/* No hearts warning */}
+                {noHearts && (
+                  <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <p className="text-sm text-amber-400">
+                      ⚠️ Жизни истрачены! Решать можно, но опыт — 50%
+                    </p>
+                  </div>
+                )}
+
+                {/* Time penalty warning */}
+                {currentTimeMultiplier < 1.0 && !noHearts && (
+                  <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <p className="text-sm text-amber-400">
+                      ⏱ Опыт уменьшается: {Math.round(currentTimeMultiplier * 100)}% от базового. Решайте быстрее!
+                    </p>
+                  </div>
+                )}
+
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || !hasAnswer}
+                    className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                        Проверка...
+                      </span>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Отправить
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Result */}
+            {result && (
+              <ChallengeResult
+                isCorrect={result.isCorrect}
+                xpEarned={result.xpEarned}
+                baseXp={result.baseXp}
+                bonusXp={result.bonusXp}
+                explanation={result.explanation}
+                newLevel={result.newLevel}
+                newStreak={result.newStreak}
+                leveledUp={result.leveledUp}
+                timeMultiplier={result.timeMultiplier}
+                heartsMultiplier={result.heartsMultiplier}
+                onNext={handleNext}
+                hasNext={!!nextChallengeId}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </AppLayout>
   );

@@ -18,6 +18,7 @@ interface ChallengeResultProps {
   timeMultiplier?: number;
   heartsMultiplier?: number;
   onNext?: () => void;
+  hasNext?: boolean;
   className?: string;
 }
 
@@ -33,6 +34,7 @@ export function ChallengeResult({
   timeMultiplier,
   heartsMultiplier,
   onNext,
+  hasNext,
   className,
 }: ChallengeResultProps) {
   const hasTimePenalty = timeMultiplier !== undefined && timeMultiplier < 1.0;
@@ -156,12 +158,12 @@ export function ChallengeResult({
 
       {/* Actions */}
       <div className="flex items-center gap-3 justify-center">
-        <Link href="/dashboard">
+        <Link href="/challenges">
           <Button variant="outline" className="border-white/10 hover:bg-white/5">
-            На главную
+            К списку задач
           </Button>
         </Link>
-        {isCorrect && onNext && (
+        {isCorrect && hasNext && onNext && (
           <Button
             onClick={onNext}
             className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
@@ -170,12 +172,21 @@ export function ChallengeResult({
             <ArrowRight className="ml-1 h-4 w-4" />
           </Button>
         )}
-        {!isCorrect && (
+        {!isCorrect && hasNext && onNext && (
+          <Button
+            onClick={onNext}
+            className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+          >
+            Попробовать другую
+            <ArrowRight className="ml-1 h-4 w-4" />
+          </Button>
+        )}
+        {!hasNext && (
           <Link href="/challenges">
             <Button
               className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
             >
-              К списку задач
+              Все задачи решены!
               <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
           </Link>
