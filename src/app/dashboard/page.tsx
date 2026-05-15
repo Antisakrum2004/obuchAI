@@ -7,9 +7,12 @@ import { StatsGrid } from "@/components/dashboard/stats-grid";
 import { MiniLeaderboard } from "@/components/dashboard/mini-leaderboard";
 import { SkillProgressList } from "@/components/dashboard/skill-progress-list";
 import { RecentAchievements } from "@/components/dashboard/recent-achievements";
+import { WeeklyXpChart } from "@/components/dashboard/weekly-xp-chart";
 import { LevelBadge } from "@/components/gamification/level-badge";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
+import { StreakCalendar } from "@/components/gamification/streak-calendar";
+import { HeartsDisplay } from "@/components/gamification/hearts-display";
 import { useUserStore } from "@/store/user-store";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -43,6 +46,10 @@ export default function DashboardPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [skills, setSkills] = useState<SkillProgressItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
+  const [weeklyXp, setWeeklyXp] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+  const [activeDays, setActiveDays] = useState<string[]>([]);
+  const [hearts, setHearts] = useState(3);
+  const [nextHeartAt, setNextHeartAt] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch leaderboard
@@ -87,6 +94,17 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {});
+
+    // Fetch activity data (weekly XP, active days, hearts)
+    fetch("/api/user/activity")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.weeklyXp) setWeeklyXp(data.weeklyXp);
+        if (data.activeDays) setActiveDays(data.activeDays);
+        if (typeof data.hearts === "number") setHearts(data.hearts);
+        if (data.nextHeartAt) setNextHeartAt(data.nextHeartAt);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -109,10 +127,18 @@ export default function DashboardPage() {
             </div>
             <div className="hidden sm:flex items-center gap-4">
               <LevelBadge level={level} size="lg" />
-              <div className="text-right">
+              <div className="text-right space-y-1">
                 <StreakCounter streak={streak} />
+                <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
               </div>
             </div>
+          </div>
+
+          {/* Mobile: Level + Streak + Hearts row */}
+          <div className="flex sm:hidden items-center gap-3 mb-4">
+            <LevelBadge level={level} size="md" />
+            <StreakCounter streak={streak} />
+            <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
           </div>
 
           {/* XP Progress */}
@@ -139,6 +165,17 @@ export default function DashboardPage() {
               level: level || 1,
             }}
           />
+        </motion.div>
+
+        {/* Weekly Activity + Streak Calendar row */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
+          className="grid gap-4 md:grid-cols-2"
+        >
+          <WeeklyXpChart data={weeklyXp} />
+          <StreakCalendar streak={streak} activeDays={activeDays} />
         </motion.div>
 
         {/* Daily Challenge */}

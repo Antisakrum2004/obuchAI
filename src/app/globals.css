@@ -239,3 +239,34 @@
   background-size: 200% 100%;
   animation: shimmer 2s ease-in-out infinite;
 }
+
+/* Heart pulse animation */
+@keyframes heart-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.heart-pulse {
+  animation: heart-pulse 0.4s ease-in-out;
+}
+
+/* Level up flash */
+@keyframes level-flash {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.level-flash {
+  animation: level-flash 2s ease-out forwards;
+}
+
+/* Speed bonus glow */
+@keyframes speed-glow {
+  0%, 100% { text-shadow: 0 0 5px rgba(245, 158, 11, 0.3); }
+  50% { text-shadow: 0 0 15px rgba(245, 158, 11, 0.6); }
+}
+
+.speed-glow {
+  animation: speed-glow 1.5s ease-in-out infinite;
+}

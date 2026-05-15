@@ -9,11 +9,13 @@ import { TextInput } from "@/components/challenges/text-input";
 import { OrderingChallenge } from "@/components/challenges/ordering-challenge";
 import { ChallengeResult } from "@/components/challenges/challenge-result";
 import { XPAnimation } from "@/components/gamification/xp-animation";
+import { LevelUpModal } from "@/components/gamification/level-up-modal";
+import { HeartsDisplay } from "@/components/gamification/hearts-display";
 import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, typeLabel } from "@/lib/gamification";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer } from "lucide-react";
+import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer, Trophy } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -57,18 +59,20 @@ function formatCountdown(isoDate: string): string {
   return `${minutes} мин`;
 }
 
-/**
- * Simple hash function to create a deterministic seed from userId + challengeId.
- * This ensures the same user sees the same option order for the same challenge,
- * but different users see different orders.
- */
+function formatTimeSpent(seconds: number): string {
+  if (seconds < 60) return `${seconds}с`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}м ${s}с`;
+}
+
 function hashSeed(a: string, b: string): number {
   let hash = 0;
   const str = a + b;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash |= 0; // Convert to 32bit integer
+    hash |= 0;
   }
   return Math.abs(hash);
 }
@@ -83,7 +87,7 @@ export default function ChallengePage() {
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
 
-  // Answer states — store ORIGINAL index for multiple_choice
+  // Answer states
   const [multipleChoiceAnswer, setMultipleChoiceAnswer] = useState<string | null>(null);
   const [promptFixAnswer, setPromptFixAnswer] = useState("");
   const [textInputAnswer, setTextInputAnswer] = useState("");
@@ -96,12 +100,28 @@ export default function ChallengePage() {
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [startTime] = useState(Date.now());
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [timeSpent, setTimeSpent] = useState(0);
 
-  // Cooldown state — tracks whether challenge is on cooldown (auto-updates)
+  // Cooldown state
   const [onCooldown, setOnCooldown] = useState(false);
   const [cooldownText, setCooldownText] = useState<string>("");
 
-  // === ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURNS ===
+  // Level-up modal state
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [levelUpData, setLevelUpData] = useState({ level: 1, previousLevel: 1, xpEarned: 0 });
+
+  // Hearts state
+  const [hearts, setHearts] = useState(3);
+  const [nextHeartAt, setNextHeartAt] = useState<string | null>(null);
+
+  // Timer: track elapsed time
+  useEffect(() => {
+    if (!challenge || result || challenge.isSolved || onCooldown) return;
+    const interval = setInterval(() => {
+      setTimeSpent(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [challenge, result, startTime, onCooldown]);
 
   // Fetch challenge data
   useEffect(() => {
@@ -113,7 +133,6 @@ export default function ChallengePage() {
           const data = await res.json();
           setChallenge(data);
 
-          // Get userId from session for seeded shuffle
           const sessionRes = await fetch("/api/auth/session");
           if (sessionRes.ok) {
             const session = await sessionRes.json();
@@ -141,7 +160,18 @@ export default function ChallengePage() {
     fetchChallenge();
   }, [challengeId]);
 
-  // Update cooldown timer + onCooldown state every second
+  // Fetch hearts
+  useEffect(() => {
+    fetch("/api/user/activity")
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data.hearts === "number") setHearts(data.hearts);
+        if (data.nextHeartAt) setNextHeartAt(data.nextHeartAt);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Update cooldown
   useEffect(() => {
     if (!challenge?.cooldownUntil || challenge.isSolved) {
       setOnCooldown(false);
@@ -161,7 +191,7 @@ export default function ChallengePage() {
     return () => clearInterval(interval);
   }, [challenge?.cooldownUntil, challenge?.isSolved]);
 
-  // Shuffle multiple choice options deterministically based on userId + challengeId
+  // Shuffle multiple choice options
   const shuffledOptions = useMemo(() => {
     if (!challenge || challenge.type !== "multiple_choice" || !challenge.options) return [];
     try {
@@ -174,7 +204,7 @@ export default function ChallengePage() {
     }
   }, [challenge, userId]);
 
-  // For ordering/workflow: parse options
+  // Parse ordering options
   const parsedOrderingOptions = useMemo(() => {
     if (!challenge) return [];
     if ((challenge.type === "ordering" || challenge.type === "workflow_build") && challenge.options) {
@@ -190,59 +220,56 @@ export default function ChallengePage() {
   const getAnswer = useCallback(() => {
     if (!challenge) return null;
     switch (challenge.type) {
-      case "multiple_choice":
-        return multipleChoiceAnswer;
-      case "prompt_fix":
-        return promptFixAnswer;
-      case "text_input":
-        return textInputAnswer;
-      case "ordering":
-        return orderingAnswer.length > 0 ? orderingAnswer : null;
-      case "workflow_build":
-        return workflowAnswer.length > 0 ? workflowAnswer : null;
-      default:
-        return null;
+      case "multiple_choice": return multipleChoiceAnswer;
+      case "prompt_fix": return promptFixAnswer;
+      case "text_input": return textInputAnswer;
+      case "ordering": return orderingAnswer.length > 0 ? orderingAnswer : null;
+      case "workflow_build": return workflowAnswer.length > 0 ? workflowAnswer : null;
+      default: return null;
     }
   }, [challenge, multipleChoiceAnswer, promptFixAnswer, textInputAnswer, orderingAnswer, workflowAnswer]);
 
   const handleSubmit = async () => {
     const answer = getAnswer();
     if (!answer || !challenge) return;
-    // Extra guard: reject empty arrays
     if (Array.isArray(answer) && answer.length === 0) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const timeSpent = Math.floor((Date.now() - startTime) / 1000);
+      const spent = Math.floor((Date.now() - startTime) / 1000);
       const res = await fetch(`/api/challenges/${challenge.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer, timeSpent }),
+        body: JSON.stringify({ answer, timeSpent: spent }),
       });
 
       if (res.ok) {
         const data = await res.json();
         setResult(data);
         if (data.isCorrect) {
-          // Mark as solved locally so UI updates immediately
           setChallenge({ ...challenge, isSolved: true });
           if (data.xpEarned > 0) {
             setShowXpAnimation(true);
           }
+          if (data.leveledUp) {
+            setLevelUpData({
+              level: data.newLevel,
+              previousLevel: data.newLevel - 1,
+              xpEarned: data.xpEarned,
+            });
+            setShowLevelUp(true);
+          }
         } else {
-          // Wrong answer — set cooldown from server response
-          // The submit API returns 200 with isCorrect: false
-          // Cooldown is handled by the attempts table on the server side
+          // Lost a heart
+          setHearts((h) => Math.max(0, h - 1));
         }
       } else {
         const errData = await res.json();
         setSubmitError(errData.error || "Ошибка отправки");
-        // If already solved, update challenge state
         if (errData.alreadySolved) {
           setChallenge({ ...challenge, isSolved: true });
         }
-        // If on cooldown, update
         if (errData.cooldownUntil) {
           setChallenge({ ...challenge, cooldownUntil: errData.cooldownUntil });
         }
@@ -258,7 +285,7 @@ export default function ChallengePage() {
     router.push("/challenges");
   };
 
-  // === CONDITIONAL RETURNS AFTER ALL HOOKS ===
+  // === CONDITIONAL RETURNS ===
 
   if (isLoading) {
     return (
@@ -286,28 +313,18 @@ export default function ChallengePage() {
     );
   }
 
-  // Safe parsing — no hooks after this point
+  // Safe parsing
   const parsedHints = (() => {
     if (!challenge.hints) return null;
-    try {
-      return JSON.parse(challenge.hints);
-    } catch {
-      // hints might be a plain string, return as single-item array
-      return [challenge.hints];
-    }
+    try { return JSON.parse(challenge.hints); } catch { return [challenge.hints]; }
   })();
 
   const parsedContent = (() => {
-    try {
-      return JSON.parse(challenge.content);
-    } catch {
-      return { text: challenge.content };
-    }
+    try { return JSON.parse(challenge.content); } catch { return { text: challenge.content }; }
   })();
 
   const isSolved = challenge.isSolved;
 
-  // Check if answer is provided
   const hasAnswer = (() => {
     switch (challenge.type) {
       case "multiple_choice": return multipleChoiceAnswer !== null;
@@ -319,10 +336,21 @@ export default function ChallengePage() {
     }
   })();
 
+  // Speed bonus info
+  const isQuick = timeSpent > 0 && timeSpent < 30;
+  const isMedium = timeSpent > 0 && timeSpent >= 30 && timeSpent < 120;
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-3xl relative">
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
+        <LevelUpModal
+          show={showLevelUp}
+          level={levelUpData.level}
+          previousLevel={levelUpData.previousLevel}
+          xpEarned={levelUpData.xpEarned}
+          onClose={() => setShowLevelUp(false)}
+        />
 
         {/* Back button */}
         <Link href="/challenges" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4">
@@ -366,10 +394,24 @@ export default function ChallengePage() {
             <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
               <Zap className="h-4 w-4" />
               <span className="text-sm font-semibold">+{challenge.xpReward} XP</span>
+              {isQuick && !result && (
+                <span className="text-xs text-amber-400 ml-1">⚡ Скорость бонус</span>
+              )}
             </div>
-            <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
-              <Clock className="h-4 w-4" />
-              <span>Время не ограничено</span>
+            <div className="flex items-center gap-3">
+              {/* Timer display */}
+              {!result && !isSolved && !onCooldown && (
+                <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
+                  <Timer className="h-4 w-4" />
+                  <span className={cn("font-mono", isQuick && "text-amber-400")}>
+                    {formatTimeSpent(timeSpent)}
+                  </span>
+                </div>
+              )}
+              {/* Hearts */}
+              {!isSolved && !onCooldown && (
+                <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
+              )}
             </div>
           </div>
         </motion.div>
@@ -383,7 +425,7 @@ export default function ChallengePage() {
           >
             <div className="flex justify-center mb-4">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
-                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+                <Trophy className="h-8 w-8 text-emerald-400" />
               </div>
             </div>
             <h2 className="text-xl font-bold mb-2">Задача решена</h2>
@@ -434,7 +476,7 @@ export default function ChallengePage() {
           </motion.div>
         )}
 
-        {/* Challenge Content — only if NOT solved and NOT on cooldown */}
+        {/* Challenge Content */}
         {!result && !isSolved && !onCooldown && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -442,14 +484,12 @@ export default function ChallengePage() {
             transition={{ delay: 0.1 }}
             className="glass rounded-2xl p-6 mb-6"
           >
-            {/* Question text */}
             {parsedContent.text && (
               <div className="mb-6">
                 <p className="text-foreground leading-relaxed">{parsedContent.text}</p>
               </div>
             )}
 
-            {/* Code block if present */}
             {parsedContent.code && (
               <div className="rounded-lg bg-black/40 border border-white/5 p-4 mb-6 overflow-x-auto">
                 <pre className="text-sm text-muted-foreground font-mono whitespace-pre-wrap">
@@ -458,59 +498,32 @@ export default function ChallengePage() {
               </div>
             )}
 
-            {/* Type-specific UI */}
             {challenge.type === "multiple_choice" && (
-              <MultipleChoice
-                shuffledOptions={shuffledOptions}
-                value={multipleChoiceAnswer}
-                onChange={setMultipleChoiceAnswer}
-              />
+              <MultipleChoice shuffledOptions={shuffledOptions} value={multipleChoiceAnswer} onChange={setMultipleChoiceAnswer} />
             )}
 
             {challenge.type === "prompt_fix" && (
-              <PromptFix
-                originalPrompt={parsedContent.originalPrompt || ""}
-                value={promptFixAnswer}
-                onChange={setPromptFixAnswer}
-                hints={parsedHints}
-              />
+              <PromptFix originalPrompt={parsedContent.originalPrompt || ""} value={promptFixAnswer} onChange={setPromptFixAnswer} hints={parsedHints} />
             )}
 
             {challenge.type === "text_input" && (
-              <TextInput
-                value={textInputAnswer}
-                onChange={setTextInputAnswer}
-                placeholder={parsedContent.placeholder || "Введите ответ..."}
-                hints={parsedHints}
-              />
+              <TextInput value={textInputAnswer} onChange={setTextInputAnswer} placeholder={parsedContent.placeholder || "Введите ответ..."} hints={parsedHints} />
             )}
 
             {challenge.type === "ordering" && (
-              <OrderingChallenge
-                items={parsedOrderingOptions}
-                value={orderingAnswer}
-                onChange={setOrderingAnswer}
-                hints={parsedHints}
-              />
+              <OrderingChallenge items={parsedOrderingOptions} value={orderingAnswer} onChange={setOrderingAnswer} hints={parsedHints} />
             )}
 
             {challenge.type === "workflow_build" && (
-              <OrderingChallenge
-                items={parsedOrderingOptions}
-                value={workflowAnswer}
-                onChange={setWorkflowAnswer}
-                hints={parsedHints}
-              />
+              <OrderingChallenge items={parsedOrderingOptions} value={workflowAnswer} onChange={setWorkflowAnswer} hints={parsedHints} />
             )}
 
-            {/* Submit error */}
             {submitError && (
               <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
                 <p className="text-sm text-red-400">{submitError}</p>
               </div>
             )}
 
-            {/* Submit Button */}
             <div className="mt-6 flex justify-end">
               <Button
                 onClick={handleSubmit}
