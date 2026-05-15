@@ -52,7 +52,7 @@ export function ChallengeCard({
         className={cn(
           "group glass rounded-xl p-4 transition-all duration-200 cursor-pointer",
           solved
-            ? "opacity-50 hover:opacity-70 border-emerald-500/10"
+            ? "opacity-40 hover:opacity-60 border-emerald-500/10 bg-emerald-500/[0.02]"
             : onCooldown
             ? "opacity-60 hover:opacity-75 border-amber-500/10"
             : "hover:bg-white/[0.07]",

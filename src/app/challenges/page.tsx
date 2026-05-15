@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Target, Search } from "lucide-react";
+import { Target, Search, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ChallengeListItem {
@@ -73,6 +73,10 @@ export default function ChallengesPage() {
       return 0;
     });
   }, [searchQuery, challenges]);
+
+  // Split into groups for visual separator
+  const unsolvedChallenges = useMemo(() => sortedChallenges.filter(c => !c.isSolved), [sortedChallenges]);
+  const solvedChallenges = useMemo(() => sortedChallenges.filter(c => c.isSolved), [sortedChallenges]);
 
   useEffect(() => {
     setFilteredChallenges(sortedChallenges);
@@ -203,12 +207,37 @@ export default function ChallengesPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredChallenges.map((challenge, index) => (
+            {/* Unsolved challenges */}
+            {unsolvedChallenges.map((challenge, index) => (
               <motion.div
                 key={challenge.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
+              >
+                <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
+              </motion.div>
+            ))}
+
+            {/* Solved section separator */}
+            {solvedChallenges.length > 0 && unsolvedChallenges.length > 0 && (
+              <div className="flex items-center gap-3 py-4">
+                <div className="flex-1 h-px bg-emerald-500/20" />
+                <div className="flex items-center gap-2 text-emerald-400/60">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="text-xs font-medium">Решённые ({solvedChallenges.length})</span>
+                </div>
+                <div className="flex-1 h-px bg-emerald-500/20" />
+              </div>
+            )}
+
+            {/* Solved challenges */}
+            {solvedChallenges.map((challenge, index) => (
+              <motion.div
+                key={challenge.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: (unsolvedChallenges.length + index) * 0.03 }}
               >
                 <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
               </motion.div>
