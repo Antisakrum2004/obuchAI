@@ -16,6 +16,9 @@ import { HeartsDisplay } from "@/components/gamification/hearts-display";
 import { useUserStore } from "@/store/user-store";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
+import { Target, ArrowRight, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface LeaderboardEntry {
   rank: number;
@@ -149,6 +152,35 @@ export default function DashboardPage() {
             </div>
             <XPBar currentXp={xp} level={level} showLabel={true} />
           </div>
+        </motion.div>
+
+        {/* 🎯 BIG CTA: Go to Challenges */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.05 }}
+        >
+          <Link href="/challenges" className="block">
+            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-purple-500/10 p-5 group hover:border-emerald-500/50 transition-all duration-300">
+              {/* Glow effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Target className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-foreground group-hover:text-emerald-400 transition-colors">
+                    Перейти к задачам
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Решай задачи, зарабатывай опыт, прокачивай навыки
+                  </p>
+                </div>
+                <ArrowRight className="h-5 w-5 text-emerald-400/60 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
+              </div>
+            </div>
+          </Link>
         </motion.div>
 
         {/* Stats Grid */}
