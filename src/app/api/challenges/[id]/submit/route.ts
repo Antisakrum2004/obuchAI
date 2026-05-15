@@ -123,12 +123,13 @@ export async function POST(
     // Time-based XP multiplier: full XP in ≤30s, -10% per additional 30s
     const timeMultiplier = isCorrect ? timeXpMultiplier(timeSpent || 0) : 0;
 
-    // Check if user has hearts (lives)
-    const userForHearts = await query(
-      `SELECT hearts FROM users WHERE id = $1`,
-      [userId]
+    // Check if user has hearts (computed dynamically: 3 - wrong answers in last 30 min)
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const wrongCountResult = await query(
+      `SELECT COUNT(*) as count FROM challenge_attempts WHERE "userId" = $1 AND "isCorrect" = false AND "createdAt" >= $2`,
+      [userId, thirtyMinAgo]
     );
-    const currentHearts = userForHearts.rows[0]?.hearts ?? 3;
+    const currentHearts = Math.max(0, 3 - Number(wrongCountResult.rows[0]?.count || 0));
     const heartsMultiplier = isCorrect ? noHeartsXpMultiplier(currentHearts > 0) : 0;
 
     // Final XP = base * timeMultiplier * heartsMultiplier
