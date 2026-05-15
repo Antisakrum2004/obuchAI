@@ -21,9 +21,32 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // For all HTML responses, add cookie that disables Vercel Toolbar
+  const response = NextResponse.next();
+
+  // Set cookie to disable Vercel Toolbar (respected by Vercel's edge injection)
+  response.cookies.set("vercel-toolbar", "0", {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    httpOnly: false,
+    sameSite: "lax",
+  });
+
+  // Also set the older cookie name
+  response.cookies.set("vercel-toolbar-hide", "1", {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+    httpOnly: false,
+    sameSite: "lax",
+  });
+
+  return response;
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: [
+    "/admin/:path*",
+    // Match all HTML pages to set the toolbar-disable cookie
+    "/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
+  ],
 };

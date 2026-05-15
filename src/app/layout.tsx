@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
-import VercelToolbarHider from "@/components/vercel-toolbar-hider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,10 +29,80 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" className="dark" suppressHydrationWarning>
+      <head>
+        {/* 
+          This script runs BEFORE the page renders and kills the Vercel Toolbar.
+          Must be in <head> with strategy="beforeInteractive" to run before Vercel injection.
+        */}
+        <Script id="kill-vercel-toolbar" strategy="beforeInteractive">
+          {`
+            // Block Vercel Toolbar before it loads
+            window.__VERCEL_TOOLBAR_DISABLED = true;
+            
+            // Intercept and remove Vercel toolbar script/iframe injections
+            if (typeof MutationObserver !== 'undefined') {
+              var vtObserver = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                  mutation.addedNodes.forEach(function(node) {
+                    if (node && node.nodeType === 1) {
+                      var el = node;
+                      var tag = (el.tagName || '').toLowerCase();
+                      var id = el.id || '';
+                      var cls = el.className || '';
+                      var src = el.src || el.getAttribute('src') || '';
+                      
+                      if (
+                        tag.indexOf('vercel') !== -1 ||
+                        id.indexOf('vercel') !== -1 ||
+                        (typeof cls === 'string' && cls.indexOf('vercel') !== -1) ||
+                        src.indexOf('vercel.com/toolbar') !== -1 ||
+                        src.indexOf('vercel.live') !== -1
+                      ) {
+                        el.remove();
+                      }
+                      
+                      // Check shadow DOM hosts
+                      if (el.shadowRoot) {
+                        var sr = el.shadowRoot;
+                        sr.querySelectorAll('*').forEach(function(child) {
+                          child.remove();
+                        });
+                      }
+                      
+                      // Check children too
+                      var children = el.querySelectorAll ? el.querySelectorAll('[id*="vercel"], [class*="vercel"], iframe[src*="vercel"]') : [];
+                      children.forEach(function(child) {
+                        child.remove();
+                      });
+                    }
+                  });
+                });
+              });
+              
+              // Start observing immediately when body is available
+              function startObserving() {
+                if (document.body) {
+                  vtObserver.observe(document.body, { childList: true, subtree: true });
+                } else {
+                  setTimeout(startObserving, 10);
+                }
+              }
+              startObserving();
+            }
+            
+            // Also periodically clean up
+            function cleanupToolbar() {
+              document.querySelectorAll('iframe[src*="vercel"], [id*="vercel-toolbar"], [class*="vercel-toolbar"], [data-testid="vercel-toolbar"]').forEach(function(el) {
+                el.remove();
+              });
+            }
+            setInterval(cleanupToolbar, 500);
+          `}
+        </Script>
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <VercelToolbarHider />
         {children}
         <Toaster
           position="top-right"
