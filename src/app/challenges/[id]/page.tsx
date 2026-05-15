@@ -87,25 +87,29 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// Smooth 3D transition variants
+// ★ Smooth page-turn animation variants
+// Current task tilts and slides LEFT, new task comes from RIGHT — like a book page turn
 const pageVariants = {
   enter: (direction: number) => ({
-    x: direction > 0 ? "100%" : "-100%",
-    opacity: 0.3,
-    rotateY: direction > 0 ? 8 : -8,
-    scale: 0.92,
+    x: direction > 0 ? "80%" : "-80%",
+    opacity: 0,
+    rotateY: direction > 0 ? 12 : -12,
+    scale: 0.88,
+    skewY: direction > 0 ? 2 : -2,
   }),
   center: {
     x: 0,
     opacity: 1,
     rotateY: 0,
     scale: 1,
+    skewY: 0,
   },
   exit: (direction: number) => ({
-    x: direction > 0 ? "-50%" : "50%",
+    x: direction > 0 ? "-60%" : "60%",
     opacity: 0,
-    rotateY: direction > 0 ? -8 : 8,
-    scale: 0.92,
+    rotateY: direction > 0 ? -12 : 12,
+    scale: 0.88,
+    skewY: direction > 0 ? -2 : 2,
   }),
 };
 
@@ -151,11 +155,17 @@ export default function ChallengePage() {
   const [direction, setDirection] = useState(0);
   const [animKey, setAnimKey] = useState(0);
   const startTimeRef = useRef(Date.now());
-  const isTransitioningRef = useRef(false);
 
-  // ★ Preloaded next challenge buffer
+  // ★ Transition guard — prevents fetchChallenge from re-running during animated transitions
+  const isTransitioningRef = useRef(false);
+  // Track the currently displayed challenge ID (may differ from URL during transition)
+  const displayedIdRef = useRef<string>(challengeId);
+
+  // ★ Preloaded challenge buffer — Map<id, data>
   const preloadedRef = useRef<Map<string, ChallengeData>>(new Map());
-  const [preloadedNext, setPreloadedNext] = useState<ChallengeData | null>(null);
+
+  // Track initial load (to show shimmer only on first load, not on transitions)
+  const initialLoadDoneRef = useRef(false);
 
   // Timer: track elapsed time
   useEffect(() => {
@@ -166,15 +176,20 @@ export default function ChallengePage() {
     return () => clearInterval(interval);
   }, [challenge, result, onCooldown]);
 
-  // Fetch challenge data
+  // ★ Fetch challenge data — only on initial page load, NOT during transitions
   useEffect(() => {
+    // Skip fetch if we're in the middle of a client-side transition
+    if (isTransitioningRef.current) {
+      isTransitioningRef.current = false;
+      return;
+    }
+
     async function fetchChallenge() {
       try {
-        setIsLoading(true);
-
-        // Check preload buffer first
+        // Check preload buffer first (for browser back/forward navigation)
         const cached = preloadedRef.current.get(challengeId);
         if (cached) {
+          displayedIdRef.current = challengeId;
           setChallenge(cached);
           if (cached.type === "prompt_fix") {
             try {
@@ -185,13 +200,19 @@ export default function ChallengePage() {
             }
           }
           setIsLoading(false);
+          initialLoadDoneRef.current = true;
           return;
         }
 
+        setIsLoading(true);
         const res = await fetch(`/api/challenges/${challengeId}`);
         if (res.ok) {
           const data = await res.json();
+          displayedIdRef.current = challengeId;
           setChallenge(data);
+
+          // Also cache it in preload buffer
+          preloadedRef.current.set(challengeId, data);
 
           const sessionRes = await fetch("/api/auth/session");
           if (sessionRes.ok) {
@@ -215,6 +236,7 @@ export default function ChallengePage() {
         setError("Ошибка загрузки");
       } finally {
         setIsLoading(false);
+        initialLoadDoneRef.current = true;
       }
     }
     fetchChallenge();
@@ -235,22 +257,24 @@ export default function ChallengePage() {
     if (!challenge || challengeList.length === 0) return;
 
     const sorted = [...challengeList].sort((a, b) => {
-      if (a.isSolved && !b.isSolved) return 1;
-      if (!a.isSolved && b.isSolved) return -1;
+      const aSolved = a.isSolved === true;
+      const bSolved = b.isSolved === true;
+      if (aSolved && !bSolved) return 1;
+      if (!aSolved && bSolved) return -1;
       return (a.order ?? 0) - (b.order ?? 0);
     });
 
     const currentIdx = sorted.findIndex((c) => c.id === challenge.id);
     let nextId: string | null = null;
     for (let i = currentIdx + 1; i < sorted.length; i++) {
-      if (!sorted[i].isSolved) {
+      if (sorted[i].isSolved !== true) {
         nextId = sorted[i].id;
         break;
       }
     }
     if (!nextId) {
       for (let i = 0; i < currentIdx; i++) {
-        if (!sorted[i].isSolved) {
+        if (sorted[i].isSolved !== true) {
           nextId = sorted[i].id;
           break;
         }
@@ -258,18 +282,29 @@ export default function ChallengePage() {
     }
     setNextChallengeId(nextId);
 
-    // ★ Preload the next challenge into buffer
-    if (nextId && !preloadedRef.current.has(nextId)) {
-      fetch(`/api/challenges/${nextId}`)
-        .then((r) => r.json())
-        .then((data) => {
-          preloadedRef.current.set(nextId, data);
-          setPreloadedNext(data);
-        })
-        .catch(() => {});
-    } else if (nextId) {
-      setPreloadedNext(preloadedRef.current.get(nextId) || null);
+    // ★ Preload the next challenge AND the one after into buffer
+    const idsToPreload = [nextId];
+    // Also find the one after next
+    if (nextId) {
+      const nextIdx = sorted.findIndex(c => c.id === nextId);
+      for (let i = nextIdx + 1; i < sorted.length; i++) {
+        if (sorted[i].isSolved !== true) {
+          idsToPreload.push(sorted[i].id);
+          break;
+        }
+      }
     }
+
+    idsToPreload.forEach(id => {
+      if (id && !preloadedRef.current.has(id)) {
+        fetch(`/api/challenges/${id}`)
+          .then((r) => r.json())
+          .then((data) => {
+            preloadedRef.current.set(id, data);
+          })
+          .catch(() => {});
+      }
+    });
   }, [challenge, challengeList]);
 
   // Fetch hearts
@@ -409,106 +444,117 @@ export default function ChallengePage() {
     }
   };
 
-  // ★ Navigate to next challenge — INSTANT with preloaded data
+  // ★ Navigate to next challenge — SEAMLESS with preloaded data
+  // The key insight: we do NOT show any loading state.
+  // We apply preloaded data instantly, update URL, and animate.
   const handleNext = useCallback(async () => {
-    if (isTransitioningRef.current) return;
+    if (!nextChallengeId || isTransitioningRef.current) return;
 
-    if (nextChallengeId) {
-      isTransitioningRef.current = true;
-      setDirection(1);
-      setAnimKey((k) => k + 1);
+    isTransitioningRef.current = true;
 
-      // If we have preloaded data, apply it instantly after a tiny delay for animation
-      const preloaded = preloadedRef.current.get(nextChallengeId);
+    // 1. Trigger exit animation for current card
+    setDirection(1);
+    setAnimKey((k) => k + 1);
 
-      // Wait for exit animation
-      await new Promise((r) => setTimeout(r, 250));
+    // 2. Wait for the exit animation to play
+    await new Promise((r) => setTimeout(r, 280));
 
-      // Update URL
-      router.push(`/challenges/${nextChallengeId}`);
+    // 3. Get preloaded data
+    const preloaded = preloadedRef.current.get(nextChallengeId);
 
-      // Reset states
+    if (preloaded) {
+      // ★ INSTANT — apply preloaded data, NO loading shimmer ever
+      displayedIdRef.current = nextChallengeId;
       resetForNewChallenge();
+      setChallenge(preloaded);
+      setError(null);
 
-      if (preloaded) {
-        // ★ INSTANT transition — data already loaded
-        setChallenge(preloaded);
-        if (preloaded.type === "prompt_fix") {
-          try {
-            const content = JSON.parse(preloaded.content);
-            setPromptFixAnswer(content.originalPrompt || "");
-          } catch {
-            setPromptFixAnswer("");
-          }
-        }
-        setIsLoading(false);
-
-        // Background: refresh challenge list & hearts
-        fetch("/api/user/activity")
-          .then((r) => r.json())
-          .then((d) => {
-            if (typeof d.hearts === "number") setHearts(d.hearts);
-            if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
-          })
-          .catch(() => {});
-
-        fetch("/api/challenges")
-          .then((r) => r.json())
-          .then((listData) => {
-            setChallengeList(listData);
-          })
-          .catch(() => {});
-
-        isTransitioningRef.current = false;
-      } else {
-        // Fallback: fetch normally (slower)
-        setChallenge(null);
-        setIsLoading(true);
-
+      if (preloaded.type === "prompt_fix") {
         try {
-          const res = await fetch(`/api/challenges/${nextChallengeId}`);
-          if (res.ok) {
-            const data = await res.json();
-            setChallenge(data);
-
-            if (data.type === "prompt_fix") {
-              try {
-                const content = JSON.parse(data.content);
-                setPromptFixAnswer(content.originalPrompt || "");
-              } catch {
-                setPromptFixAnswer("");
-              }
-            }
-
-            fetch("/api/user/activity")
-              .then((r) => r.json())
-              .then((d) => {
-                if (typeof d.hearts === "number") setHearts(d.hearts);
-                if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
-              })
-              .catch(() => {});
-
-            const listRes = await fetch("/api/challenges");
-            if (listRes.ok) {
-              const listData = await listRes.json();
-              setChallengeList(listData);
-            }
-          }
+          const content = JSON.parse(preloaded.content);
+          setPromptFixAnswer(content.originalPrompt || "");
         } catch {
-          setError("Ошибка загрузки");
-        } finally {
-          setIsLoading(false);
-          isTransitioningRef.current = false;
+          setPromptFixAnswer("");
         }
       }
+
+      // Update URL without triggering a re-fetch (isTransitioningRef guards the useEffect)
+      router.replace(`/challenges/${nextChallengeId}`);
+
+      // Background: refresh challenge list & hearts (non-blocking)
+      fetch("/api/user/activity")
+        .then((r) => r.json())
+        .then((d) => {
+          if (typeof d.hearts === "number") setHearts(d.hearts);
+          if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+        })
+        .catch(() => {});
+
+      fetch("/api/challenges")
+        .then((r) => r.json())
+        .then((listData) => {
+          setChallengeList(listData);
+        })
+        .catch(() => {});
+
+      // Allow future navigations after a short delay
+      setTimeout(() => {
+        isTransitioningRef.current = false;
+      }, 100);
     } else {
-      router.push("/challenges");
+      // Fallback: no preloaded data — fetch with minimal flash
+      displayedIdRef.current = nextChallengeId;
+      resetForNewChallenge();
+      setError(null);
+      // Don't show shimmer — keep showing the last card position, just dimmed
+
+      try {
+        const res = await fetch(`/api/challenges/${nextChallengeId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setChallenge(data);
+          preloadedRef.current.set(nextChallengeId, data);
+
+          if (data.type === "prompt_fix") {
+            try {
+              const content = JSON.parse(data.content);
+              setPromptFixAnswer(content.originalPrompt || "");
+            } catch {
+              setPromptFixAnswer("");
+            }
+          }
+        }
+      } catch {
+        setError("Ошибка загрузки");
+      }
+
+      router.replace(`/challenges/${nextChallengeId}`);
+
+      fetch("/api/user/activity")
+        .then((r) => r.json())
+        .then((d) => {
+          if (typeof d.hearts === "number") setHearts(d.hearts);
+          if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+        })
+        .catch(() => {});
+
+      fetch("/api/challenges")
+        .then((r) => r.json())
+        .then((listData) => {
+          setChallengeList(listData);
+        })
+        .catch(() => {});
+
+      setTimeout(() => {
+        isTransitioningRef.current = false;
+      }, 100);
     }
   }, [nextChallengeId, router, resetForNewChallenge]);
 
   // === CONDITIONAL RETURNS ===
 
-  if (isLoading) {
+  // Only show shimmer on the very first load (not during transitions)
+  if (isLoading && !initialLoadDoneRef.current) {
     return (
       <AppLayout>
         <div className="mx-auto max-w-3xl">
@@ -518,7 +564,7 @@ export default function ChallengePage() {
     );
   }
 
-  if (error || !challenge) {
+  if (error && !challenge) {
     return (
       <AppLayout>
         <div className="mx-auto max-w-3xl text-center py-20">
@@ -529,6 +575,16 @@ export default function ChallengePage() {
               К списку задач
             </Button>
           </Link>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!challenge) {
+    return (
+      <AppLayout>
+        <div className="mx-auto max-w-3xl">
+          <div className="glass rounded-2xl p-8 shimmer h-96" />
         </div>
       </AppLayout>
     );
@@ -595,10 +651,11 @@ export default function ChallengePage() {
             animate="center"
             exit="exit"
             transition={{
-              x: { type: "spring", stiffness: 200, damping: 28 },
-              opacity: { duration: 0.25 },
-              rotateY: { duration: 0.35 },
-              scale: { duration: 0.25 },
+              x: { type: "spring", stiffness: 180, damping: 26 },
+              opacity: { duration: 0.22 },
+              rotateY: { duration: 0.3 },
+              scale: { duration: 0.22 },
+              skewY: { duration: 0.3 },
             }}
             style={{ transformOrigin: "center center" }}
           >

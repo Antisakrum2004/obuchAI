@@ -74,13 +74,14 @@ export function OrderingChallenge({
               disabled={disabled}
               onClick={() => handleTap(itemIndex)}
               className={cn(
-                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-colors duration-150",
+                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-colors duration-200",
                 disabled && "cursor-default",
-                !disabled && "cursor-pointer active:scale-[0.98]",
+                !disabled && "cursor-pointer",
                 isAssigned
                   ? "border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12]"
                   : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
               )}
+              style={{ touchAction: 'manipulation' }}
             >
               {/* Circle with number or empty — fixed width to prevent layout shift */}
               <div

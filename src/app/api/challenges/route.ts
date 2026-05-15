@@ -75,7 +75,14 @@ export async function GET(request: Request) {
         }
       }
 
-      return { ...ch, isSolved, cooldownUntil };
+      return { ...ch, isSolved: Boolean(isSolved), cooldownUntil: cooldownUntil || null };
+    });
+
+    // ★ Sort: unsolved first, solved at the bottom
+    challengesWithStatus.sort((a: { isSolved: boolean; order?: number }, b: { isSolved: boolean; order?: number }) => {
+      if (a.isSolved && !b.isSolved) return 1;
+      if (!a.isSolved && b.isSolved) return -1;
+      return 0;
     });
 
     return NextResponse.json(challengesWithStatus);

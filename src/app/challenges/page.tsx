@@ -79,9 +79,11 @@ export default function ChallengesPage() {
       : challenges;
 
     return [...source].sort((a, b) => {
-      // Solved challenges go to the bottom
-      if (a.isSolved && !b.isSolved) return 1;
-      if (!a.isSolved && b.isSolved) return -1;
+      // Solved challenges go to the bottom — strict boolean check
+      const aSolved = a.isSolved === true;
+      const bSolved = b.isSolved === true;
+      if (aSolved && !bSolved) return 1;
+      if (!aSolved && bSolved) return -1;
       // Within same solved status, keep original order
       return 0;
     });
