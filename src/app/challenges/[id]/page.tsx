@@ -87,29 +87,20 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// ★ Smooth page-turn animation variants
-// Current task tilts and slides LEFT, new task comes from RIGHT — like a book page turn
-const pageVariants = {
+// ★ Simple, fast content transition: opacity + slight slide
+// No 3D, no springs, no scale — just easeOut as article recommends
+const contentVariants = {
   enter: (direction: number) => ({
-    x: direction > 0 ? "80%" : "-80%",
     opacity: 0,
-    rotateY: direction > 0 ? 12 : -12,
-    scale: 0.88,
-    skewY: direction > 0 ? 2 : -2,
+    x: direction > 0 ? "6%" : "-6%",
   }),
   center: {
-    x: 0,
     opacity: 1,
-    rotateY: 0,
-    scale: 1,
-    skewY: 0,
+    x: 0,
   },
   exit: (direction: number) => ({
-    x: direction > 0 ? "-60%" : "60%",
     opacity: 0,
-    rotateY: direction > 0 ? -12 : 12,
-    scale: 0.88,
-    skewY: direction > 0 ? -2 : 2,
+    x: direction > 0 ? "-4%" : "4%",
   }),
 };
 
@@ -156,15 +147,13 @@ export default function ChallengePage() {
   const [animKey, setAnimKey] = useState(0);
   const startTimeRef = useRef(Date.now());
 
-  // ★ Transition guard — prevents fetchChallenge from re-running during animated transitions
+  // ★ Transition guard — prevents fetchChallenge from re-running during client-side transitions
   const isTransitioningRef = useRef(false);
-  // Track the currently displayed challenge ID (may differ from URL during transition)
-  const displayedIdRef = useRef<string>(challengeId);
 
-  // ★ Preloaded challenge buffer — Map<id, data>
+  // ★ Preloaded challenge buffer
   const preloadedRef = useRef<Map<string, ChallengeData>>(new Map());
 
-  // Track initial load (to show shimmer only on first load, not on transitions)
+  // ★ Only show shimmer on the VERY first page load ever
   const initialLoadDoneRef = useRef(false);
 
   // Timer: track elapsed time
@@ -176,9 +165,9 @@ export default function ChallengePage() {
     return () => clearInterval(interval);
   }, [challenge, result, onCooldown]);
 
-  // ★ Fetch challenge data — only on initial page load, NOT during transitions
+  // ★ Fetch challenge data — only on initial page load or browser navigation
   useEffect(() => {
-    // Skip fetch if we're in the middle of a client-side transition
+    // Skip if we're in the middle of a client-side transition
     if (isTransitioningRef.current) {
       isTransitioningRef.current = false;
       return;
@@ -186,10 +175,9 @@ export default function ChallengePage() {
 
     async function fetchChallenge() {
       try {
-        // Check preload buffer first (for browser back/forward navigation)
+        // Check preload buffer first
         const cached = preloadedRef.current.get(challengeId);
         if (cached) {
-          displayedIdRef.current = challengeId;
           setChallenge(cached);
           if (cached.type === "prompt_fix") {
             try {
@@ -208,10 +196,7 @@ export default function ChallengePage() {
         const res = await fetch(`/api/challenges/${challengeId}`);
         if (res.ok) {
           const data = await res.json();
-          displayedIdRef.current = challengeId;
           setChallenge(data);
-
-          // Also cache it in preload buffer
           preloadedRef.current.set(challengeId, data);
 
           const sessionRes = await fetch("/api/auth/session");
@@ -252,7 +237,7 @@ export default function ChallengePage() {
       .catch(() => {});
   }, []);
 
-  // Calculate next unsolved challenge & preload it
+  // Calculate next unsolved challenge & preload next 2 into buffer
   useEffect(() => {
     if (!challenge || challengeList.length === 0) return;
 
@@ -282,9 +267,8 @@ export default function ChallengePage() {
     }
     setNextChallengeId(nextId);
 
-    // ★ Preload the next challenge AND the one after into buffer
-    const idsToPreload = [nextId];
-    // Also find the one after next
+    // ★ Preload next challenge AND the one after it
+    const idsToPreload: string[] = [nextId].filter(Boolean) as string[];
     if (nextId) {
       const nextIdx = sorted.findIndex(c => c.id === nextId);
       for (let i = nextIdx + 1; i < sorted.length; i++) {
@@ -296,7 +280,7 @@ export default function ChallengePage() {
     }
 
     idsToPreload.forEach(id => {
-      if (id && !preloadedRef.current.has(id)) {
+      if (!preloadedRef.current.has(id)) {
         fetch(`/api/challenges/${id}`)
           .then((r) => r.json())
           .then((data) => {
@@ -444,27 +428,21 @@ export default function ChallengePage() {
     }
   };
 
-  // ★ Navigate to next challenge — SEAMLESS with preloaded data
-  // The key insight: we do NOT show any loading state.
-  // We apply preloaded data instantly, update URL, and animate.
-  const handleNext = useCallback(async () => {
+  // ★ Navigate to next challenge — INSTANT, no delay, no shimmer
+  // Principle: start animation immediately on tap, apply preloaded data in same tick
+  const handleNext = useCallback(() => {
     if (!nextChallengeId || isTransitioningRef.current) return;
 
+    // Mark that we're transitioning (guards the useEffect from re-fetching)
     isTransitioningRef.current = true;
 
-    // 1. Trigger exit animation for current card
+    // 1. INSTANT: trigger animation + apply data in the same render cycle
     setDirection(1);
     setAnimKey((k) => k + 1);
 
-    // 2. Wait for the exit animation to play
-    await new Promise((r) => setTimeout(r, 280));
-
-    // 3. Get preloaded data
+    // 2. Apply preloaded data immediately — no shimmer, no waiting
     const preloaded = preloadedRef.current.get(nextChallengeId);
-
     if (preloaded) {
-      // ★ INSTANT — apply preloaded data, NO loading shimmer ever
-      displayedIdRef.current = nextChallengeId;
       resetForNewChallenge();
       setChallenge(preloaded);
       setError(null);
@@ -477,41 +455,13 @@ export default function ChallengePage() {
           setPromptFixAnswer("");
         }
       }
-
-      // Update URL without triggering a re-fetch (isTransitioningRef guards the useEffect)
-      router.replace(`/challenges/${nextChallengeId}`);
-
-      // Background: refresh challenge list & hearts (non-blocking)
-      fetch("/api/user/activity")
-        .then((r) => r.json())
-        .then((d) => {
-          if (typeof d.hearts === "number") setHearts(d.hearts);
-          if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
-        })
-        .catch(() => {});
-
-      fetch("/api/challenges")
-        .then((r) => r.json())
-        .then((listData) => {
-          setChallengeList(listData);
-        })
-        .catch(() => {});
-
-      // Allow future navigations after a short delay
-      setTimeout(() => {
-        isTransitioningRef.current = false;
-      }, 100);
     } else {
-      // Fallback: no preloaded data — fetch with minimal flash
-      displayedIdRef.current = nextChallengeId;
+      // No preloaded data — keep current challenge visible, fetch in background
       resetForNewChallenge();
-      setError(null);
-      // Don't show shimmer — keep showing the last card position, just dimmed
-
-      try {
-        const res = await fetch(`/api/challenges/${nextChallengeId}`);
-        if (res.ok) {
-          const data = await res.json();
+      // Don't null out challenge! Keep showing current content while fetching
+      fetch(`/api/challenges/${nextChallengeId}`)
+        .then((r) => r.json())
+        .then((data) => {
           setChallenge(data);
           preloadedRef.current.set(nextChallengeId, data);
 
@@ -523,37 +473,40 @@ export default function ChallengePage() {
               setPromptFixAnswer("");
             }
           }
-        }
-      } catch {
-        setError("Ошибка загрузки");
-      }
-
-      router.replace(`/challenges/${nextChallengeId}`);
-
-      fetch("/api/user/activity")
-        .then((r) => r.json())
-        .then((d) => {
-          if (typeof d.hearts === "number") setHearts(d.hearts);
-          if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
         })
-        .catch(() => {});
-
-      fetch("/api/challenges")
-        .then((r) => r.json())
-        .then((listData) => {
-          setChallengeList(listData);
-        })
-        .catch(() => {});
-
-      setTimeout(() => {
-        isTransitioningRef.current = false;
-      }, 100);
+        .catch(() => {
+          setError("Ошибка загрузки");
+        });
     }
+
+    // 3. Update URL without re-fetch (isTransitioningRef guard)
+    router.replace(`/challenges/${nextChallengeId}`);
+
+    // 4. Background refresh hearts & challenge list (non-blocking)
+    fetch("/api/user/activity")
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.hearts === "number") setHearts(d.hearts);
+        if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+      })
+      .catch(() => {});
+
+    fetch("/api/challenges")
+      .then((r) => r.json())
+      .then((listData) => {
+        setChallengeList(listData);
+      })
+      .catch(() => {});
+
+    // Allow future navigations after animation completes
+    setTimeout(() => {
+      isTransitioningRef.current = false;
+    }, 300);
   }, [nextChallengeId, router, resetForNewChallenge]);
 
   // === CONDITIONAL RETURNS ===
 
-  // Only show shimmer on the very first load (not during transitions)
+  // Only show shimmer on the very first page load (never during transitions)
   if (isLoading && !initialLoadDoneRef.current) {
     return (
       <AppLayout>
@@ -626,7 +579,7 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-3xl relative overflow-hidden" style={{ perspective: "1200px" }}>
+      <div className="mx-auto max-w-3xl relative overflow-hidden">
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -642,85 +595,85 @@ export default function ChallengePage() {
           Все задачи
         </Link>
 
+        {/* ═══ LAYER 1: STABLE HEADER — does NOT animate between tasks ═══ */}
+        {/* This prevents layout shifts and flashing */}
+        <div className="glass rounded-2xl p-6 mb-4">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <span className="text-lg">{categoryEmoji(challenge.category)}</span>
+            <Badge variant="outline" className={difficultyBadgeClass(challenge.difficulty)}>
+              {difficultyLabel(challenge.difficulty)}
+            </Badge>
+            <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
+              {categoryLabel(challenge.category)}
+            </Badge>
+            <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
+              {typeLabel(challenge.type)}
+            </Badge>
+            {isSolved && (
+              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Решено
+              </Badge>
+            )}
+          </div>
+
+          <h1 className={cn("text-2xl font-bold mb-2", isSolved && "text-muted-foreground")}>
+            {challenge.title}
+          </h1>
+          <p className="text-muted-foreground">{challenge.description}</p>
+
+          <Separator className="bg-white/5 my-4" />
+
+          <div className="flex items-center justify-between">
+            <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
+              <Zap className="h-4 w-4" />
+              <span className="text-sm font-semibold">
+                +{Math.round(challenge.xpReward * currentTimeMultiplier * (noHearts ? 0.5 : 1))} XP
+              </span>
+              {currentTimeMultiplier < 1.0 && !result && !isSolved && (
+                <span className="text-xs text-amber-400 ml-1">
+                  ⏱ {Math.round(currentTimeMultiplier * 100)}%
+                </span>
+              )}
+              {isQuick && !result && (
+                <span className="text-xs text-amber-400 ml-1">⚡ Макс. XP!</span>
+              )}
+              {noHearts && !result && !isSolved && (
+                <span className="text-xs text-red-400 ml-1">💔 -50% XP</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {!result && !isSolved && !onCooldown && (
+                <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
+                  <Timer className="h-4 w-4" />
+                  <span className={cn("font-mono", isQuick && "text-amber-400", timeSpent > 30 && timeSpent <= 60 && "text-amber-400/70", timeSpent > 60 && "text-red-400/70")}>
+                    {formatTimeSpent(timeSpent)}
+                  </span>
+                </div>
+              )}
+              {!isSolved && !onCooldown && (
+                <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ LAYER 2: ANIMATED CONTENT — smooth fade+slide between tasks ═══ */}
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={animKey || challenge.id}
             custom={direction}
-            variants={pageVariants}
+            variants={contentVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={{
-              x: { type: "spring", stiffness: 180, damping: 26 },
-              opacity: { duration: 0.22 },
-              rotateY: { duration: 0.3 },
-              scale: { duration: 0.22 },
-              skewY: { duration: 0.3 },
+              // ★ easeOut as article recommends — NOT spring for page transitions
+              // Simple, predictable, fast
+              duration: 0.2,
+              ease: [0.25, 0.1, 0.25, 1], // easeOut cubic
             }}
-            style={{ transformOrigin: "center center" }}
           >
-            {/* Challenge Header */}
-            <div className="glass rounded-2xl p-6 mb-6">
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="text-lg">{categoryEmoji(challenge.category)}</span>
-                <Badge variant="outline" className={difficultyBadgeClass(challenge.difficulty)}>
-                  {difficultyLabel(challenge.difficulty)}
-                </Badge>
-                <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
-                  {categoryLabel(challenge.category)}
-                </Badge>
-                <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
-                  {typeLabel(challenge.type)}
-                </Badge>
-                {isSolved && (
-                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                    <CheckCircle2 className="mr-1 h-3 w-3" />
-                    Решено
-                  </Badge>
-                )}
-              </div>
-
-              <h1 className={cn("text-2xl font-bold mb-2", isSolved && "text-muted-foreground")}>
-                {challenge.title}
-              </h1>
-              <p className="text-muted-foreground">{challenge.description}</p>
-
-              <Separator className="bg-white/5 my-4" />
-
-              <div className="flex items-center justify-between">
-                <div className={cn("flex items-center gap-1.5", isSolved ? "text-muted-foreground/50" : "text-emerald-400")}>
-                  <Zap className="h-4 w-4" />
-                  <span className="text-sm font-semibold">
-                    +{Math.round(challenge.xpReward * currentTimeMultiplier * (noHearts ? 0.5 : 1))} XP
-                  </span>
-                  {currentTimeMultiplier < 1.0 && !result && !isSolved && (
-                    <span className="text-xs text-amber-400 ml-1">
-                      ⏱ {Math.round(currentTimeMultiplier * 100)}%
-                    </span>
-                  )}
-                  {isQuick && !result && (
-                    <span className="text-xs text-amber-400 ml-1">⚡ Макс. XP!</span>
-                  )}
-                  {noHearts && !result && !isSolved && (
-                    <span className="text-xs text-red-400 ml-1">💔 -50% XP</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  {!result && !isSolved && !onCooldown && (
-                    <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
-                      <Timer className="h-4 w-4" />
-                      <span className={cn("font-mono", isQuick && "text-amber-400", timeSpent > 30 && timeSpent <= 60 && "text-amber-400/70", timeSpent > 60 && "text-red-400/70")}>
-                        {formatTimeSpent(timeSpent)}
-                      </span>
-                    </div>
-                  )}
-                  {!isSolved && !onCooldown && (
-                    <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
-                  )}
-                </div>
-              </div>
-            </div>
-
             {/* SOLVED OVERLAY */}
             {isSolved && !result && (
               <div className="glass rounded-2xl p-8 mb-6 text-center">
