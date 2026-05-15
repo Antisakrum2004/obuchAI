@@ -19,6 +19,7 @@ import { Zap, ArrowLeft, Send, CheckCircle2, Timer, Trophy, ArrowRight } from "l
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getCachedChallenge, setCachedChallenge } from "@/lib/challenge-cache";
 
 interface ChallengeData {
   id: string;
@@ -87,12 +88,13 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// ★ Simple, fast content transition: opacity + slight slide
-// No 3D, no springs, no scale — just easeOut as article recommends
+// ★★★ SIMPLE animation: opacity + slight slide ONLY ★★★
+// Per Habr article: no 3D, no scale, no rotate, no spring
+// easeOut is predictable and fast
 const contentVariants = {
   enter: (direction: number) => ({
     opacity: 0,
-    x: direction > 0 ? "6%" : "-6%",
+    x: direction > 0 ? "8%" : "-8%",
   }),
   center: {
     opacity: 1,
@@ -100,8 +102,14 @@ const contentVariants = {
   },
   exit: (direction: number) => ({
     opacity: 0,
-    x: direction > 0 ? "-4%" : "4%",
+    x: direction > 0 ? "-6%" : "6%",
   }),
+};
+
+// ★ Transition config: easeOut, 0.25s — as the article recommends
+const transitionConfig = {
+  duration: 0.25,
+  ease: [0.25, 0.1, 0.25, 1], // easeOut cubic
 };
 
 export default function ChallengePage() {
@@ -110,7 +118,6 @@ export default function ChallengePage() {
   const challengeId = params.id as string;
 
   const [challenge, setChallenge] = useState<ChallengeData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
 
@@ -143,18 +150,15 @@ export default function ChallengePage() {
   // Navigation & preloading
   const [challengeList, setChallengeList] = useState<ChallengeListItem[]>([]);
   const [nextChallengeId, setNextChallengeId] = useState<string | null>(null);
-  const [direction, setDirection] = useState(0);
+  const [direction, setDirection] = useState(1);
   const [animKey, setAnimKey] = useState(0);
   const startTimeRef = useRef(Date.now());
 
-  // ★ Transition guard — prevents fetchChallenge from re-running during client-side transitions
+  // ★ Transition guard — prevents useEffect from re-running during client-side transitions
   const isTransitioningRef = useRef(false);
 
-  // ★ Preloaded challenge buffer
-  const preloadedRef = useRef<Map<string, ChallengeData>>(new Map());
-
-  // ★ Only show shimmer on the VERY first page load ever
-  const initialLoadDoneRef = useRef(false);
+  // ★ Track first meaningful render (after we have data)
+  const hasDataRef = useRef(false);
 
   // Timer: track elapsed time
   useEffect(() => {
@@ -165,7 +169,9 @@ export default function ChallengePage() {
     return () => clearInterval(interval);
   }, [challenge, result, onCooldown]);
 
-  // ★ Fetch challenge data — only on initial page load or browser navigation
+  // ★★★ CORE: Load challenge data — CACHE FIRST, then API ★★★
+  // On initial page load: check global cache (populated by hover-prefetch)
+  // On client transitions: isTransitioningRef guard prevents re-fetch
   useEffect(() => {
     // Skip if we're in the middle of a client-side transition
     if (isTransitioningRef.current) {
@@ -173,59 +179,58 @@ export default function ChallengePage() {
       return;
     }
 
-    async function fetchChallenge() {
+    // ★ STEP 1: Check global cache (instant — no shimmer!)
+    const cached = getCachedChallenge(challengeId);
+    if (cached) {
+      applyChallengeData(cached);
+      return;
+    }
+
+    // ★ STEP 2: No cache — fetch from API (show structured skeleton, NOT shimmer)
+    fetchChallengeFromAPI(challengeId);
+  }, [challengeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Apply challenge data to state */
+  function applyChallengeData(data: ChallengeData) {
+    setChallenge(data);
+    hasDataRef.current = true;
+
+    if (data.type === "prompt_fix") {
       try {
-        // Check preload buffer first
-        const cached = preloadedRef.current.get(challengeId);
-        if (cached) {
-          setChallenge(cached);
-          if (cached.type === "prompt_fix") {
-            try {
-              const content = JSON.parse(cached.content);
-              setPromptFixAnswer(content.originalPrompt || "");
-            } catch {
-              setPromptFixAnswer("");
-            }
-          }
-          setIsLoading(false);
-          initialLoadDoneRef.current = true;
-          return;
-        }
-
-        setIsLoading(true);
-        const res = await fetch(`/api/challenges/${challengeId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setChallenge(data);
-          preloadedRef.current.set(challengeId, data);
-
-          const sessionRes = await fetch("/api/auth/session");
-          if (sessionRes.ok) {
-            const session = await sessionRes.json();
-            const uid = (session?.user as Record<string, unknown>)?.id as string;
-            if (uid) setUserId(uid);
-          }
-
-          if (data.type === "prompt_fix") {
-            try {
-              const content = JSON.parse(data.content);
-              setPromptFixAnswer(content.originalPrompt || "");
-            } catch {
-              setPromptFixAnswer("");
-            }
-          }
-        } else {
-          setError("Задача не найдена");
-        }
+        const content = JSON.parse(data.content);
+        setPromptFixAnswer(content.originalPrompt || "");
       } catch {
-        setError("Ошибка загрузки");
-      } finally {
-        setIsLoading(false);
-        initialLoadDoneRef.current = true;
+        setPromptFixAnswer("");
       }
     }
-    fetchChallenge();
-  }, [challengeId]);
+
+    // Fetch user session in background
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((session) => {
+        const uid = (session?.user as Record<string, unknown>)?.id as string;
+        if (uid) setUserId(uid);
+      })
+      .catch(() => {});
+  }
+
+  /** Fetch challenge from API when cache misses */
+  async function fetchChallengeFromAPI(id: string) {
+    try {
+      const res = await fetch(`/api/challenges/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCachedChallenge(id, data); // store in global cache for next time
+        applyChallengeData(data);
+      } else {
+        setError("Задача не найдена");
+        hasDataRef.current = true;
+      }
+    } catch {
+      setError("Ошибка загрузки");
+      hasDataRef.current = true;
+    }
+  }
 
   // Fetch challenge list for "next" navigation
   useEffect(() => {
@@ -237,7 +242,7 @@ export default function ChallengePage() {
       .catch(() => {});
   }, []);
 
-  // Calculate next unsolved challenge & preload next 2 into buffer
+  // Calculate next unsolved challenge & preload next 2 into global cache
   useEffect(() => {
     if (!challenge || challengeList.length === 0) return;
 
@@ -267,10 +272,10 @@ export default function ChallengePage() {
     }
     setNextChallengeId(nextId);
 
-    // ★ Preload next challenge AND the one after it
+    // ★ Preload next 2 challenges into GLOBAL cache
     const idsToPreload: string[] = [nextId].filter(Boolean) as string[];
     if (nextId) {
-      const nextIdx = sorted.findIndex(c => c.id === nextId);
+      const nextIdx = sorted.findIndex((c) => c.id === nextId);
       for (let i = nextIdx + 1; i < sorted.length; i++) {
         if (sorted[i].isSolved !== true) {
           idsToPreload.push(sorted[i].id);
@@ -279,12 +284,13 @@ export default function ChallengePage() {
       }
     }
 
-    idsToPreload.forEach(id => {
-      if (!preloadedRef.current.has(id)) {
+    idsToPreload.forEach((id) => {
+      // Only prefetch if not already in cache
+      if (!getCachedChallenge(id)) {
         fetch(`/api/challenges/${id}`)
           .then((r) => r.json())
           .then((data) => {
-            preloadedRef.current.set(id, data);
+            setCachedChallenge(id, data);
           })
           .catch(() => {});
       }
@@ -428,42 +434,44 @@ export default function ChallengePage() {
     }
   };
 
-  // ★ Navigate to next challenge — INSTANT, no delay, no shimmer
-  // Principle: start animation immediately on tap, apply preloaded data in same tick
+  // ★★★ NAVIGATE TO NEXT — INSTANT, ZERO DELAY, NO SHIMMER ★★★
+  // Principle from Habr article: start animation immediately on tap,
+  // apply preloaded data in the same tick, never show loading state
   const handleNext = useCallback(() => {
     if (!nextChallengeId || isTransitioningRef.current) return;
 
     // Mark that we're transitioning (guards the useEffect from re-fetching)
     isTransitioningRef.current = true;
 
-    // 1. INSTANT: trigger animation + apply data in the same render cycle
+    // 1. INSTANT: trigger animation
     setDirection(1);
     setAnimKey((k) => k + 1);
 
-    // 2. Apply preloaded data immediately — no shimmer, no waiting
-    const preloaded = preloadedRef.current.get(nextChallengeId);
-    if (preloaded) {
+    // 2. Apply data from global cache immediately — NO shimmer, NO waiting
+    const cached = getCachedChallenge(nextChallengeId);
+    if (cached) {
+      // ★ Cache HIT: data available RIGHT NOW — apply in same render
       resetForNewChallenge();
-      setChallenge(preloaded);
+      setChallenge(cached);
       setError(null);
 
-      if (preloaded.type === "prompt_fix") {
+      if (cached.type === "prompt_fix") {
         try {
-          const content = JSON.parse(preloaded.content);
+          const content = JSON.parse(cached.content);
           setPromptFixAnswer(content.originalPrompt || "");
         } catch {
           setPromptFixAnswer("");
         }
       }
     } else {
-      // No preloaded data — keep current challenge visible, fetch in background
+      // ★ Cache MISS: keep OLD challenge visible, fetch new data in background
+      // DO NOT null out challenge! Keep showing current content while fetching
       resetForNewChallenge();
-      // Don't null out challenge! Keep showing current content while fetching
       fetch(`/api/challenges/${nextChallengeId}`)
         .then((r) => r.json())
         .then((data) => {
+          setCachedChallenge(nextChallengeId, data);
           setChallenge(data);
-          preloadedRef.current.set(nextChallengeId, data);
 
           if (data.type === "prompt_fix") {
             try {
@@ -479,7 +487,7 @@ export default function ChallengePage() {
         });
     }
 
-    // 3. Update URL without re-fetch (isTransitioningRef guard)
+    // 3. Update URL without re-fetch (isTransitioningRef guard prevents it)
     router.replace(`/challenges/${nextChallengeId}`);
 
     // 4. Background refresh hearts & challenge list (non-blocking)
@@ -501,22 +509,12 @@ export default function ChallengePage() {
     // Allow future navigations after animation completes
     setTimeout(() => {
       isTransitioningRef.current = false;
-    }, 300);
+    }, 350);
   }, [nextChallengeId, router, resetForNewChallenge]);
 
   // === CONDITIONAL RETURNS ===
 
-  // Only show shimmer on the very first page load (never during transitions)
-  if (isLoading && !initialLoadDoneRef.current) {
-    return (
-      <AppLayout>
-        <div className="mx-auto max-w-3xl">
-          <div className="glass rounded-2xl p-8 shimmer h-96" />
-        </div>
-      </AppLayout>
-    );
-  }
-
+  // Error state (no challenge available)
   if (error && !challenge) {
     return (
       <AppLayout>
@@ -533,11 +531,46 @@ export default function ChallengePage() {
     );
   }
 
+  // ★★★ STRUCTURED SKELETON — NOT a shimmer block! ★★★
+  // This shows ONLY when waiting for the initial API fetch (cache miss on first visit)
+  // It has the SAME layout as the real page so there's no layout shift when data arrives
   if (!challenge) {
     return (
       <AppLayout>
-        <div className="mx-auto max-w-3xl">
-          <div className="glass rounded-2xl p-8 shimmer h-96" />
+        <div className="mx-auto max-w-3xl animate-in fade-in duration-200">
+          {/* Back link placeholder */}
+          <div className="h-5 w-24 mb-4 rounded bg-white/5" />
+
+          {/* Header skeleton */}
+          <div className="glass rounded-2xl p-6 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="h-5 w-5 rounded bg-white/5" />
+              <div className="h-5 w-16 rounded bg-white/5" />
+              <div className="h-5 w-20 rounded bg-white/5" />
+            </div>
+            <div className="h-7 w-3/4 rounded bg-white/5 mb-2" />
+            <div className="h-4 w-full rounded bg-white/5" />
+            <div className="h-px bg-white/5 my-4" />
+            <div className="flex justify-between">
+              <div className="h-5 w-20 rounded bg-white/5" />
+              <div className="h-5 w-24 rounded bg-white/5" />
+            </div>
+          </div>
+
+          {/* Content skeleton */}
+          <div className="glass rounded-2xl p-6">
+            <div className="h-4 w-full rounded bg-white/5 mb-3" />
+            <div className="h-4 w-5/6 rounded bg-white/5 mb-3" />
+            <div className="h-4 w-4/6 rounded bg-white/5 mb-6" />
+            <div className="space-y-2 mb-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-12 rounded-lg bg-white/5" />
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <div className="h-10 w-28 rounded-lg bg-white/5" />
+            </div>
+          </div>
         </div>
       </AppLayout>
     );
@@ -579,7 +612,7 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-3xl relative overflow-hidden">
+      <div className="mx-auto max-w-3xl relative">
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -596,7 +629,6 @@ export default function ChallengePage() {
         </Link>
 
         {/* ═══ LAYER 1: STABLE HEADER — does NOT animate between tasks ═══ */}
-        {/* This prevents layout shifts and flashing */}
         <div className="glass rounded-2xl p-6 mb-4">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <span className="text-lg">{categoryEmoji(challenge.category)}</span>
@@ -667,12 +699,7 @@ export default function ChallengePage() {
             initial="enter"
             animate="center"
             exit="exit"
-            transition={{
-              // ★ easeOut as article recommends — NOT spring for page transitions
-              // Simple, predictable, fast
-              duration: 0.2,
-              ease: [0.25, 0.1, 0.25, 1], // easeOut cubic
-            }}
+            transition={transitionConfig}
           >
             {/* SOLVED OVERLAY */}
             {isSolved && !result && (

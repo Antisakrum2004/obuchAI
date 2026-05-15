@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, typeLabel } from "@/lib/gamification";
 import { Zap, CheckCircle2, ChevronRight, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { prefetchChallenge } from "@/lib/challenge-cache";
+import { useCallback } from "react";
 
 interface ChallengeCardProps {
   id: string;
@@ -46,11 +48,16 @@ export function ChallengeCard({
   const onCooldown = cooldownUntil && new Date(cooldownUntil) > new Date();
   const cooldownText = onCooldown ? formatCooldown(cooldownUntil!) : null;
 
+  // ★ Prefetch challenge data on hover/touch — so detail page loads INSTANTLY
+  const handlePrefetch = useCallback(() => {
+    prefetchChallenge(id);
+  }, [id]);
+
   return (
     <Link href={`/challenges/${id}`}>
       <div
         className={cn(
-          "group glass rounded-xl p-4 transition-all duration-200 cursor-pointer",
+          "group glass rounded-xl p-4 transition-colors duration-150 cursor-pointer select-none",
           solved
             ? "opacity-40 hover:opacity-60 border-emerald-500/10 bg-emerald-500/[0.02]"
             : onCooldown
@@ -58,6 +65,9 @@ export function ChallengeCard({
             : "hover:bg-white/[0.07]",
           className
         )}
+        style={{ WebkitTapHighlightColor: "transparent" }}
+        onMouseEnter={handlePrefetch}
+        onTouchStart={handlePrefetch}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -83,7 +93,7 @@ export function ChallengeCard({
               )}
             </div>
             <h3 className={cn(
-              "font-semibold mb-1 transition-colors line-clamp-1",
+              "font-semibold mb-1 line-clamp-1",
               solved ? "text-muted-foreground" : "group-hover:text-emerald-400"
             )}>
               {title}
@@ -99,7 +109,7 @@ export function ChallengeCard({
               <span className={cn("text-xs font-semibold", solved && "line-through")}>+{xpReward}</span>
             </div>
             <ChevronRight className={cn(
-              "h-4 w-4 transition-colors",
+              "h-4 w-4",
               solved ? "text-muted-foreground/30" : "text-muted-foreground group-hover:text-emerald-400"
             )} />
           </div>

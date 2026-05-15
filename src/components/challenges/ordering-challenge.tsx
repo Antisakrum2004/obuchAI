@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
 
 interface OrderingChallengeProps {
   items: string[];
@@ -61,7 +61,7 @@ export function OrderingChallenge({
         Нажимайте на элементы по порядку, чтобы задать последовательность. Нажмите повторно, чтобы отменить:
       </p>
 
-      {/* Item list — NO framer-motion layout to prevent jumping */}
+      {/* Item list — NO framer-motion layout, NO transition-colors to prevent jitter */}
       <div className="space-y-2">
         {items.map((text, itemIndex) => {
           const pos = assignedPositions.get(itemIndex);
@@ -74,41 +74,48 @@ export function OrderingChallenge({
               disabled={disabled}
               onClick={() => handleTap(itemIndex)}
               className={cn(
-                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-colors duration-200",
+                "flex items-center gap-3 rounded-lg border p-3 w-full text-left",
                 disabled && "cursor-default",
-                !disabled && "cursor-pointer",
+                !disabled && "cursor-pointer select-none",
                 isAssigned
-                  ? "border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12]"
+                  ? "border-emerald-500/30 bg-emerald-500/[0.08]"
                   : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
               )}
-              style={{ touchAction: 'manipulation' }}
+              style={{
+                WebkitTapHighlightColor: "transparent",
+                touchAction: "manipulation",
+                // ★ NO transition — instant color change = no jitter
+                transition: "none",
+              }}
             >
               {/* Circle with number or empty — fixed width to prevent layout shift */}
               <div
                 className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-colors duration-150 text-sm font-bold",
+                  "flex h-7 w-7 items-center justify-center rounded-full shrink-0 text-sm font-bold",
                   isAssigned
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : "bg-white/5 text-white/20 border border-white/10"
                 )}
+                style={{ transition: "none" }}
               >
                 {isAssigned ? pos : ""}
               </div>
 
               {/* Text */}
               <span className={cn(
-                "text-sm flex-1 transition-colors duration-150",
+                "text-sm flex-1",
                 isAssigned ? "text-foreground" : "text-muted-foreground"
-              )}>
+              )} style={{ transition: "none" }}>
                 {text}
               </span>
 
               {/* Check icon when assigned — fixed width placeholder */}
               <span
                 className={cn(
-                  "text-xs shrink-0 w-4 text-center transition-opacity duration-150",
+                  "text-xs shrink-0 w-4 text-center",
                   isAssigned ? "text-emerald-400 opacity-100" : "opacity-0"
                 )}
+                style={{ transition: "none" }}
               >
                 ✓
               </span>
