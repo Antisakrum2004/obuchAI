@@ -270,3 +270,18 @@
 .speed-glow {
   animation: speed-glow 1.5s ease-in-out infinite;
 }
+
+/* Hide Vercel Toolbar */
+[data-testid="vercel-toolbar"],
+.vc-bottom-bar,
+.vc-toolbar,
+[data-vercel-toolbar],
+iframe[src*="vercel"],
+.vercel-toolbar {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
