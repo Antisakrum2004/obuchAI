@@ -219,6 +219,19 @@ export async function POST(request: Request) {
         }
       }
 
+      // Add missing columns (safe ALTER TABLE for tables that already exist)
+      const alterStatements = [
+        `ALTER TABLE challenge_attempts ADD COLUMN IF NOT EXISTS "timeSpent" INTEGER;`,
+      ];
+
+      for (const alterSql of alterStatements) {
+        try {
+          await client.query(alterSql)
+        } catch (alterErr) {
+          console.warn('ALTER warning:', alterErr)
+        }
+      }
+
       // Create indexes
       const indexStatements = [
         `CREATE INDEX IF NOT EXISTS accounts_userId_idx ON accounts("userId");`,

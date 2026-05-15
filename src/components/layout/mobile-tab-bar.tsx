@@ -44,6 +44,8 @@ export function MobileTabBar() {
             </Link>
           );
         })}
+        {/* Version indicator */}
+        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v1.0.0</span>
       </div>
     </nav>
   );

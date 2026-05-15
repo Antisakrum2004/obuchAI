@@ -137,19 +137,36 @@ export async function POST(
 
     // Create attempt
     const attemptId = genId();
-    await query(
-      `INSERT INTO challenge_attempts (id, "userId", "challengeId", answer, "isCorrect", "xpEarned", "timeSpent")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        attemptId,
-        userId,
-        id,
-        JSON.stringify(answer),
-        isCorrect,
-        xpEarned,
-        timeSpent || null,
-      ],
-    );
+    try {
+      await query(
+        `INSERT INTO challenge_attempts (id, "userId", "challengeId", answer, "isCorrect", "xpEarned", "timeSpent")
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          attemptId,
+          userId,
+          id,
+          JSON.stringify(answer),
+          isCorrect,
+          xpEarned,
+          timeSpent || null,
+        ],
+      );
+    } catch (insertErr) {
+      // Fallback: try without timeSpent column (if migration not yet run)
+      console.warn('Insert with timeSpent failed, trying without:', insertErr);
+      await query(
+        `INSERT INTO challenge_attempts (id, "userId", "challengeId", answer, "isCorrect", "xpEarned")
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          attemptId,
+          userId,
+          id,
+          JSON.stringify(answer),
+          isCorrect,
+          xpEarned,
+        ],
+      );
+    }
 
     // If correct, award XP and update user
     if (isCorrect) {
