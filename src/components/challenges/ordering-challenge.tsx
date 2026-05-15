@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import { Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 
 interface OrderingChallengeProps {
   items: string[];
@@ -26,7 +25,6 @@ export function OrderingChallenge({
   const [showHints, setShowHints] = useState(false);
 
   // Build a map: itemIndex -> assigned position (1-based)
-  // value[] is an ordered array of item indices representing the user's chosen order
   const assignedPositions = new Map<number, number>();
   value.forEach((itemIndex, pos) => {
     assignedPositions.set(itemIndex, pos + 1);
@@ -63,98 +61,64 @@ export function OrderingChallenge({
         Нажимайте на элементы по порядку, чтобы задать последовательность. Нажмите повторно, чтобы отменить:
       </p>
 
-      {/* Item list */}
+      {/* Item list — NO framer-motion layout to prevent jumping */}
       <div className="space-y-2">
         {items.map((text, itemIndex) => {
           const pos = assignedPositions.get(itemIndex);
           const isAssigned = pos !== undefined;
 
           return (
-            <motion.button
+            <button
               key={itemIndex}
               type="button"
               disabled={disabled}
               onClick={() => handleTap(itemIndex)}
               className={cn(
-                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-all duration-200",
+                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-colors duration-150",
                 disabled && "cursor-default",
                 !disabled && "cursor-pointer active:scale-[0.98]",
                 isAssigned
                   ? "border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12]"
                   : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
               )}
-              whileTap={!disabled ? { scale: 0.98 } : undefined}
-              layout
             >
-              {/* Circle with number or empty */}
+              {/* Circle with number or empty — fixed width to prevent layout shift */}
               <div
                 className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-all duration-200 text-sm font-bold",
+                  "flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-colors duration-150 text-sm font-bold",
                   isAssigned
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : "bg-white/5 text-white/20 border border-white/10"
                 )}
               >
-                <AnimatePresence mode="wait">
-                  {isAssigned ? (
-                    <motion.span
-                      key={pos}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0, opacity: 0 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                    >
-                      {pos}
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="empty"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 0.3 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="text-xs"
-                    >
-                      &nbsp;
-                    </motion.span>
-                  )}
-                </AnimatePresence>
+                {isAssigned ? pos : ""}
               </div>
 
               {/* Text */}
               <span className={cn(
-                "text-sm flex-1 transition-colors duration-200",
+                "text-sm flex-1 transition-colors duration-150",
                 isAssigned ? "text-foreground" : "text-muted-foreground"
               )}>
                 {text}
               </span>
 
-              {/* Check icon when assigned */}
-              <AnimatePresence>
-                {isAssigned && (
-                  <motion.span
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                    className="text-emerald-400 text-xs shrink-0"
-                  >
-                    ✓
-                  </motion.span>
+              {/* Check icon when assigned — fixed width placeholder */}
+              <span
+                className={cn(
+                  "text-xs shrink-0 w-4 text-center transition-opacity duration-150",
+                  isAssigned ? "text-emerald-400 opacity-100" : "opacity-0"
                 )}
-              </AnimatePresence>
-            </motion.button>
+              >
+                ✓
+              </span>
+            </button>
           );
         })}
       </div>
 
       {/* Status & Reset */}
       {value.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
-        >
+        <div className="flex items-center justify-between">
           <p className={cn(
             "text-xs",
             allAssigned ? "text-emerald-400" : "text-muted-foreground"
@@ -174,7 +138,7 @@ export function OrderingChallenge({
               Сбросить
             </Button>
           )}
-        </motion.div>
+        </div>
       )}
 
       {/* Hints */}

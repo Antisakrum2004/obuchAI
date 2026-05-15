@@ -271,17 +271,23 @@
   animation: speed-glow 1.5s ease-in-out infinite;
 }
 
-/* Hide Vercel Toolbar */
+/* Hide Vercel Toolbar — aggressive approach targeting Shadow DOM host */
 [data-testid="vercel-toolbar"],
 .vc-bottom-bar,
 .vc-toolbar,
 [data-vercel-toolbar],
 iframe[src*="vercel"],
-.vercel-toolbar {
+.vercel-toolbar,
+[id^="vercel-"],
+[class*="vercel-toolbar"],
+[class*="vc-bottom"] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
   position: absolute !important;
   left: -9999px !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
 }

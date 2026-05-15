@@ -15,7 +15,7 @@ import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, ty
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer, Trophy, ArrowRight } from "lucide-react";
+import { Zap, ArrowLeft, Send, CheckCircle2, Timer, Trophy, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -87,22 +87,25 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// Animation variants for slide transitions
-const slideVariants = {
+// Smooth 3D transition variants
+const pageVariants = {
   enter: (direction: number) => ({
-    x: direction > 0 ? 300 : -300,
-    opacity: 0,
-    scale: 0.95,
+    x: direction > 0 ? "100%" : "-100%",
+    opacity: 0.3,
+    rotateY: direction > 0 ? 8 : -8,
+    scale: 0.92,
   }),
   center: {
     x: 0,
     opacity: 1,
+    rotateY: 0,
     scale: 1,
   },
   exit: (direction: number) => ({
-    x: direction < 0 ? 300 : -300,
+    x: direction > 0 ? "-50%" : "50%",
     opacity: 0,
-    scale: 0.95,
+    rotateY: direction > 0 ? -8 : 8,
+    scale: 0.92,
   }),
 };
 
@@ -142,13 +145,17 @@ export default function ChallengePage() {
   const [hearts, setHearts] = useState(3);
   const [nextHeartAt, setNextHeartAt] = useState<string | null>(null);
 
-  // Navigation: next challenge & animation direction
+  // Navigation & preloading
   const [challengeList, setChallengeList] = useState<ChallengeListItem[]>([]);
   const [nextChallengeId, setNextChallengeId] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
   const [animKey, setAnimKey] = useState(0);
   const startTimeRef = useRef(Date.now());
   const isTransitioningRef = useRef(false);
+
+  // ★ Preloaded next challenge buffer
+  const preloadedRef = useRef<Map<string, ChallengeData>>(new Map());
+  const [preloadedNext, setPreloadedNext] = useState<ChallengeData | null>(null);
 
   // Timer: track elapsed time
   useEffect(() => {
@@ -164,6 +171,23 @@ export default function ChallengePage() {
     async function fetchChallenge() {
       try {
         setIsLoading(true);
+
+        // Check preload buffer first
+        const cached = preloadedRef.current.get(challengeId);
+        if (cached) {
+          setChallenge(cached);
+          if (cached.type === "prompt_fix") {
+            try {
+              const content = JSON.parse(cached.content);
+              setPromptFixAnswer(content.originalPrompt || "");
+            } catch {
+              setPromptFixAnswer("");
+            }
+          }
+          setIsLoading(false);
+          return;
+        }
+
         const res = await fetch(`/api/challenges/${challengeId}`);
         if (res.ok) {
           const data = await res.json();
@@ -196,7 +220,7 @@ export default function ChallengePage() {
     fetchChallenge();
   }, [challengeId]);
 
-  // Fetch challenge list for "next" navigation (once, cached)
+  // Fetch challenge list for "next" navigation
   useEffect(() => {
     fetch("/api/challenges")
       .then((r) => r.json())
@@ -206,11 +230,10 @@ export default function ChallengePage() {
       .catch(() => {});
   }, []);
 
-  // Calculate next unsolved challenge
+  // Calculate next unsolved challenge & preload it
   useEffect(() => {
     if (!challenge || challengeList.length === 0) return;
 
-    // Sort: unsolved first (same logic as challenges page), then by order
     const sorted = [...challengeList].sort((a, b) => {
       if (a.isSolved && !b.isSolved) return 1;
       if (!a.isSolved && b.isSolved) return -1;
@@ -218,7 +241,6 @@ export default function ChallengePage() {
     });
 
     const currentIdx = sorted.findIndex((c) => c.id === challenge.id);
-    // Find next unsolved after current
     let nextId: string | null = null;
     for (let i = currentIdx + 1; i < sorted.length; i++) {
       if (!sorted[i].isSolved) {
@@ -226,7 +248,6 @@ export default function ChallengePage() {
         break;
       }
     }
-    // If not found after, wrap around and find first unsolved
     if (!nextId) {
       for (let i = 0; i < currentIdx; i++) {
         if (!sorted[i].isSolved) {
@@ -236,6 +257,19 @@ export default function ChallengePage() {
       }
     }
     setNextChallengeId(nextId);
+
+    // ★ Preload the next challenge into buffer
+    if (nextId && !preloadedRef.current.has(nextId)) {
+      fetch(`/api/challenges/${nextId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          preloadedRef.current.set(nextId, data);
+          setPreloadedNext(data);
+        })
+        .catch(() => {});
+    } else if (nextId) {
+      setPreloadedNext(preloadedRef.current.get(nextId) || null);
+    }
   }, [challenge, challengeList]);
 
   // Fetch hearts
@@ -356,7 +390,6 @@ export default function ChallengePage() {
             setShowLevelUp(true);
           }
         } else {
-          // Lost a heart
           setHearts((h) => Math.max(0, h - 1));
         }
       } else {
@@ -376,66 +409,99 @@ export default function ChallengePage() {
     }
   };
 
-  // Navigate to next challenge with smooth animation
+  // ★ Navigate to next challenge — INSTANT with preloaded data
   const handleNext = useCallback(async () => {
     if (isTransitioningRef.current) return;
 
     if (nextChallengeId) {
       isTransitioningRef.current = true;
-      setDirection(1); // slide left-to-right (forward)
+      setDirection(1);
       setAnimKey((k) => k + 1);
 
-      // Small delay for exit animation, then load new challenge
-      await new Promise((r) => setTimeout(r, 150));
+      // If we have preloaded data, apply it instantly after a tiny delay for animation
+      const preloaded = preloadedRef.current.get(nextChallengeId);
 
-      // Navigate via router (updates URL)
+      // Wait for exit animation
+      await new Promise((r) => setTimeout(r, 250));
+
+      // Update URL
       router.push(`/challenges/${nextChallengeId}`);
 
-      // Reset states for new challenge
+      // Reset states
       resetForNewChallenge();
-      setChallenge(null);
-      setIsLoading(true);
 
-      // Fetch new challenge data
-      try {
-        const res = await fetch(`/api/challenges/${nextChallengeId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setChallenge(data);
-
-          if (data.type === "prompt_fix") {
-            try {
-              const content = JSON.parse(data.content);
-              setPromptFixAnswer(content.originalPrompt || "");
-            } catch {
-              setPromptFixAnswer("");
-            }
-          }
-
-          // Re-fetch hearts for new challenge
-          fetch("/api/user/activity")
-            .then((r) => r.json())
-            .then((d) => {
-              if (typeof d.hearts === "number") setHearts(d.hearts);
-              if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
-            })
-            .catch(() => {});
-
-          // Refresh challenge list to get updated solved status
-          const listRes = await fetch("/api/challenges");
-          if (listRes.ok) {
-            const listData = await listRes.json();
-            setChallengeList(listData);
+      if (preloaded) {
+        // ★ INSTANT transition — data already loaded
+        setChallenge(preloaded);
+        if (preloaded.type === "prompt_fix") {
+          try {
+            const content = JSON.parse(preloaded.content);
+            setPromptFixAnswer(content.originalPrompt || "");
+          } catch {
+            setPromptFixAnswer("");
           }
         }
-      } catch {
-        setError("Ошибка загрузки");
-      } finally {
         setIsLoading(false);
+
+        // Background: refresh challenge list & hearts
+        fetch("/api/user/activity")
+          .then((r) => r.json())
+          .then((d) => {
+            if (typeof d.hearts === "number") setHearts(d.hearts);
+            if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+          })
+          .catch(() => {});
+
+        fetch("/api/challenges")
+          .then((r) => r.json())
+          .then((listData) => {
+            setChallengeList(listData);
+          })
+          .catch(() => {});
+
         isTransitioningRef.current = false;
+      } else {
+        // Fallback: fetch normally (slower)
+        setChallenge(null);
+        setIsLoading(true);
+
+        try {
+          const res = await fetch(`/api/challenges/${nextChallengeId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setChallenge(data);
+
+            if (data.type === "prompt_fix") {
+              try {
+                const content = JSON.parse(data.content);
+                setPromptFixAnswer(content.originalPrompt || "");
+              } catch {
+                setPromptFixAnswer("");
+              }
+            }
+
+            fetch("/api/user/activity")
+              .then((r) => r.json())
+              .then((d) => {
+                if (typeof d.hearts === "number") setHearts(d.hearts);
+                if (d.nextHeartAt) setNextHeartAt(d.nextHeartAt);
+              })
+              .catch(() => {});
+
+            const listRes = await fetch("/api/challenges");
+            if (listRes.ok) {
+              const listData = await listRes.json();
+              setChallengeList(listData);
+            }
+          }
+        } catch {
+          setError("Ошибка загрузки");
+        } finally {
+          setIsLoading(false);
+          isTransitioningRef.current = false;
+        }
       }
     } else {
-      // No more unsolved challenges — go to list
       router.push("/challenges");
     }
   }, [nextChallengeId, router, resetForNewChallenge]);
@@ -491,11 +557,8 @@ export default function ChallengePage() {
     }
   })();
 
-  // Speed bonus info
   const isQuick = timeSpent > 0 && timeSpent < 30;
-  const isMedium = timeSpent > 0 && timeSpent >= 30 && timeSpent < 120;
 
-  // Current time-based XP multiplier (for display)
   const currentTimeMultiplier = (() => {
     if (timeSpent <= 0) return 1.0;
     if (timeSpent <= 30) return 1.0;
@@ -507,7 +570,7 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-3xl relative overflow-hidden">
+      <div className="mx-auto max-w-3xl relative overflow-hidden" style={{ perspective: "1200px" }}>
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -525,17 +588,19 @@ export default function ChallengePage() {
 
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
-            key={animKey}
+            key={animKey || challenge.id}
             custom={direction}
-            variants={slideVariants}
+            variants={pageVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={{
-              x: { type: "spring", stiffness: 300, damping: 30 },
-              opacity: { duration: 0.2 },
-              scale: { duration: 0.2 },
+              x: { type: "spring", stiffness: 200, damping: 28 },
+              opacity: { duration: 0.25 },
+              rotateY: { duration: 0.35 },
+              scale: { duration: 0.25 },
             }}
+            style={{ transformOrigin: "center center" }}
           >
             {/* Challenge Header */}
             <div className="glass rounded-2xl p-6 mb-6">
@@ -584,7 +649,6 @@ export default function ChallengePage() {
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  {/* Timer display */}
                   {!result && !isSolved && !onCooldown && (
                     <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
                       <Timer className="h-4 w-4" />
@@ -593,7 +657,6 @@ export default function ChallengePage() {
                       </span>
                     </div>
                   )}
-                  {/* Hearts */}
                   {!isSolved && !onCooldown && (
                     <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
                   )}
@@ -707,7 +770,6 @@ export default function ChallengePage() {
                   </div>
                 )}
 
-                {/* No hearts warning */}
                 {noHearts && (
                   <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
                     <p className="text-sm text-amber-400">
@@ -716,7 +778,6 @@ export default function ChallengePage() {
                   </div>
                 )}
 
-                {/* Time penalty warning */}
                 {currentTimeMultiplier < 1.0 && !noHearts && (
                   <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
                     <p className="text-sm text-amber-400">

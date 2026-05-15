@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Target, Search, CheckCircle2 } from "lucide-react";
+import { Target, Search, CheckCircle2, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 interface ChallengeListItem {
   id: string;
@@ -24,35 +25,47 @@ interface ChallengeListItem {
 
 export default function ChallengesPage() {
   const [challenges, setChallenges] = useState<ChallengeListItem[]>([]);
-  const [filteredChallenges, setFilteredChallenges] = useState<ChallengeListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [difficultyFilter, setDifficultyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    async function fetchChallenges() {
-      try {
-        setIsLoading(true);
-        const params = new URLSearchParams();
-        if (categoryFilter !== "all") params.set("category", categoryFilter);
-        if (difficultyFilter !== "all") params.set("difficulty", difficultyFilter);
-        if (typeFilter !== "all") params.set("type", typeFilter);
+  async function fetchChallenges() {
+    try {
+      setIsLoading(true);
+      const params = new URLSearchParams();
+      if (categoryFilter !== "all") params.set("category", categoryFilter);
+      if (difficultyFilter !== "all") params.set("difficulty", difficultyFilter);
+      if (typeFilter !== "all") params.set("type", typeFilter);
 
-        const res = await fetch(`/api/challenges?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setChallenges(data);
-          setFilteredChallenges(data);
-        }
-      } catch {
-        // silently fail
-      } finally {
-        setIsLoading(false);
+      // Add cache-busting timestamp to avoid stale data
+      params.set("_t", Date.now().toString());
+
+      const res = await fetch(`/api/challenges?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setChallenges(data);
       }
+    } catch {
+      // silently fail
+    } finally {
+      setIsLoading(false);
     }
+  }
+
+  // Fetch on mount and when filters change
+  useEffect(() => {
     fetchChallenges();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryFilter, difficultyFilter, typeFilter]);
+
+  // Also re-fetch when page gets focus (user returns from solving a task)
+  useEffect(() => {
+    const onFocus = () => fetchChallenges();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryFilter, difficultyFilter, typeFilter]);
 
   // Sort challenges: unsolved first, solved at the bottom
@@ -77,10 +90,6 @@ export default function ChallengesPage() {
   // Split into groups for visual separator
   const unsolvedChallenges = useMemo(() => sortedChallenges.filter(c => !c.isSolved), [sortedChallenges]);
   const solvedChallenges = useMemo(() => sortedChallenges.filter(c => c.isSolved), [sortedChallenges]);
-
-  useEffect(() => {
-    setFilteredChallenges(sortedChallenges);
-  }, [sortedChallenges]);
 
   const categories = [
     { value: "all", label: "Все категории" },
@@ -120,6 +129,14 @@ export default function ChallengesPage() {
           <div className="flex items-center gap-2 mb-2">
             <Target className="h-6 w-6 text-emerald-400" />
             <h1 className="text-2xl font-bold">Задачи</h1>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              onClick={fetchChallenges}
+            >
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+            </Button>
           </div>
           <p className="text-muted-foreground">
             Выбирай задачи по навыкам и сложности, зарабатывай опыт
@@ -186,7 +203,12 @@ export default function ChallengesPage() {
           </div>
 
           <div className="mt-3 text-xs text-muted-foreground">
-            Найдено задач: {filteredChallenges.length}
+            Найдено задач: {sortedChallenges.length}
+            {solvedChallenges.length > 0 && (
+              <span className="ml-2 text-emerald-400/60">
+                ({unsolvedChallenges.length} доступно, {solvedChallenges.length} решено)
+              </span>
+            )}
           </div>
         </motion.div>
 
@@ -197,7 +219,7 @@ export default function ChallengesPage() {
               <div key={i} className="glass rounded-xl p-4 shimmer h-24" />
             ))}
           </div>
-        ) : filteredChallenges.length === 0 ? (
+        ) : sortedChallenges.length === 0 ? (
           <div className="text-center py-16">
             <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-lg text-muted-foreground">Задачи не найдены</p>
@@ -213,7 +235,7 @@ export default function ChallengesPage() {
                 key={challenge.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
+                transition={{ delay: Math.min(index * 0.03, 0.3) }}
               >
                 <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
               </motion.div>
@@ -231,13 +253,13 @@ export default function ChallengesPage() {
               </div>
             )}
 
-            {/* Solved challenges */}
-            {solvedChallenges.map((challenge, index) => (
+            {/* Solved challenges — only show if there are any */}
+            {solvedChallenges.length > 0 && solvedChallenges.map((challenge, index) => (
               <motion.div
                 key={challenge.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: (unsolvedChallenges.length + index) * 0.03 }}
+                transition={{ delay: Math.min(index * 0.02, 0.2) }}
               >
                 <ChallengeCard {...challenge} isSolved={challenge.isSolved} cooldownUntil={challenge.cooldownUntil} />
               </motion.div>
