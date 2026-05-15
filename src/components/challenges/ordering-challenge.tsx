@@ -1,27 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { GripVertical, Lightbulb } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useCallback } from "react";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface OrderingChallengeProps {
   items: string[];
@@ -30,106 +13,6 @@ interface OrderingChallengeProps {
   disabled?: boolean;
   hints?: string[];
   className?: string;
-}
-
-function SortableItem({
-  id,
-  position,
-  text,
-  disabled,
-  isFirst,
-  isLast,
-  onMoveUp,
-  onMoveDown,
-}: {
-  id: number;
-  position: number;
-  text: string;
-  disabled: boolean;
-  isFirst: boolean;
-  isLast: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, disabled });
-
-  // Combine dnd-kit transform with scale for dragging effect
-  // We must merge them because inline style transform overrides Tailwind scale class
-  const style: React.CSSProperties = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${isDragging ? 1.02 : 1})`
-      : undefined,
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-    position: "relative",
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-3 rounded-lg border p-3",
-        isDragging
-          ? "border-emerald-500/40 bg-emerald-500/[0.08] shadow-lg shadow-emerald-500/10"
-          : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
-      )}
-    >
-      {/* Number badge */}
-      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400">
-        {position + 1}
-      </div>
-
-      {/* Drag handle + text — this is the draggable area */}
-      <div
-        {...(!disabled ? { ...attributes, ...listeners } : {})}
-        className={cn(
-          "flex items-center gap-2 flex-1",
-          !disabled && "cursor-grab active:cursor-grabbing select-none"
-        )}
-      >
-        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="text-sm">{text}</span>
-      </div>
-
-      {/* Up/Down buttons — NOT draggable, they are clickable */}
-      {!disabled && (
-        <div className="flex gap-1 shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveUp();
-            }}
-            disabled={isFirst}
-          >
-            ↑
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveDown();
-            }}
-            disabled={isLast}
-          >
-            ↓
-          </Button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function OrderingChallenge({
@@ -141,93 +24,160 @@ export function OrderingChallenge({
   className,
 }: OrderingChallengeProps) {
   const [showHints, setShowHints] = useState(false);
-  const order = value.length > 0 ? value : items.map((_, i) => i);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 200,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  // Build a map: itemIndex -> assigned position (1-based)
+  // value[] is an ordered array of item indices representing the user's chosen order
+  const assignedPositions = new Map<number, number>();
+  value.forEach((itemIndex, pos) => {
+    assignedPositions.set(itemIndex, pos + 1);
+  });
 
-  const moveUp = useCallback(
-    (index: number) => {
-      if (index === 0) return;
-      const newOrder = [...order];
-      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-      onChange(newOrder);
+  const allAssigned = value.length === items.length;
+
+  const handleTap = useCallback(
+    (itemIndex: number) => {
+      if (disabled) return;
+
+      const currentPos = assignedPositions.get(itemIndex);
+
+      if (currentPos !== undefined) {
+        // Already assigned → deselect: remove it and renumber everything after it
+        const newOrder = value.filter((idx) => idx !== itemIndex);
+        onChange(newOrder);
+      } else {
+        // Not assigned → add to end
+        const newOrder = [...value, itemIndex];
+        onChange(newOrder);
+      }
     },
-    [order, onChange]
+    [value, assignedPositions, onChange, disabled]
   );
 
-  const moveDown = useCallback(
-    (index: number) => {
-      if (index === order.length - 1) return;
-      const newOrder = [...order];
-      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-      onChange(newOrder);
-    },
-    [order, onChange]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-
-      const oldIndex = order.indexOf(active.id as number);
-      const newIndex = order.indexOf(over.id as number);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const newOrder = arrayMove(order, oldIndex, newIndex);
-      onChange(newOrder);
-    },
-    [order, onChange]
-  );
+  const handleReset = useCallback(() => {
+    onChange([]);
+  }, [onChange]);
 
   return (
     <div className={cn("space-y-4", className)}>
       <p className="text-sm text-muted-foreground mb-2">
-        Перетащите элементы мышкой или используйте кнопки ↑↓, чтобы расставить их в правильном порядке:
+        Нажимайте на элементы по порядку, чтобы задать последовательность. Нажмите повторно, чтобы отменить:
       </p>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={order}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="space-y-2">
-            {order.map((itemIndex, position) => (
-              <SortableItem
-                key={itemIndex}
-                id={itemIndex}
-                position={position}
-                text={items[itemIndex]}
-                disabled={disabled}
-                isFirst={position === 0}
-                isLast={position === order.length - 1}
-                onMoveUp={() => moveUp(position)}
-                onMoveDown={() => moveDown(position)}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      {/* Item list */}
+      <div className="space-y-2">
+        {items.map((text, itemIndex) => {
+          const pos = assignedPositions.get(itemIndex);
+          const isAssigned = pos !== undefined;
 
+          return (
+            <motion.button
+              key={itemIndex}
+              type="button"
+              disabled={disabled}
+              onClick={() => handleTap(itemIndex)}
+              className={cn(
+                "flex items-center gap-3 rounded-lg border p-3 w-full text-left transition-all duration-200",
+                disabled && "cursor-default",
+                !disabled && "cursor-pointer active:scale-[0.98]",
+                isAssigned
+                  ? "border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12]"
+                  : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"
+              )}
+              whileTap={!disabled ? { scale: 0.98 } : undefined}
+              layout
+            >
+              {/* Circle with number or empty */}
+              <div
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-all duration-200 text-sm font-bold",
+                  isAssigned
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : "bg-white/5 text-white/20 border border-white/10"
+                )}
+              >
+                <AnimatePresence mode="wait">
+                  {isAssigned ? (
+                    <motion.span
+                      key={pos}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                    >
+                      {pos}
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="empty"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.3 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="text-xs"
+                    >
+                      &nbsp;
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Text */}
+              <span className={cn(
+                "text-sm flex-1 transition-colors duration-200",
+                isAssigned ? "text-foreground" : "text-muted-foreground"
+              )}>
+                {text}
+              </span>
+
+              {/* Check icon when assigned */}
+              <AnimatePresence>
+                {isAssigned && (
+                  <motion.span
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                    className="text-emerald-400 text-xs shrink-0"
+                  >
+                    ✓
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* Status & Reset */}
+      {value.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between"
+        >
+          <p className={cn(
+            "text-xs",
+            allAssigned ? "text-emerald-400" : "text-muted-foreground"
+          )}>
+            {allAssigned
+              ? "✓ Порядок задан — все этапы выбраны"
+              : `Выбрано ${value.length} из ${items.length}`
+            }
+          </p>
+          {!disabled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              onClick={handleReset}
+            >
+              Сбросить
+            </Button>
+          )}
+        </motion.div>
+      )}
+
+      {/* Hints */}
       {hints && hints.length > 0 && (
         <>
           <Button
