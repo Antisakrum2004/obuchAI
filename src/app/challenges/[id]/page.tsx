@@ -97,9 +97,13 @@ export default function ChallengePage() {
   const [startTime] = useState(Date.now());
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Cooldown timer
+  // Cooldown state — tracks whether challenge is on cooldown (auto-updates)
+  const [onCooldown, setOnCooldown] = useState(false);
   const [cooldownText, setCooldownText] = useState<string>("");
 
+  // === ALL HOOKS MUST BE BEFORE ANY CONDITIONAL RETURNS ===
+
+  // Fetch challenge data
   useEffect(() => {
     async function fetchChallenge() {
       try {
@@ -137,15 +141,25 @@ export default function ChallengePage() {
     fetchChallenge();
   }, [challengeId]);
 
-  // Update cooldown timer every second
+  // Update cooldown timer + onCooldown state every second
   useEffect(() => {
-    if (!challenge?.cooldownUntil) return;
-    const interval = setInterval(() => {
+    if (!challenge?.cooldownUntil || challenge.isSolved) {
+      setOnCooldown(false);
+      setCooldownText("");
+      return;
+    }
+    const check = () => {
+      const still = new Date(challenge.cooldownUntil!) > new Date();
+      setOnCooldown(still);
       setCooldownText(formatCountdown(challenge.cooldownUntil!));
+      return still;
+    };
+    check();
+    const interval = setInterval(() => {
+      if (!check()) clearInterval(interval);
     }, 1000);
-    setCooldownText(formatCountdown(challenge.cooldownUntil));
     return () => clearInterval(interval);
-  }, [challenge?.cooldownUntil]);
+  }, [challenge?.cooldownUntil, challenge?.isSolved]);
 
   // Shuffle multiple choice options deterministically based on userId + challengeId
   const shuffledOptions = useMemo(() => {
@@ -159,6 +173,19 @@ export default function ChallengePage() {
       return [];
     }
   }, [challenge, userId]);
+
+  // For ordering/workflow: parse options
+  const parsedOrderingOptions = useMemo(() => {
+    if (!challenge) return [];
+    if ((challenge.type === "ordering" || challenge.type === "workflow_build") && challenge.options) {
+      try {
+        return JSON.parse(challenge.options);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [challenge]);
 
   const getAnswer = useCallback(() => {
     if (!challenge) return null;
@@ -197,8 +224,16 @@ export default function ChallengePage() {
       if (res.ok) {
         const data = await res.json();
         setResult(data);
-        if (data.isCorrect && data.xpEarned > 0) {
-          setShowXpAnimation(true);
+        if (data.isCorrect) {
+          // Mark as solved locally so UI updates immediately
+          setChallenge({ ...challenge, isSolved: true });
+          if (data.xpEarned > 0) {
+            setShowXpAnimation(true);
+          }
+        } else {
+          // Wrong answer — set cooldown from server response
+          // The submit API returns 200 with isCorrect: false
+          // Cooldown is handled by the attempts table on the server side
         }
       } else {
         const errData = await res.json();
@@ -222,6 +257,8 @@ export default function ChallengePage() {
   const handleNext = () => {
     router.push("/challenges");
   };
+
+  // === CONDITIONAL RETURNS AFTER ALL HOOKS ===
 
   if (isLoading) {
     return (
@@ -249,6 +286,7 @@ export default function ChallengePage() {
     );
   }
 
+  // Safe parsing — no hooks after this point
   const parsedHints = (() => {
     if (!challenge.hints) return null;
     try {
@@ -258,6 +296,7 @@ export default function ChallengePage() {
       return [challenge.hints];
     }
   })();
+
   const parsedContent = (() => {
     try {
       return JSON.parse(challenge.content);
@@ -266,38 +305,7 @@ export default function ChallengePage() {
     }
   })();
 
-  // For ordering/workflow: parse options here
-  const parsedOrderingOptions = useMemo(() => {
-    if ((challenge.type === "ordering" || challenge.type === "workflow_build") && challenge.options) {
-      try {
-        return JSON.parse(challenge.options);
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }, [challenge]);
-
   const isSolved = challenge.isSolved;
-  // Track cooldown as state so it updates when timer expires
-  const [onCooldown, setOnCooldown] = useState(false);
-
-  useEffect(() => {
-    if (!challenge?.cooldownUntil || isSolved) {
-      setOnCooldown(false);
-      return;
-    }
-    const check = () => {
-      const still = new Date(challenge.cooldownUntil!) > new Date();
-      setOnCooldown(still);
-      return still;
-    };
-    check();
-    const interval = setInterval(() => {
-      if (!check()) clearInterval(interval);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [challenge?.cooldownUntil, isSolved]);
 
   // Check if answer is provided
   const hasAnswer = (() => {
@@ -543,5 +551,3 @@ export default function ChallengePage() {
     </AppLayout>
   );
 }
-
-
