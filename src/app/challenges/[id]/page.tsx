@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { Zap, Clock, ArrowLeft, Send, CheckCircle2, Timer } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface ChallengeData {
   id: string;
@@ -169,9 +170,9 @@ export default function ChallengePage() {
       case "text_input":
         return textInputAnswer;
       case "ordering":
-        return orderingAnswer;
+        return orderingAnswer.length > 0 ? orderingAnswer : null;
       case "workflow_build":
-        return workflowAnswer;
+        return workflowAnswer.length > 0 ? workflowAnswer : null;
       default:
         return null;
     }
@@ -180,6 +181,8 @@ export default function ChallengePage() {
   const handleSubmit = async () => {
     const answer = getAnswer();
     if (!answer || !challenge) return;
+    // Extra guard: reject empty arrays
+    if (Array.isArray(answer) && answer.length === 0) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -246,7 +249,15 @@ export default function ChallengePage() {
     );
   }
 
-  const parsedHints = challenge.hints ? JSON.parse(challenge.hints) : null;
+  const parsedHints = (() => {
+    if (!challenge.hints) return null;
+    try {
+      return JSON.parse(challenge.hints);
+    } catch {
+      // hints might be a plain string, return as single-item array
+      return [challenge.hints];
+    }
+  })();
   const parsedContent = (() => {
     try {
       return JSON.parse(challenge.content);
@@ -268,7 +279,25 @@ export default function ChallengePage() {
   }, [challenge]);
 
   const isSolved = challenge.isSolved;
-  const onCooldown = challenge.cooldownUntil && new Date(challenge.cooldownUntil) > new Date();
+  // Track cooldown as state so it updates when timer expires
+  const [onCooldown, setOnCooldown] = useState(false);
+
+  useEffect(() => {
+    if (!challenge?.cooldownUntil || isSolved) {
+      setOnCooldown(false);
+      return;
+    }
+    const check = () => {
+      const still = new Date(challenge.cooldownUntil!) > new Date();
+      setOnCooldown(still);
+      return still;
+    };
+    check();
+    const interval = setInterval(() => {
+      if (!check()) clearInterval(interval);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [challenge?.cooldownUntil, isSolved]);
 
   // Check if answer is provided
   const hasAnswer = (() => {
@@ -515,6 +544,4 @@ export default function ChallengePage() {
   );
 }
 
-function cn(...classes: (string | boolean | undefined | null)[]) {
-  return classes.filter(Boolean).join(" ");
-}
+

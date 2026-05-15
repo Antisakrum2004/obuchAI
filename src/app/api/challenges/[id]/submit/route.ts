@@ -285,16 +285,29 @@ export async function POST(
           leveledUp: finalLevel > user.level,
         });
       }
+
+      // Edge case: user not found in DB — return success with safe defaults
+      return NextResponse.json({
+        isCorrect,
+        xpEarned: xpEarned,
+        baseXp,
+        bonusXp: 0,
+        explanation: challenge.explanation,
+        newLevel: 1,
+        newStreak: 1,
+        leveledUp: false,
+      });
     }
 
+    // Wrong answer response
     return NextResponse.json({
       isCorrect,
       xpEarned: 0,
       baseXp,
       bonusXp: 0,
       explanation: challenge.explanation,
-      newLevel: (session.user as Record<string, unknown>).level as number,
-      newStreak: (session.user as Record<string, unknown>).streak as number,
+      newLevel: ((session.user as Record<string, unknown>).level as number) || 1,
+      newStreak: ((session.user as Record<string, unknown>).streak as number) || 0,
       leveledUp: false,
     });
   } catch (error) {

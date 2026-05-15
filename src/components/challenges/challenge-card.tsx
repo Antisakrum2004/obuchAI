@@ -96,7 +96,7 @@ export function ChallengeCard({
               solved ? "text-muted-foreground/50" : "text-emerald-400"
             )}>
               <Zap className="h-3.5 w-3.5" />
-              <span className="text-xs font-semibold line-through-when-solved">+{xpReward}</span>
+              <span className={cn("text-xs font-semibold", solved && "line-through")}>+{xpReward}</span>
             </div>
             <ChevronRight className={cn(
               "h-4 w-4 transition-colors",

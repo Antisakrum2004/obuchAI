@@ -12,8 +12,8 @@ interface ChallengeResultProps {
   baseXp: number;
   bonusXp: number;
   explanation: string | null;
-  newLevel: number;
-  newStreak: number;
+  newLevel?: number;
+  newStreak?: number;
   leveledUp: boolean;
   onNext?: () => void;
   className?: string;
@@ -102,13 +102,13 @@ export function ChallengeResult({
             transition={{ delay: 0.6, type: "spring" }}
             className="mt-3 rounded-lg bg-purple-500/10 border border-purple-500/20 p-3"
           >
-            <p className="gradient-text font-bold text-lg">🎉 Новый уровень: {newLevel}!</p>
+            <p className="gradient-text font-bold text-lg">🎉 Новый уровень: {newLevel ?? 1}!</p>
           </motion.div>
         )}
 
-        {isCorrect && newStreak > 0 && (
+        {isCorrect && (newStreak ?? 0) > 0 && (
           <p className="text-sm text-amber-400 mt-2">
-            🔥 Серия: {newStreak} дней
+            🔥 Серия: {newStreak ?? 0} дней
           </p>
         )}
       </div>
