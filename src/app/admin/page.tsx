@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 
 // --- Types ---
@@ -107,6 +107,7 @@ export default function AdminPage() {
   // Toast state
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
@@ -166,6 +167,27 @@ export default function AdminPage() {
   }, [isAdmin]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // --- Refresh users ---
+  const refreshUsers = async () => {
+    setIsRefreshingUsers(true);
+    try {
+      const res = await fetch("/api/admin/users");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setUsers(data);
+          showToast(`Обновлено: ${data.length} пользователей`);
+        }
+      } else {
+        showToast("Ошибка загрузки", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    } finally {
+      setIsRefreshingUsers(false);
+    }
+  };
 
   // --- Challenge CRUD ---
   const createChallenge = async () => {
@@ -702,6 +724,16 @@ export default function AdminPage() {
             <div className="glass rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                 <h3 className="font-semibold text-sm">Все пользователи ({users.length})</h3>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={refreshUsers}
+                  disabled={isRefreshingUsers}
+                  className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingUsers ? "animate-spin" : ""}`} />
+                  Обновить
+                </Button>
               </div>
 
               {/* Desktop table */}
