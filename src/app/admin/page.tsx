@@ -399,14 +399,14 @@ export default function AdminPage() {
               ) : (
                 <Database className="h-4 w-4 mr-1" />
               )}
-              Заполнить данными
+Сидировать задачи
             </Button>
           </div>
           <p className="text-muted-foreground">Панель администратора</p>
           <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
             <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
             <p className="text-xs text-amber-400/80">
-              Кнопка «Заполнить данными» пересоздаёт все задачи, навыки и достижения. Прогресс пользователей сохраняется. Используйте после обновления кода.
+              Пересоздаёт все задачи, навыки и достижения из шаблонов. Прогресс пользователей сохраняется. Используйте после обновления кода.
             </p>
           </div>
         </motion.div>
@@ -688,6 +688,14 @@ export default function AdminPage() {
                 <p className="text-xl font-bold text-purple-400">{users.filter(u => { if (!u.lastActiveAt) return false; const d = new Date(u.lastActiveAt); const now = new Date(); return now.getTime() - d.getTime() < 7*24*60*60*1000; }).length}</p>
                 <p className="text-xs text-muted-foreground">Активны за 7 дней</p>
               </div>
+            </div>
+
+            {/* Tracking info hint */}
+            <div className="flex items-start gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+              <AlertTriangle className="h-4 w-4 text-cyan-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-cyan-400/80">
+                Данные об IP и устройстве появляются, когда пользователь заходит на сайт. Если поля пустые — пользователь ещё не заходил после последнего обновления.
+              </p>
             </div>
 
             {/* Users table */}
