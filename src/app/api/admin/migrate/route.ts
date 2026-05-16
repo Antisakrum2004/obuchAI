@@ -222,6 +222,9 @@ export async function POST(request: Request) {
       // Add missing columns (safe ALTER TABLE for tables that already exist)
       const alterStatements = [
         `ALTER TABLE challenge_attempts ADD COLUMN IF NOT EXISTS "timeSpent" INTEGER;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastIp" TEXT;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastUserAgent" TEXT;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastDevice" TEXT;`,
       ];
 
       for (const alterSql of alterStatements) {

@@ -56,6 +56,13 @@ interface UserAdmin {
   role: string;
   xp: number;
   level: number;
+  streak: number;
+  image: string | null;
+  createdAt: string;
+  lastActiveAt: string | null;
+  lastIp: string | null;
+  lastUserAgent: string | null;
+  lastDevice: string | null;
   _count: { attempts: number };
 }
 
@@ -341,6 +348,29 @@ export default function AdminPage() {
   const diffLabel = (d: string) => ({ easy: "Легко", medium: "Средне", hard: "Сложно" }[d] || d);
   const typeLabel = (t: string) => ({ multiple_choice: "Выбор", ordering: "Порядок", workflow_build: "Workflow" }[t] || t);
   const catLabel = (c: string) => ({ prompting: "Промптинг", agents: "Агенты", debugging: "Дебаг", workflow: "Workflow", "1c": "1С", review: "Ревью" }[c] || c);
+
+  // --- Date formatters ---
+  const formatDate = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    } catch { return iso; }
+  };
+  const formatRelative = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffH = Math.floor(diffMs / 3600000);
+      const diffD = Math.floor(diffMs / 86400000);
+      if (diffMin < 1) return "только что";
+      if (diffMin < 60) return `${diffMin} мин. назад`;
+      if (diffH < 24) return `${diffH} ч. назад`;
+      if (diffD < 7) return `${diffD} дн. назад`;
+      return formatDate(iso);
+    } catch { return iso; }
+  };
 
   return (
     <AppLayout>
@@ -640,27 +670,154 @@ export default function AdminPage() {
 
           {/* ===== USERS TAB ===== */}
           <TabsContent value="users" className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="glass rounded-xl p-3">
+                <p className="text-xl font-bold">{users.length}</p>
+                <p className="text-xs text-muted-foreground">Всего пользователей</p>
+              </div>
+              <div className="glass rounded-xl p-3">
+                <p className="text-xl font-bold text-emerald-400">{users.filter(u => u.role === "admin").length}</p>
+                <p className="text-xs text-muted-foreground">Администраторы</p>
+              </div>
+              <div className="glass rounded-xl p-3">
+                <p className="text-xl font-bold text-amber-400">{users.filter(u => { if (!u.lastActiveAt) return false; const d = new Date(u.lastActiveAt); const now = new Date(); return now.getTime() - d.getTime() < 24*60*60*1000; }).length}</p>
+                <p className="text-xs text-muted-foreground">Активны за 24ч</p>
+              </div>
+              <div className="glass rounded-xl p-3">
+                <p className="text-xl font-bold text-purple-400">{users.filter(u => { if (!u.lastActiveAt) return false; const d = new Date(u.lastActiveAt); const now = new Date(); return now.getTime() - d.getTime() < 7*24*60*60*1000; }).length}</p>
+                <p className="text-xs text-muted-foreground">Активны за 7 дней</p>
+              </div>
+            </div>
+
+            {/* Users table */}
             <div className="glass rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/5">
+              <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                 <h3 className="font-semibold text-sm">Все пользователи ({users.length})</h3>
               </div>
-              {users.map((user) => (
-                <div key={user.id} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{user.name || user.email}</p>
-                    <p className="text-xs text-muted-foreground">{user.email}</p>
+
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/5 text-xs text-muted-foreground">
+                      <th className="text-left px-4 py-2.5 font-medium">Пользователь</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Роль</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Прогресс</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Устройство</th>
+                      <th className="text-left px-3 py-2.5 font-medium">IP</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Зарегистрирован</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Последний вход</th>
+                      <th className="text-right px-4 py-2.5 font-medium">Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr key={user.id} className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                        {/* User */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold shrink-0">
+                              {user.image ? (
+                                <img src={user.image} alt="" className="h-8 w-8 rounded-full object-cover" />
+                              ) : (
+                                (user.name || user.email).charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate max-w-[180px]">{user.name || "—"}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">{user.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        {/* Role */}
+                        <td className="px-3 py-3">
+                          <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5 text-muted-foreground"}`}>
+                            {user.role === "admin" ? "👑 Админ" : "Пользователь"}
+                          </Badge>
+                        </td>
+                        {/* Progress */}
+                        <td className="px-3 py-3">
+                          <div className="space-y-0.5">
+                            <p className="text-xs"><span className="text-emerald-400">Ур. {user.level}</span> • <span className="text-amber-400">{user.xp} XP</span></p>
+                            <p className="text-xs text-muted-foreground">🔥 {user.streak} дней • {user._count.attempts} попыток</p>
+                          </div>
+                        </td>
+                        {/* Device */}
+                        <td className="px-3 py-3">
+                          <div className="max-w-[160px]">
+                            <p className="text-xs truncate" title={user.lastDevice || undefined}>{user.lastDevice || <span className="text-muted-foreground/50">—</span>}</p>
+                            {user.lastUserAgent && (
+                              <p className="text-[10px] text-muted-foreground/50 truncate max-w-[160px]" title={user.lastUserAgent}>{user.lastUserAgent.substring(0, 50)}…</p>
+                            )}
+                          </div>
+                        </td>
+                        {/* IP */}
+                        <td className="px-3 py-3">
+                          <p className="text-xs font-mono text-muted-foreground">{user.lastIp || <span className="text-muted-foreground/50">—</span>}</p>
+                        </td>
+                        {/* Registered */}
+                        <td className="px-3 py-3">
+                          <p className="text-xs text-muted-foreground">{formatDate(user.createdAt)}</p>
+                        </td>
+                        {/* Last active */}
+                        <td className="px-3 py-3">
+                          <p className="text-xs text-muted-foreground">{user.lastActiveAt ? formatRelative(user.lastActiveAt) : <span className="text-muted-foreground/50">—</span>}</p>
+                        </td>
+                        {/* Action */}
+                        <td className="px-4 py-3 text-right">
+                          <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 p-0 text-xs text-muted-foreground hover:text-foreground" title="Сменить роль">
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="md:hidden">
+                {users.map((user) => (
+                  <div key={user.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 text-sm font-bold shrink-0">
+                        {user.image ? (
+                          <img src={user.image} alt="" className="h-10 w-10 rounded-full object-cover" />
+                        ) : (
+                          (user.name || user.email).charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium truncate">{user.name || "—"}</p>
+                          <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5 text-muted-foreground"} text-[10px] h-5`}>
+                            {user.role === "admin" ? "👑" : "👤"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                          <span className="text-emerald-400">Ур. {user.level}</span>
+                          <span className="text-amber-400">{user.xp} XP</span>
+                          <span>🔥 {user.streak}</span>
+                          <span>{user._count.attempts} поп.</span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                          {user.lastDevice && <span>{user.lastDevice}</span>}
+                          {user.lastIp && <span className="font-mono">{user.lastIp}</span>}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70">
+                          <span>Рег: {formatDate(user.createdAt)}</span>
+                          {user.lastActiveAt && <span>Вход: {formatRelative(user.lastActiveAt)}</span>}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0" title="Сменить роль">
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5"}`}>
-                    {user.role}
-                  </Badge>
-                  <span className="text-xs text-emerald-400">Ур. {user.level}</span>
-                  <span className="text-xs text-amber-400">{user.xp} XP</span>
-                  <span className="text-xs text-muted-foreground">{user._count.attempts} поп.</span>
-                  <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 p-0 text-xs text-muted-foreground hover:text-foreground" title="Сменить роль">
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

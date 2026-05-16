@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Zap, Target, Trophy, TreePine, Flame, ChevronRight, Sparkles } from "lucide-react";
+import { Zap, Target, Trophy, TreePine, Flame, ChevronRight, Sparkles, Shield } from "lucide-react";
 import { motion } from "framer-motion";
 
 const features = [
@@ -167,7 +167,16 @@ export default function LandingPage() {
             <Zap className="h-4 w-4 text-emerald-400" />
             <span className="text-sm text-muted-foreground">AI Тренажёр для 1C</span>
           </div>
-          <p className="text-xs text-muted-foreground">© 2026</p>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/admin/login"
+              className="text-xs text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors flex items-center gap-1"
+            >
+              <Shield className="h-3 w-3" />
+              Админка
+            </Link>
+            <p className="text-xs text-muted-foreground">© 2026</p>
+          </div>
         </div>
       </footer>
     </div>

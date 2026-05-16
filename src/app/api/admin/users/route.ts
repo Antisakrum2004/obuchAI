@@ -19,7 +19,13 @@ export async function GET() {
         xp: true,
         level: true,
         streak: true,
+        maxStreak: true,
+        image: true,
         createdAt: true,
+        lastActiveAt: true,
+        lastIp: true,
+        lastUserAgent: true,
+        lastDevice: true,
         _count: {
           select: { attempts: true },
         },

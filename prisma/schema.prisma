@@ -29,6 +29,11 @@ model User {
   maxStreak     Int      @default(0)
   lastActiveAt  DateTime?
 
+  // Tracking info
+  lastIp        String?  // Last known IP address
+  lastUserAgent String?  // Last browser User-Agent
+  lastDevice    String?  // Parsed device info (e.g. "Chrome / Windows" or "Safari / iPhone")
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
