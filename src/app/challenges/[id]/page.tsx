@@ -94,7 +94,7 @@ function hashSeed(a: string, b: string): number {
 const contentVariants = {
   enter: (direction: number) => ({
     opacity: 0,
-    x: direction > 0 ? 40 : -40,
+    x: direction > 0 ? 60 : -60,
   }),
   center: {
     opacity: 1,
@@ -102,13 +102,13 @@ const contentVariants = {
   },
   exit: (direction: number) => ({
     opacity: 0,
-    x: direction > 0 ? -30 : 30,
+    x: direction > 0 ? -60 : 60,
   }),
 };
 
-// easeOut, 0.2s — fast and predictable
+// easeOut, 0.25s — smooth and predictable (Duolingo-like)
 const transitionConfig = {
-  duration: 0.2,
+  duration: 0.25,
   ease: [0.25, 0.1, 0.25, 1],
 };
 
@@ -689,6 +689,8 @@ export default function ChallengePage() {
         </div>
 
         {/* ═══ LAYER 2: ANIMATED CONTENT ═══ */}
+        {/* Fixed min-height prevents layout shift/jitter when content changes */}
+        <div style={{ minHeight: 420 }}>
         {/* key=activeId — changes trigger AnimatePresence animation via STATE, not route */}
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
@@ -863,6 +865,7 @@ export default function ChallengePage() {
             )}
           </motion.div>
         </AnimatePresence>
+        </div>{/* end min-height wrapper */}
       </div>
     </AppLayout>
   );

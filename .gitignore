@@ -75,3 +75,4 @@ worklog.md
 # Vercel env files
 .env.vercel
 .env.production
+.env*.local
