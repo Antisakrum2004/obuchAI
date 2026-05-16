@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useSession } from "next-auth/react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
@@ -79,7 +80,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
       <Separator className="bg-white/5 mx-3 w-auto" />
 
       {/* Footer */}
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 space-y-3">
         <Link href="/dashboard">
           <Button
             variant="outline"
@@ -90,8 +91,11 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
             Ежедневная задача
           </Button>
         </Link>
-        <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
-          v1.6.0
+        <div className="flex items-center justify-center pt-1">
+          <ThemeToggle size="small" />
+        </div>
+        <p className="text-center text-[10px] text-muted-foreground/50">
+          v2.0.0
         </p>
       </div>
     </div>

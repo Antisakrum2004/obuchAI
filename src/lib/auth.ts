@@ -130,6 +130,27 @@ function genId(): string {
 
 export const authOptions: NextAuthOptions = {
   providers,
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days — explicit so sessions don't silently expire
+  },
+  jwt: {
+    maxAge: 30 * 24 * 60 * 60, // 30 days — keep in sync with session maxAge
+  },
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-next-auth.session-token"
+          : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === "credentials" || account?.provider === "admin-credentials") {
@@ -245,6 +266,23 @@ export const authOptions: NextAuthOptions = {
             }
           }
         }
+      } else if (token.id) {
+        // Subsequent requests (user is NOT set) — refresh user data from DB
+        // so the JWT stays fresh even if the user's role/xp/level/streak changed
+        try {
+          const result = await pool.query(
+            `SELECT role, xp, level, streak FROM users WHERE id = $1`,
+            [token.id]
+          );
+          if (result.rows[0]) {
+            token.role = result.rows[0].role || "user";
+            token.xp = result.rows[0].xp || 0;
+            token.level = result.rows[0].level || 1;
+            token.streak = result.rows[0].streak || 0;
+          }
+        } catch {
+          // DB unavailable — keep existing token values (graceful degradation)
+        }
       }
 
       // Ensure defaults
@@ -277,7 +315,6 @@ export const authOptions: NextAuthOptions = {
       return baseUrl + "/dashboard";
     },
   },
-  session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },

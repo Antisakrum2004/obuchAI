@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { Target, ArrowRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface LeaderboardEntry {
   rank: number;
@@ -223,7 +224,16 @@ export default function DashboardPage() {
             />
           )}
           {dailyLoading && (
-            <div className="glass rounded-2xl p-6 shimmer h-48" />
+            <div className="glass rounded-2xl p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Skeleton className="h-5 w-5 rounded" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+              <Skeleton className="h-6 w-3/4 mb-2" />
+              <Skeleton className="h-4 w-full mb-1" />
+              <Skeleton className="h-4 w-2/3 mb-4" />
+              <Skeleton className="h-9 w-28 rounded-lg" />
+            </div>
           )}
         </motion.div>
 

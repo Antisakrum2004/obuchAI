@@ -46,7 +46,7 @@ export function MobileTabBar() {
           );
         })}
         {/* Version indicator */}
-        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v1.6.0</span>
+        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v2.0.0</span>
       </div>
     </nav>
   );

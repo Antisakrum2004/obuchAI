@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider } from "@/components/theme-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className="dark" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <head>
         {/* 
           This script runs BEFORE the page renders and kills the Vercel Toolbar.
@@ -103,14 +104,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
         <Toaster
           position="top-right"
           toastOptions={{
             style: {
-              background: "#111118",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "#f1f5f9",
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              color: "var(--foreground)",
             },
           }}
         />

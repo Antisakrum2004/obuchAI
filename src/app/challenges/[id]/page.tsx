@@ -153,6 +153,10 @@ export default function ChallengePage() {
   // ★ Guard: ignore URL param changes during state transitions
   const isTransitioningRef = useRef(false);
 
+  // ★ Swipe state
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+
   // Timer
   useEffect(() => {
     if (!challenge || result || challenge.isSolved || onCooldown) return;
@@ -467,6 +471,33 @@ export default function ChallengePage() {
       .catch(() => {});
   }, [nextChallengeId, router, resetForNewChallenge]);
 
+  // ★ Swipe handlers (must be before conditional returns)
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    // Only track horizontal left-swipe, ignore right-swipe (clamp to 0)
+    const clamped = Math.min(deltaX, 0);
+    // Apply resistance: only move 40% of actual swipe distance
+    setSwipeOffset(clamped * 0.4);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!touchStartRef.current) return;
+    // If swipe offset passed threshold (negative = left swipe)
+    // 80px real swipe × 0.4 resistance = -32px offset
+    if (swipeOffset < -32) {
+      handleNext();
+    }
+    touchStartRef.current = null;
+    setSwipeOffset(0);
+  }, [swipeOffset, handleNext]);
+
   // === CONDITIONAL RETURNS ===
 
   if (error && !challenge) {
@@ -560,7 +591,16 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-3xl relative">
+      <div
+        className="mx-auto max-w-3xl relative"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : undefined,
+          transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'transform 0.05s linear',
+        }}
+      >
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -815,6 +855,15 @@ export default function ChallengePage() {
           </motion.div>
         </AnimatePresence>
         </div>{/* end min-height wrapper */}
+
+        {/* ★ Swipe indicator — subtle pulsing hint */}
+        {nextChallengeId && !result && !isSolved && (
+          <div className="flex items-center justify-center gap-1.5 mt-4 select-none">
+            <span className="text-xs text-muted-foreground/40">свайп влево</span>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/40 animate-pulse" />
+            <span className="inline-block text-muted-foreground/30">←</span>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

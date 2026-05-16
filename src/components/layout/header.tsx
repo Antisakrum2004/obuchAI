@@ -16,6 +16,7 @@ import {
 import { Menu, LogOut, User, Info } from "lucide-react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -23,10 +24,10 @@ interface HeaderProps {
 
 export function Header({ onMenuToggle }: HeaderProps) {
   const { data: session } = useSession();
-  const { xp, level, streak, name, image } = useUserStore();
+  const { xp, level, streak, name, image, id: userId } = useUserStore();
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-white/5 bg-[#0a0a0f]/80 px-4 backdrop-blur-md md:px-6">
+    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-md md:px-6">
       {/* Mobile menu toggle */}
       <Button
         variant="ghost"
@@ -45,6 +46,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
 
       {/* Right side */}
       <div className="flex items-center gap-3">
+        <ThemeToggle size="small" />
         <StreakCounter streak={streak} />
 
         {session ? (
@@ -59,7 +61,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-[#111118] border-white/10">
+            <DropdownMenuContent align="end" className="w-56 bg-card border-border">
               <div className="flex items-center gap-2 p-2">
                 <div>
                   <p className="text-sm font-medium">{name}</p>
@@ -70,7 +72,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
               </div>
               <DropdownMenuSeparator className="bg-white/5" />
               <DropdownMenuItem asChild>
-                <Link href="/dashboard" className="cursor-pointer">
+                <Link href={userId ? `/profile/${userId}` : "/dashboard"} className="cursor-pointer">
                   <User className="mr-2 h-4 w-4" />
                   Профиль
                 </Link>

@@ -17,8 +17,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   useUserStats();
 
   return (
-    <SessionProvider>
-      <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
+    <SessionProvider refetchInterval={5 * 60}>
+      <div className="flex h-screen overflow-hidden bg-background">
         {/* Desktop Sidebar */}
         <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-white/5">
           <AppSidebar />
@@ -28,7 +28,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent
             side="left"
-            className="w-64 border-white/5 bg-[#0d0d14] p-0"
+            className="w-64 border-white/5 bg-sidebar p-0"
           >
             <AppSidebar onNavigate={() => setSheetOpen(false)} />
           </SheetContent>

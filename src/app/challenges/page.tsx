@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Target, Search, CheckCircle2, Clock, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ChallengeListItem {
   id: string;
@@ -222,8 +223,15 @@ export default function ChallengesPage() {
         {/* Challenge List */}
         {isLoading ? (
           <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="glass rounded-xl p-4 shimmer h-24" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="glass rounded-xl p-4 flex items-center gap-4">
+                <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
             ))}
           </div>
         ) : sortedChallenges.length === 0 ? (
