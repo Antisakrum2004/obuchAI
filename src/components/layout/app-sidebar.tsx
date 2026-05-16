@@ -11,6 +11,7 @@ import {
   FlaskConical,
   Settings,
   Zap,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +23,7 @@ const allNavItems = [
   { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },
+  { href: "/about", label: "О проекте", icon: Info, adminOnly: false },
   { href: "/admin", label: "Управление", icon: Settings, adminOnly: true },
 ];
 

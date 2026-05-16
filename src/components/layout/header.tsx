@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, LogOut, User } from "lucide-react";
+import { Menu, LogOut, User, Info } from "lucide-react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 
@@ -73,6 +73,12 @@ export function Header({ onMenuToggle }: HeaderProps) {
                 <Link href="/dashboard" className="cursor-pointer">
                   <User className="mr-2 h-4 w-4" />
                   Профиль
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/about" className="cursor-pointer">
+                  <Info className="mr-2 h-4 w-4" />
+                  О проекте
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-white/5" />

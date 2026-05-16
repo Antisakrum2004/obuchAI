@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, Target, Trophy, FlaskConical } from "lucide-react";
+import { Home, Target, Trophy, FlaskConical, Info } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard", label: "Главная", icon: Home },
   { href: "/challenges", label: "Задачи", icon: Target },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
   { href: "/playground", label: "Песочница", icon: FlaskConical },
+  { href: "/about", label: "О проекте", icon: Info },
 ];
 
 export function MobileTabBar() {
