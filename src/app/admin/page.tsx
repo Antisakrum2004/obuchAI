@@ -180,7 +180,8 @@ export default function AdminPage() {
           showToast(`Обновлено: ${data.length} пользователей`);
         }
       } else {
-        showToast("Ошибка загрузки", "err");
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || "Ошибка загрузки", "err");
       }
     } catch {
       showToast("Ошибка сети", "err");
@@ -188,6 +189,23 @@ export default function AdminPage() {
       setIsRefreshingUsers(false);
     }
   };
+
+  // Auto-refresh users every 30 seconds when on admin page
+  useEffect(() => {
+    if (!isAdmin) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/admin/users");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) setUsers(data);
+        }
+      } catch {
+        // silently fail
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAdmin]);
 
   // --- Challenge CRUD ---
   const createChallenge = async () => {
