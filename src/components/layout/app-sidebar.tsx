@@ -91,7 +91,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           </Button>
         </Link>
         <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
-          v1.5.0
+          v1.6.0
         </p>
       </div>
     </div>
