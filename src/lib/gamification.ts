@@ -138,8 +138,7 @@ export function categoryEmoji(category: string): string {
 export function typeLabel(type: string): string {
   switch (type) {
     case "multiple_choice": return "Выбор ответа";
-    case "prompt_fix": return "Исправление промпта";
-    case "text_input": return "Ввод текста";
+    // prompt_fix and text_input types removed — no free-text challenges
     case "ordering": return "Упорядочивание";
     case "workflow_build": return "Сборка workflow";
     default: return type;

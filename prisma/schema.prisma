@@ -134,7 +134,7 @@ model Challenge {
   title         String
   description   String
   difficulty    String   // "easy" | "medium" | "hard"
-  type          String   // "multiple_choice" | "prompt_fix" | "text_input" | "ordering" | "workflow_build"
+  type          String   // "multiple_choice" | "ordering" | "workflow_build"
   category      String   // "prompting" | "agents" | "debugging" | "workflow" | "1c" | "review"
   xpReward      Int      @default(25)
 

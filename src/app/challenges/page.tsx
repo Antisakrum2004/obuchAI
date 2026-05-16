@@ -120,8 +120,6 @@ export default function ChallengesPage() {
   const types = [
     { value: "all", label: "Все типы" },
     { value: "multiple_choice", label: "Выбор ответа" },
-    { value: "prompt_fix", label: "Исправление промпта" },
-    { value: "text_input", label: "Ввод текста" },
     { value: "ordering", label: "Упорядочивание" },
     { value: "workflow_build", label: "Сборка workflow" },
   ];

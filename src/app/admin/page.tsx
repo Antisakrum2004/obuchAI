@@ -132,7 +132,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ adminKey: "seed-v1.5.0" }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -339,7 +339,7 @@ export default function AdminPage() {
 
   // --- Helper: difficulty / type labels ---
   const diffLabel = (d: string) => ({ easy: "Легко", medium: "Средне", hard: "Сложно" }[d] || d);
-  const typeLabel = (t: string) => ({ multiple_choice: "Выбор", prompt_fix: "Промпт", text_input: "Ввод", ordering: "Порядок", workflow_build: "Workflow" }[t] || t);
+  const typeLabel = (t: string) => ({ multiple_choice: "Выбор", ordering: "Порядок", workflow_build: "Workflow" }[t] || t);
   const catLabel = (c: string) => ({ prompting: "Промптинг", agents: "Агенты", debugging: "Дебаг", workflow: "Workflow", "1c": "1С", review: "Ревью" }[c] || c);
 
   return (
@@ -438,8 +438,6 @@ export default function AdminPage() {
                     <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
                     <SelectContent className="bg-[#111118] border-white/10">
                       <SelectItem value="multiple_choice">Выбор</SelectItem>
-                      <SelectItem value="prompt_fix">Промпт</SelectItem>
-                      <SelectItem value="text_input">Ввод</SelectItem>
                       <SelectItem value="ordering">Порядок</SelectItem>
                       <SelectItem value="workflow_build">Workflow</SelectItem>
                     </SelectContent>
@@ -496,8 +494,6 @@ export default function AdminPage() {
                           <SelectTrigger className="bg-white/5 border-white/10 h-9 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent className="bg-[#111118] border-white/10">
                             <SelectItem value="multiple_choice">Выбор</SelectItem>
-                            <SelectItem value="prompt_fix">Промпт</SelectItem>
-                            <SelectItem value="text_input">Ввод</SelectItem>
                             <SelectItem value="ordering">Порядок</SelectItem>
                             <SelectItem value="workflow_build">Workflow</SelectItem>
                           </SelectContent>

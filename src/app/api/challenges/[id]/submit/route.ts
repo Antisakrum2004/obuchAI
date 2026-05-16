@@ -99,10 +99,8 @@ export async function POST(
         isCorrect =
           JSON.stringify(userAnswer) === JSON.stringify(correctAnswer);
       } else {
-        // text_input, prompt_fix
-        isCorrect =
-          answer.trim().toLowerCase() ===
-          String(correctAnswer).trim().toLowerCase();
+        // Unsupported type — always wrong
+        isCorrect = false;
       }
     } else if (challenge.validationType === "pattern") {
       const config = challenge.validationConfig

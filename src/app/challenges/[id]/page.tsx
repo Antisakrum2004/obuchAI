@@ -4,8 +4,6 @@ import { useEffect, useState, useCallback, useMemo, useRef, startTransition } fr
 import { useParams, useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
 import { MultipleChoice, shuffleOptions } from "@/components/challenges/multiple-choice";
-import { PromptFix } from "@/components/challenges/prompt-fix";
-import { TextInput } from "@/components/challenges/text-input";
 import { OrderingChallenge } from "@/components/challenges/ordering-challenge";
 import { ChallengeResult } from "@/components/challenges/challenge-result";
 import { XPAnimation } from "@/components/gamification/xp-animation";
@@ -88,27 +86,24 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// ★★★ DUOLINGO PATTERN: Simple opacity + slide ★★★
-// State transitions within ONE page — no route change = zero latency
-// Only opacity + translateX, no 3D, no scale, no spring
+// ★★★ JITTER-FREE: Pure opacity fade — NO translateX/translateY ★★★
+// translateX causes layout shifts & scrollbar jumps on varying content
+// Pure opacity = zero layout shift = zero jitter
 const contentVariants = {
-  enter: (direction: number) => ({
+  enter: {
     opacity: 0,
-    x: direction > 0 ? 60 : -60,
-  }),
+  },
   center: {
     opacity: 1,
-    x: 0,
   },
-  exit: (direction: number) => ({
+  exit: {
     opacity: 0,
-    x: direction > 0 ? -60 : 60,
-  }),
+  },
 };
 
-// easeOut, 0.25s — smooth and predictable (Duolingo-like)
+// 0.18s — snappy, imperceptible delay, zero visible jitter
 const transitionConfig = {
-  duration: 0.25,
+  duration: 0.18,
   ease: [0.25, 0.1, 0.25, 1],
 };
 
@@ -125,8 +120,6 @@ export default function ChallengePage() {
 
   // Answer states
   const [multipleChoiceAnswer, setMultipleChoiceAnswer] = useState<string | null>(null);
-  const [promptFixAnswer, setPromptFixAnswer] = useState("");
-  const [textInputAnswer, setTextInputAnswer] = useState("");
   const [orderingAnswer, setOrderingAnswer] = useState<number[]>([]);
   const [workflowAnswer, setWorkflowAnswer] = useState<number[]>([]);
 
@@ -152,7 +145,6 @@ export default function ChallengePage() {
   // Navigation
   const [challengeList, setChallengeList] = useState<ChallengeListItem[]>([]);
   const [nextChallengeId, setNextChallengeId] = useState<string | null>(null);
-  const [direction, setDirection] = useState(1);
   const startTimeRef = useRef(Date.now());
 
   // ★ Track if this is the initial load (for skeleton)
@@ -194,15 +186,6 @@ export default function ChallengePage() {
   /** Apply challenge data to state */
   function applyChallengeData(data: ChallengeData) {
     setChallenge(data);
-
-    if (data.type === "prompt_fix") {
-      try {
-        const content = JSON.parse(data.content);
-        setPromptFixAnswer(content.originalPrompt || "");
-      } catch {
-        setPromptFixAnswer("");
-      }
-    }
 
     // Fetch user session in background (once)
     if (!userId) {
@@ -361,19 +344,15 @@ export default function ChallengePage() {
     if (!challenge) return null;
     switch (challenge.type) {
       case "multiple_choice": return multipleChoiceAnswer;
-      case "prompt_fix": return promptFixAnswer;
-      case "text_input": return textInputAnswer;
       case "ordering": return orderingAnswer.length > 0 ? orderingAnswer : null;
       case "workflow_build": return workflowAnswer.length > 0 ? workflowAnswer : null;
       default: return null;
     }
-  }, [challenge, multipleChoiceAnswer, promptFixAnswer, textInputAnswer, orderingAnswer, workflowAnswer]);
+  }, [challenge, multipleChoiceAnswer, orderingAnswer, workflowAnswer]);
 
   // Reset all states for a new challenge
   const resetForNewChallenge = useCallback(() => {
     setMultipleChoiceAnswer(null);
-    setPromptFixAnswer("");
-    setTextInputAnswer("");
     setOrderingAnswer([]);
     setWorkflowAnswer([]);
     setIsSubmitting(false);
@@ -443,10 +422,7 @@ export default function ChallengePage() {
   const handleNext = useCallback(() => {
     if (!nextChallengeId) return;
 
-    // 1. Set direction for animation
-    setDirection(1);
-
-    // 2. Guard: prevent the useEffect from re-running when URL changes
+    // 1. Guard: prevent the useEffect from re-running when URL changes
     isTransitioningRef.current = true;
 
     // 3. Check cache for instant data
@@ -457,15 +433,6 @@ export default function ChallengePage() {
       setChallenge(cached);
       setActiveId(nextChallengeId);
       setError(null);
-
-      if (cached.type === "prompt_fix") {
-        try {
-          const content = JSON.parse(cached.content);
-          setPromptFixAnswer(content.originalPrompt || "");
-        } catch {
-          setPromptFixAnswer("");
-        }
-      }
     } else {
       // ★ Cache MISS: keep old challenge visible, fetch in background
       resetForNewChallenge();
@@ -476,14 +443,6 @@ export default function ChallengePage() {
         .then((data) => {
           setCachedChallenge(nextChallengeId, data);
           setChallenge(data);
-          if (data.type === "prompt_fix") {
-            try {
-              const content = JSON.parse(data.content);
-              setPromptFixAnswer(content.originalPrompt || "");
-            } catch {
-              setPromptFixAnswer("");
-            }
-          }
         })
         .catch(() => setError("Ошибка загрузки"));
     }
@@ -582,8 +541,6 @@ export default function ChallengePage() {
   const hasAnswer = (() => {
     switch (challenge.type) {
       case "multiple_choice": return multipleChoiceAnswer !== null;
-      case "prompt_fix": return promptFixAnswer.trim().length > 0;
-      case "text_input": return textInputAnswer.trim().length > 0;
       case "ordering":
       case "workflow_build": return orderingAnswer.length > 0 || workflowAnswer.length > 0;
       default: return false;
@@ -689,18 +646,18 @@ export default function ChallengePage() {
         </div>
 
         {/* ═══ LAYER 2: ANIMATED CONTENT ═══ */}
-        {/* Fixed min-height prevents layout shift/jitter when content changes */}
-        <div style={{ minHeight: 420 }}>
+        {/* CSS containment + will-change prevents layout reflow during transitions */}
+        <div style={{ minHeight: 500, contain: "layout style", willChange: "auto" }}>
         {/* key=activeId — changes trigger AnimatePresence animation via STATE, not route */}
-        <AnimatePresence mode="wait" custom={direction}>
+        <AnimatePresence mode="wait">
           <motion.div
             key={activeId}
-            custom={direction}
             variants={contentVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={transitionConfig}
+            style={{ willChange: "opacity" }}
           >
             {/* SOLVED OVERLAY */}
             {isSolved && !result && (
@@ -784,14 +741,6 @@ export default function ChallengePage() {
 
                 {challenge.type === "multiple_choice" && (
                   <MultipleChoice shuffledOptions={shuffledOptions} value={multipleChoiceAnswer} onChange={setMultipleChoiceAnswer} />
-                )}
-
-                {challenge.type === "prompt_fix" && (
-                  <PromptFix originalPrompt={parsedContent.originalPrompt || ""} value={promptFixAnswer} onChange={setPromptFixAnswer} hints={parsedHints} />
-                )}
-
-                {challenge.type === "text_input" && (
-                  <TextInput value={textInputAnswer} onChange={setTextInputAnswer} placeholder={parsedContent.placeholder || "Введите ответ..."} hints={parsedHints} />
                 )}
 
                 {challenge.type === "ordering" && (

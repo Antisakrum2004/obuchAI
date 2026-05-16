@@ -12,7 +12,7 @@ const adapter = new PrismaNeon(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log("🌱 Seeding database — v1.4.0 — 100 tricky challenges...");
+  console.log("🌱 Seeding database — v1.5.0 — 100 tricky challenges...");
 
   // Clean up
   await prisma.userAchievement.deleteMany();
