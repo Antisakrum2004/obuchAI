@@ -97,7 +97,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           <ThemeToggle size="small" />
         </div>
         <p className="text-center text-[10px] text-muted-foreground/50">
-          v2.3.1
+          v2.3.2
         </p>
       </div>
     </div>

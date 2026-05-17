@@ -91,8 +91,8 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
       style={{
         width: badgeSize,
         height: badgeSize,
-        bottom: isAdmin ? -2 : -1,
-        right: isAdmin ? -2 : -1,
+        bottom: -1,
+        right: -1,
         fontSize: size === "sm" ? 8 : size === "md" ? 9 : 12,
         lineHeight: 1,
       }}
@@ -119,28 +119,60 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // Admin dragon frame
+  // ★ Admin dragon frame — WoW rare card style with dragon-frame.png overlay
   if (isAdmin) {
+    // Dragon frame needs more space — the frame image is 100% of the container
+    // Avatar sits at 72% inside, centered
+    const containerSize = Math.round(px * 1.4); // Frame is bigger than avatar
+    const avatarSize = Math.round(containerSize * 0.68);
+
     return (
       <div
-        className={cn("avatar-frame-dragon relative inline-block", className)}
-        style={{ width: px + 10, height: px + 10 }}
+        className={cn("admin-avatar relative inline-flex items-center justify-center", className)}
+        style={{ width: containerSize, height: containerSize }}
       >
+        {/* Glow layer */}
         <div
-          className="avatar-dragon-border rounded-full"
-          style={{ width: "100%", height: "100%" }}
+          className="admin-avatar__glow absolute rounded-full"
+          style={{
+            width: "78%",
+            height: "78%",
+          }}
+        />
+        {/* Avatar image */}
+        <Avatar
+          className="admin-avatar__image relative z-[2] border-[3px] border-white/12"
+          style={{ width: avatarSize, height: avatarSize }}
         >
-          <Avatar
-            className="rounded-full"
-            style={{ width: px, height: px, margin: 5 }}
-          >
-            <AvatarImage src={image || undefined} alt={name || ""} />
-            <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
-              {initial}
-            </AvatarFallback>
-          </Avatar>
-        </div>
-        {levelBadge}
+          <AvatarImage src={image || undefined} alt={name || ""} />
+          <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
+            {initial}
+          </AvatarFallback>
+        </Avatar>
+        {/* Dragon frame overlay */}
+        <img
+          src="/frames/dragon-frame.png"
+          alt=""
+          className="admin-avatar__frame absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none"
+        />
+        {/* Level badge */}
+        <span
+          className={cn(
+            "absolute z-[4] flex items-center justify-center rounded-full font-bold text-white border border-white/30",
+            badgeText,
+            tierLevelBadgeBg[tier]
+          )}
+          style={{
+            width: badgeSize,
+            height: badgeSize,
+            bottom: Math.round(containerSize * 0.05),
+            right: Math.round(containerSize * 0.05),
+            fontSize: size === "sm" ? 8 : size === "md" ? 9 : 12,
+            lineHeight: 1,
+          }}
+        >
+          {level}
+        </span>
       </div>
     );
   }

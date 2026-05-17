@@ -420,103 +420,78 @@
   75% { box-shadow: 0 0 12px rgba(16, 185, 129, 0.5); }
 }
 
-/* ═══ Admin Dragon Frame — WoW rare/blue card style ═══ */
-@keyframes dragon-border-rotate {
+/* ═══ Admin Dragon Frame — WoW rare card style ═══ */
+@keyframes dragonPulse {
+  0% {
+    transform: scale(1);
+    filter:
+      drop-shadow(0 0 10px rgba(0, 212, 255, 0.25))
+      drop-shadow(0 0 18px rgba(255, 170, 0, 0.20));
+  }
+
+  50% {
+    transform: scale(1.02);
+    filter:
+      drop-shadow(0 0 18px rgba(0, 212, 255, 0.45))
+      drop-shadow(0 0 34px rgba(255, 170, 0, 0.34));
+  }
+
+  100% {
+    transform: scale(1);
+    filter:
+      drop-shadow(0 0 10px rgba(0, 212, 255, 0.25))
+      drop-shadow(0 0 18px rgba(255, 170, 0, 0.20));
+  }
+}
+
+@keyframes glowRotate {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-@keyframes dragon-glow-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(148, 163, 184, 0.3), 0 0 16px rgba(148, 163, 184, 0.1); }
-  50% { box-shadow: 0 0 14px rgba(148, 163, 184, 0.5), 0 0 28px rgba(148, 163, 184, 0.2); }
-}
-
-.avatar-frame-dragon {
+.admin-avatar {
   position: relative;
-  animation: dragon-glow-pulse 4s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Bottom-right dragon wing */
-.avatar-frame-dragon::after {
-  content: "";
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 40%;
-  height: 40%;
-  border-radius: 50% 0 50% 50%;
-  background: linear-gradient(315deg, rgba(107, 114, 128, 0.5), rgba(156, 163, 175, 0.3));
-  transform: rotate(30deg);
-  pointer-events: none;
-  z-index: 1;
-  mask-image: radial-gradient(ellipse at 70% 70%, black 30%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 70% 70%, black 30%, transparent 70%);
-}
-
-.avatar-dragon-border {
+.admin-avatar__image {
+  border-radius: 999px;
+  object-fit: cover;
   position: relative;
-  padding: 5px;
-  background: conic-gradient(
-    from 0deg,
-    #4b5563 0deg,
-    #9ca3af 30deg,
-    #6b7280 60deg,
-    #d1d5db 90deg,
-    #4b5563 120deg,
-    #9ca3af 150deg,
-    #6b7280 180deg,
-    #d1d5db 210deg,
-    #4b5563 240deg,
-    #9ca3af 270deg,
-    #6b7280 300deg,
-    #d1d5db 330deg,
-    #4b5563 360deg
-  );
-  border-radius: 50%;
+  z-index: 2;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 0 20px rgba(0, 212, 255, 0.18),
+    0 0 50px rgba(124, 58, 237, 0.22);
 }
 
-.avatar-dragon-border::before {
-  content: "";
+.admin-avatar__frame {
   position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    #4b5563 0deg,
-    #9ca3af 30deg,
-    #6b7280 60deg,
-    #d1d5db 90deg,
-    #4b5563 120deg,
-    #9ca3af 150deg,
-    #6b7280 180deg,
-    #d1d5db 210deg,
-    #4b5563 240deg,
-    #9ca3af 270deg,
-    #6b7280 300deg,
-    #d1d5db 330deg,
-    #4b5563 360deg
-  );
-  animation: dragon-border-rotate 30s linear infinite;
-  z-index: -1;
-  filter: blur(2px);
-  opacity: 0.6;
-}
-
-/* Dragon wings — top-left and bottom-right wing shapes */
-.avatar-dragon-border::after {
-  content: "";
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  width: 40%;
-  height: 40%;
-  border-radius: 0 50% 50% 50%;
-  background: linear-gradient(135deg, rgba(107, 114, 128, 0.5), rgba(156, 163, 175, 0.3));
-  transform: rotate(-30deg);
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 3;
   pointer-events: none;
+  filter:
+    drop-shadow(0 0 12px rgba(0, 212, 255, 0.35))
+    drop-shadow(0 0 24px rgba(255, 170, 0, 0.28));
+  animation: dragonPulse 4s ease-in-out infinite;
+}
+
+.admin-avatar__glow {
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      circle,
+      rgba(0, 212, 255, 0.22) 0%,
+      rgba(124, 58, 237, 0.18) 45%,
+      transparent 75%
+    );
   z-index: 1;
-  mask-image: radial-gradient(ellipse at 30% 30%, black 30%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 30% 30%, black 30%, transparent 70%);
+  filter: blur(18px);
+  animation: glowRotate 10s linear infinite;
 }
 
 .avatar-frame-silver {

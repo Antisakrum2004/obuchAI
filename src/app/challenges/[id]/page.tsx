@@ -748,19 +748,17 @@ export default function ChallengePage() {
         </div>
 
         {/* ═══ LAYER 2: ANIMATED CONTENT ═══ */}
-        {/* CSS containment + will-change prevents layout reflow during transitions */}
-        <div style={{ minHeight: 500, contain: "layout style", willChange: "auto", position: "relative", overflow: "hidden" }}>
+        {/* CSS containment prevents layout reflow during transitions */}
+        <div style={{ minHeight: 500, position: "relative", overflow: "hidden" }}>
         {/* key=activeId — changes trigger AnimatePresence animation via STATE, not route */}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeId}
-            layoutId={`challenge-content-${activeId}`}
             variants={contentVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={transitionConfig}
-            style={{ willChange: "transform, opacity" }}
           >
             {/* SOLVED OVERLAY */}
             {isSolved && !result && (
@@ -907,7 +905,6 @@ export default function ChallengePage() {
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.3 }}
                 className="absolute inset-0 z-10 flex items-start justify-center pt-4"
-                style={{ willChange: "opacity" }}
               >
                 <ChallengeResult
                   isCorrect={result.isCorrect}
