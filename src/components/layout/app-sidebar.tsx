@@ -12,6 +12,7 @@ import {
   Settings,
   Zap,
   Info,
+  Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +22,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
+  { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },
@@ -95,7 +97,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           <ThemeToggle size="small" />
         </div>
         <p className="text-center text-[10px] text-muted-foreground/50">
-          v2.0.0
+          v2.3.0
         </p>
       </div>
     </div>

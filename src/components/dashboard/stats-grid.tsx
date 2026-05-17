@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Target, Zap, Trophy, TrendingUp } from "lucide-react";
+import { AnimatedNumber } from "@/components/gamification/animated-number";
 
 interface StatsGridProps {
   stats: {
@@ -36,7 +37,11 @@ export function StatsGrid({ stats, className }: StatsGridProps) {
               </div>
             </div>
             <p className={cn("text-2xl font-bold", card.color)}>
-              {card.key === "rank" ? `#${value}` : value.toLocaleString()}
+              {card.key === "rank" ? (
+                <>#{value}</>
+              ) : (
+                <AnimatedNumber value={value} />
+              )}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">{card.label}</p>
           </div>

@@ -166,7 +166,7 @@ export function ChallengeResult({
         {isCorrect && hasNext && onNext && (
           <Button
             onClick={onNext}
-            className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+            className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
           >
             Следующая задача
             <ArrowRight className="ml-1 h-4 w-4" />
@@ -175,7 +175,7 @@ export function ChallengeResult({
         {!isCorrect && hasNext && onNext && (
           <Button
             onClick={onNext}
-            className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+            className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
           >
             Попробовать другую
             <ArrowRight className="ml-1 h-4 w-4" />
@@ -184,7 +184,7 @@ export function ChallengeResult({
         {!hasNext && (
           <Link href="/challenges">
             <Button
-              className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+              className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
             >
               Все задачи решены!
               <ArrowRight className="ml-1 h-4 w-4" />

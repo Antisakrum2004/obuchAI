@@ -202,8 +202,9 @@ export async function POST(
         const finalLevel = calculateLevel(finalXp);
         const maxStreak = Math.max(user.maxStreak, newStreak);
 
+        // ★ Adaptive difficulty: increment consecutiveCorrect, reset consecutiveWrong
         await query(
-          `UPDATE users SET xp = $1, level = $2, streak = $3, "maxStreak" = $4, "lastActiveAt" = $5 WHERE id = $6`,
+          `UPDATE users SET xp = $1, level = $2, streak = $3, "maxStreak" = $4, "lastActiveAt" = $5, "consecutiveCorrect" = "consecutiveCorrect" + 1, "consecutiveWrong" = 0 WHERE id = $6`,
           [finalXp, finalLevel, newStreak, maxStreak, new Date(), userId],
         );
 
@@ -271,10 +272,12 @@ export async function POST(
           { slug: "30-day-streak", check: newStreak >= 30 },
         ];
 
+        const newAchievements: { name: string; description: string; icon: string; xpReward: number; slug: string }[] = [];
+
         for (const cond of achievementConditions) {
           if (cond.check) {
             const achievementResult = await query(
-              `SELECT id, "xpReward" FROM achievements WHERE slug = $1`,
+              `SELECT id, name, slug, description, icon, "xpReward" FROM achievements WHERE slug = $1`,
               [cond.slug],
             );
             if (achievementResult.rows.length > 0) {
@@ -300,6 +303,14 @@ export async function POST(
                     [achXpLogId, userId, achievement.xpReward, "achievement", achievement.id],
                   );
                 }
+                // Track newly earned achievement for the response
+                newAchievements.push({
+                  name: achievement.name,
+                  description: achievement.description,
+                  icon: achievement.icon,
+                  xpReward: achievement.xpReward || 0,
+                  slug: achievement.slug,
+                });
               }
             }
           }
@@ -316,6 +327,7 @@ export async function POST(
           leveledUp: finalLevel > user.level,
           timeMultiplier,
           heartsMultiplier,
+          newAchievements,
         });
       }
 
@@ -330,6 +342,16 @@ export async function POST(
         newStreak: 1,
         leveledUp: false,
       });
+    }
+
+    // ★ Adaptive difficulty: increment consecutiveWrong, reset consecutiveCorrect
+    try {
+      await query(
+        `UPDATE users SET "consecutiveWrong" = "consecutiveWrong" + 1, "consecutiveCorrect" = 0 WHERE id = $1`,
+        [userId],
+      );
+    } catch (adaptiveErr) {
+      console.warn('Adaptive difficulty update failed:', adaptiveErr);
     }
 
     // Wrong answer response

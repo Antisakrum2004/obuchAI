@@ -8,16 +8,19 @@ import { MiniLeaderboard } from "@/components/dashboard/mini-leaderboard";
 import { SkillProgressList } from "@/components/dashboard/skill-progress-list";
 import { RecentAchievements } from "@/components/dashboard/recent-achievements";
 import { WeeklyXpChart } from "@/components/dashboard/weekly-xp-chart";
+import { ReferralCard } from "@/components/profile/referral-card";
 import { LevelBadge } from "@/components/gamification/level-badge";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { StreakCalendar } from "@/components/gamification/streak-calendar";
 import { HeartsDisplay } from "@/components/gamification/hearts-display";
+import { AchievementUnlockModal, type AchievementData } from "@/components/gamification/achievement-unlock-modal";
+import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { useUserStore } from "@/store/user-store";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Target, ArrowRight, Zap } from "lucide-react";
+import { Target, ArrowRight, Zap, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -45,7 +48,7 @@ interface AchievementItem {
 }
 
 export default function DashboardPage() {
-  const { xp, level, streak, name, completedChallenges, rank } = useUserStore();
+  const { xp, level, streak, name, image, completedChallenges, rank } = useUserStore();
   const { data: dailyData, isLoading: dailyLoading } = useDailyChallenge();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [skills, setSkills] = useState<SkillProgressItem[]>([]);
@@ -54,6 +57,34 @@ export default function DashboardPage() {
   const [activeDays, setActiveDays] = useState<string[]>([]);
   const [hearts, setHearts] = useState(3);
   const [nextHeartAt, setNextHeartAt] = useState<string | null>(null);
+
+  // Achievement unlock modal state for dashboard
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [currentAchievement, setCurrentAchievement] = useState<AchievementData | null>(null);
+  const prevAchievementsRef = useRef<AchievementItem[]>([]);
+
+  // Check for newly earned achievements (compare with previous session)
+  useEffect(() => {
+    if (achievements.length === 0) return;
+    if (prevAchievementsRef.current.length === 0) {
+      // First load — just store current achievements
+      prevAchievementsRef.current = achievements;
+      return;
+    }
+    // Compare to find new achievements
+    const prevNames = new Set(prevAchievementsRef.current.map((a) => a.name));
+    const newOnes = achievements.filter((a) => !prevNames.has(a.name));
+    if (newOnes.length > 0) {
+      const first = newOnes[0];
+      setCurrentAchievement({
+        name: first.name,
+        description: "",
+        icon: first.icon,
+      });
+      setShowAchievementModal(true);
+    }
+    prevAchievementsRef.current = achievements;
+  }, [achievements]);
 
   useEffect(() => {
     // Fetch leaderboard
@@ -113,6 +144,11 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
+      <AchievementUnlockModal
+        show={showAchievementModal}
+        achievement={currentAchievement}
+        onClose={() => setShowAchievementModal(false)}
+      />
       <div className="mx-auto max-w-7xl space-y-6">
         {/* Welcome Section */}
         <motion.div
@@ -121,13 +157,16 @@ export default function DashboardPage() {
           transition={{ duration: 0.5 }}
         >
           <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold md:text-3xl">
-                Привет, <span className="gradient-text">{name || "Разработчик"}</span>! 👋
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Продолжай обучение — каждый день на шаг ближе к мастерству
-              </p>
+            <div className="flex items-center gap-3">
+              <AvatarFrame level={level} image={image} name={name} size="lg" />
+              <div>
+                <h1 className="text-2xl font-bold md:text-3xl">
+                  Привет, <span className="gradient-text">{name || "Разработчик"}</span>! 👋
+                </h1>
+                <p className="text-muted-foreground mt-1">
+                  Продолжай обучение — каждый день на шаг ближе к мастерству
+                </p>
+              </div>
             </div>
             <div className="hidden sm:flex items-center gap-4">
               <LevelBadge level={level} size="lg" />
@@ -162,7 +201,7 @@ export default function DashboardPage() {
           transition={{ duration: 0.5, delay: 0.05 }}
         >
           <Link href="/challenges" className="block">
-            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-purple-500/10 p-5 group hover:border-emerald-500/50 transition-all duration-300">
+            <div className="card-hover relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-purple-500/10 p-5 group hover:border-emerald-500/50 transition-all duration-300">
               {/* Glow effect */}
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
@@ -237,7 +276,34 @@ export default function DashboardPage() {
           )}
         </motion.div>
 
-        {/* Bottom Grid: Leaderboard + Skills + Achievements */}
+        {/* Marathon Mode Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.25 }}
+        >
+          <Link href="/marathon" className="block">
+            <div className="card-hover relative overflow-hidden rounded-2xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-red-500/5 to-amber-500/10 p-5 group hover:border-orange-500/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Flame className="h-6 w-6 text-orange-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold text-foreground group-hover:text-orange-400 transition-colors">
+                    Марафон
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Решайте без перерыва — серия правильных ответов увеличивает множитель XP
+                  </p>
+                </div>
+                <ArrowRight className="h-5 w-5 text-orange-400/60 group-hover:text-orange-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
+              </div>
+            </div>
+          </Link>
+        </motion.div>
+
+        {/* Bottom Grid: Leaderboard + Skills + Achievements + Referral */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -264,6 +330,15 @@ export default function DashboardPage() {
             <RecentAchievements achievements={achievements} />
           </motion.div>
         </div>
+
+        {/* Referral Widget */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.55 }}
+        >
+          <ReferralCard compact />
+        </motion.div>
       </div>
     </AppLayout>
   );

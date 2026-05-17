@@ -9,8 +9,10 @@ import { LevelBadge } from "@/components/gamification/level-badge";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { ShareCardButton } from "@/components/profile/share-card";
+import { ReferralCard } from "@/components/profile/referral-card";
 import { AchievementCard } from "@/components/gamification/achievement-card";
 import { categoryEmoji, categoryLabel } from "@/lib/gamification";
+import { useUserStore } from "@/store/user-store";
 import { motion } from "framer-motion";
 import {
   Calendar,
@@ -76,6 +78,8 @@ const staggerItem = {
 export default function ProfilePage() {
   const params = useParams();
   const id = params.id as string;
+  const currentUserId = useUserStore((s) => s.id);
+  const isOwnProfile = currentUserId === id;
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -360,6 +364,17 @@ export default function ProfilePage() {
             </div>
           </div>
         </motion.div>
+
+        {/* Referral Card (only on own profile) */}
+        {isOwnProfile && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+          >
+            <ReferralCard />
+          </motion.div>
+        )}
 
         {/* Two-column: Skills + Achievements */}
         <div className="grid gap-6 lg:grid-cols-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { Trophy } from "lucide-react";
 
 interface LeaderboardEntry {
@@ -9,6 +9,8 @@ interface LeaderboardEntry {
   name: string;
   xp: number;
   streak: number;
+  level?: number;
+  image?: string | null;
   isCurrentUser?: boolean;
 }
 
@@ -53,11 +55,7 @@ export function MiniLeaderboard({ entries, className }: MiniLeaderboardProps) {
               >
                 {entry.rank}
               </span>
-              <Avatar className="h-7 w-7 border border-white/10">
-                <AvatarFallback className="bg-white/5 text-xs">
-                  {entry.name?.charAt(0)?.toUpperCase() || "?"}
-                </AvatarFallback>
-              </Avatar>
+              <AvatarFrame level={entry.level || 1} image={entry.image} name={entry.name} size="sm" />
               <span
                 className={cn(
                   "flex-1 text-sm truncate",

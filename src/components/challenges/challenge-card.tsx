@@ -63,7 +63,7 @@ export function ChallengeCard({
     <Link href={`/challenges/${id}`} onClick={handleClick}>
       <div
         className={cn(
-          "group glass rounded-xl p-4 transition-colors duration-150 cursor-pointer select-none",
+          "group glass card-hover rounded-xl p-4 transition-colors duration-150 cursor-pointer select-none",
           solved
             ? "opacity-40 hover:opacity-60 border-emerald-500/10 bg-emerald-500/[0.02]"
             : onCooldown

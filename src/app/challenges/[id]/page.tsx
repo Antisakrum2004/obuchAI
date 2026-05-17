@@ -8,6 +8,7 @@ import { OrderingChallenge } from "@/components/challenges/ordering-challenge";
 import { ChallengeResult } from "@/components/challenges/challenge-result";
 import { XPAnimation } from "@/components/gamification/xp-animation";
 import { LevelUpModal } from "@/components/gamification/level-up-modal";
+import { AchievementUnlockModal, type AchievementData } from "@/components/gamification/achievement-unlock-modal";
 import { HeartsDisplay } from "@/components/gamification/hearts-display";
 import { difficultyBadgeClass, difficultyLabel, categoryEmoji, categoryLabel, typeLabel } from "@/lib/gamification";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ interface SubmitResult {
   leveledUp: boolean;
   timeMultiplier?: number;
   heartsMultiplier?: number;
+  newAchievements?: AchievementData[];
 }
 
 interface ChallengeListItem {
@@ -137,6 +139,30 @@ export default function ChallengePage() {
   // Level-up modal state
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpData, setLevelUpData] = useState({ level: 1, previousLevel: 1, xpEarned: 0 });
+
+  // Achievement unlock modal state
+  const [achievementQueue, setAchievementQueue] = useState<AchievementData[]>([]);
+  const [currentAchievement, setCurrentAchievement] = useState<AchievementData | null>(null);
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+
+  // Process achievement queue sequentially (2s delay between each)
+  useEffect(() => {
+    if (achievementQueue.length > 0 && !showAchievementModal) {
+      const next = achievementQueue[0];
+      setCurrentAchievement(next);
+      setShowAchievementModal(true);
+      // After 4s (modal auto-close) + 2s delay, process next
+      const timer = setTimeout(() => {
+        setShowAchievementModal(false);
+        // Small delay before showing next achievement
+        setTimeout(() => {
+          setCurrentAchievement(null);
+          setAchievementQueue((prev) => prev.slice(1));
+        }, 300);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [achievementQueue, showAchievementModal]);
 
   // Hearts state
   const [hearts, setHearts] = useState(3);
@@ -400,6 +426,10 @@ export default function ChallengePage() {
             });
             setShowLevelUp(true);
           }
+          // Queue achievement unlock modals
+          if (data.newAchievements && data.newAchievements.length > 0) {
+            setAchievementQueue(data.newAchievements);
+          }
         } else {
           setHearts((h) => Math.max(0, h - 1));
         }
@@ -609,6 +639,11 @@ export default function ChallengePage() {
           xpEarned={levelUpData.xpEarned}
           onClose={() => setShowLevelUp(false)}
         />
+        <AchievementUnlockModal
+          show={showAchievementModal}
+          achievement={currentAchievement}
+          onClose={() => setShowAchievementModal(false)}
+        />
 
         {/* Back button */}
         <Link
@@ -727,7 +762,7 @@ export default function ChallengePage() {
                   {nextChallengeId && (
                     <Button
                       onClick={handleNext}
-                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                      className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
                     >
                       Следующая задача
                       <ArrowRight className="ml-1 h-4 w-4" />
@@ -817,7 +852,7 @@ export default function ChallengePage() {
                   <Button
                     onClick={handleSubmit}
                     disabled={isSubmitting || !hasAnswer}
-                    className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
+                    className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">

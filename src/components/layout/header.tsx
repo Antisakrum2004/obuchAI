@@ -4,8 +4,9 @@ import { useUserStore } from "@/store/user-store";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { LevelBadge } from "@/components/gamification/level-badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { AvatarFrame } from "@/components/gamification/avatar-frame";
+import { AnimatedNumber } from "@/components/gamification/animated-number";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,21 +53,17 @@ export function Header({ onMenuToggle }: HeaderProps) {
         {session ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                <Avatar className="h-9 w-9 border border-white/10">
-                  <AvatarImage src={image || undefined} alt={name || ""} />
-                  <AvatarFallback className="bg-emerald-500/20 text-emerald-400 text-sm">
-                    {name?.charAt(0)?.toUpperCase() || "U"}
-                  </AvatarFallback>
-                </Avatar>
+              <Button variant="ghost" className="relative h-auto w-auto rounded-full p-0">
+                <AvatarFrame level={level} image={image} name={name} size="sm" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 bg-card border-border">
               <div className="flex items-center gap-2 p-2">
+                <AvatarFrame level={level} image={image} name={name} size="sm" />
                 <div>
                   <p className="text-sm font-medium">{name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Уровень {level} • {xp} XP
+                    Уровень {level} • <AnimatedNumber value={xp} /> XP
                   </p>
                 </div>
               </div>

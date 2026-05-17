@@ -219,12 +219,40 @@ export async function POST(request: Request) {
         }
       }
 
+      // Create app_settings table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `)
+
+      // Seed default settings
+      await client.query(`
+        INSERT INTO app_settings (key, value) VALUES
+          ('particles', 'true'),
+          ('confetti', 'true'),
+          ('liquid_xp', 'true'),
+          ('heart_animations', 'true'),
+          ('streak_fire', 'true'),
+          ('avatar_frames', 'true'),
+          ('micro_animations', 'true'),
+          ('adaptive_difficulty', 'true')
+        ON CONFLICT (key) DO NOTHING;
+      `)
+
       // Add missing columns (safe ALTER TABLE for tables that already exist)
       const alterStatements = [
         `ALTER TABLE challenge_attempts ADD COLUMN IF NOT EXISTS "timeSpent" INTEGER;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastIp" TEXT;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastUserAgent" TEXT;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastDevice" TEXT;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "consecutiveCorrect" INTEGER NOT NULL DEFAULT 0;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "consecutiveWrong" INTEGER NOT NULL DEFAULT 0;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCode" TEXT UNIQUE;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referredBy" TEXT;`,
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCount" INTEGER DEFAULT 0;`,
       ];
 
       for (const alterSql of alterStatements) {

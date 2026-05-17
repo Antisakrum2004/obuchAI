@@ -37,6 +37,8 @@ export async function GET(request: Request) {
     // Get user attempt info if logged in
     let solvedIds = new Set<string>();
     let cooldownMap = new Map<string, Date>();
+    let consecutiveCorrect = 0;
+    let consecutiveWrong = 0;
 
     const session = await getServerSession(authOptions);
     if (session?.user) {
@@ -57,6 +59,16 @@ export async function GET(request: Request) {
         wrongResult.rows.forEach((r: { challengeId: string; lastWrongAt: string }) => {
           cooldownMap.set(r.challengeId, new Date(r.lastWrongAt));
         });
+
+        // Get adaptive difficulty state
+        const userResult = await query(
+          `SELECT "consecutiveCorrect", "consecutiveWrong" FROM users WHERE id = $1`,
+          [userId]
+        );
+        if (userResult.rows.length > 0) {
+          consecutiveCorrect = Number(userResult.rows[0].consecutiveCorrect || 0);
+          consecutiveWrong = Number(userResult.rows[0].consecutiveWrong || 0);
+        }
       }
     }
 
@@ -81,7 +93,7 @@ export async function GET(request: Request) {
     // ★ Sort: active first, then blocked (cooldown), then solved at the bottom
     // Tiebreaker: preserve original "order" within each tier
     const now = new Date();
-    challengesWithStatus.sort((a: { isSolved: boolean; cooldownUntil: string | null; order?: number }, b: { isSolved: boolean; cooldownUntil: string | null; order?: number }) => {
+    challengesWithStatus.sort((a: { isSolved: boolean; cooldownUntil: string | null; order?: number; difficulty?: string }, b: { isSolved: boolean; cooldownUntil: string | null; order?: number; difficulty?: string }) => {
       const aSolved = a.isSolved;
       const bSolved = b.isSolved;
       const aBlocked = !aSolved && a.cooldownUntil && new Date(a.cooldownUntil) > now;
@@ -93,11 +105,40 @@ export async function GET(request: Request) {
 
       if (aTier !== bTier) return aTier - bTier;
 
-      // Within same tier, keep original order
+      // ★ Adaptive difficulty: re-order within active tier based on streak
+      if (aTier === 0 && bTier === 0) {
+        // If user has many correct in a row, show harder challenges first
+        if (consecutiveCorrect >= 5) {
+          const diffOrder: Record<string, number> = { hard: 0, medium: 1, easy: 2 };
+          const aDiff = diffOrder[a.difficulty || "easy"] ?? 1;
+          const bDiff = diffOrder[b.difficulty || "easy"] ?? 1;
+          if (aDiff !== bDiff) return aDiff - bDiff;
+        }
+        // If user is struggling, show easier challenges first
+        if (consecutiveWrong >= 3) {
+          const diffOrder: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+          const aDiff = diffOrder[a.difficulty || "easy"] ?? 1;
+          const bDiff = diffOrder[b.difficulty || "easy"] ?? 1;
+          if (aDiff !== bDiff) return aDiff - bDiff;
+        }
+      }
+
+      // Within same tier and difficulty preference, keep original order
       return (a.order ?? 0) - (b.order ?? 0);
     });
 
-    return NextResponse.json(challengesWithStatus);
+    // Determine difficultyBoost for the frontend
+    let difficultyBoost: string | null = null;
+    if (consecutiveCorrect >= 5) {
+      difficultyBoost = "harder";
+    } else if (consecutiveWrong >= 3) {
+      difficultyBoost = "easier";
+    }
+
+    return NextResponse.json({
+      challenges: challengesWithStatus,
+      difficultyBoost,
+    });
   } catch (error) {
     console.error("Challenges list error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });

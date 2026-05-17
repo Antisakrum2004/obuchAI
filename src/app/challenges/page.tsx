@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Target, Search, CheckCircle2, Clock, RefreshCw } from "lucide-react";
-import { motion } from "framer-motion";
+import { Target, Search, CheckCircle2, Clock, RefreshCw, Flame, Shield } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -26,6 +26,7 @@ interface ChallengeListItem {
 
 export default function ChallengesPage() {
   const [challenges, setChallenges] = useState<ChallengeListItem[]>([]);
+  const [difficultyBoost, setDifficultyBoost] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [difficultyFilter, setDifficultyFilter] = useState("all");
@@ -46,7 +47,14 @@ export default function ChallengesPage() {
       const res = await fetch(`/api/challenges?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setChallenges(data);
+        // Handle both old format (array) and new format ({ challenges, difficultyBoost })
+        if (Array.isArray(data)) {
+          setChallenges(data);
+          setDifficultyBoost(null);
+        } else {
+          setChallenges(data.challenges || []);
+          setDifficultyBoost(data.difficultyBoost || null);
+        }
       }
     } catch {
       // silently fail
@@ -210,13 +218,42 @@ export default function ChallengesPage() {
             </div>
           </div>
 
-          <div className="mt-3 text-xs text-muted-foreground">
-            Найдено задач: {sortedChallenges.length}
+          <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+            <span>Найдено задач: {sortedChallenges.length}</span>
             {(blockedChallenges.length > 0 || solvedChallenges.length > 0) && (
-              <span className="ml-2 text-emerald-400/60">
+              <span className="text-emerald-400/60">
                 ({unsolvedChallenges.length} доступно{blockedChallenges.length > 0 ? `, ${blockedChallenges.length} на перезарядке` : ''}{solvedChallenges.length > 0 ? `, ${solvedChallenges.length} решено` : ''})
               </span>
             )}
+
+            {/* ★ Adaptive difficulty badge */}
+            <AnimatePresence>
+              {difficultyBoost && (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
+                    difficultyBoost === "harder"
+                      ? "bg-amber-500/15 text-amber-400 border-amber-500/25"
+                      : "bg-cyan-500/15 text-cyan-400 border-cyan-500/25"
+                  )}
+                >
+                  {difficultyBoost === "harder" ? (
+                    <>
+                      <Flame className="h-3 w-3" />
+                      Разогрев
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="h-3 w-3" />
+                      Поддержка
+                    </>
+                  )}
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
 

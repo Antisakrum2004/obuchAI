@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
 // --- Types ---
@@ -108,10 +108,51 @@ export default function AdminPage() {
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
+  const [effectSettings, setEffectSettings] = useState<Record<string, string>>({});
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // --- Effects settings ---
+  const fetchEffectSettings = useCallback(async () => {
+    setIsLoadingSettings(true);
+    try {
+      const res = await fetch("/api/admin/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setEffectSettings(data);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  }, []);
+
+  const toggleEffectSetting = async (key: string, currentValue: string) => {
+    const newValue = currentValue === "true" ? "false" : "true";
+    // Optimistic update
+    setEffectSettings(prev => ({ ...prev, [key]: newValue }));
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value: newValue }),
+      });
+      if (res.ok) {
+        showToast(`${key}: ${newValue === "true" ? "включено" : "выключено"}`);
+      } else {
+        // Revert on error
+        setEffectSettings(prev => ({ ...prev, [key]: currentValue }));
+        showToast("Ошибка обновления", "err");
+      }
+    } catch {
+      setEffectSettings(prev => ({ ...prev, [key]: currentValue }));
+      showToast("Ошибка сети", "err");
+    }
   };
 
   // --- Auth check ---
@@ -167,6 +208,8 @@ export default function AdminPage() {
   }, [isAdmin]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => { if (isAdmin) fetchEffectSettings(); }, [isAdmin, fetchEffectSettings]);
 
   // --- Refresh users ---
   const refreshUsers = async () => {
@@ -482,6 +525,9 @@ export default function AdminPage() {
             </TabsTrigger>
             <TabsTrigger value="users" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
               <Users className="h-3.5 w-3.5 mr-1" /> Пользователи
+            </TabsTrigger>
+            <TabsTrigger value="effects" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+              <Sparkles className="h-3.5 w-3.5 mr-1" /> Эффекты
             </TabsTrigger>
           </TabsList>
 
@@ -876,6 +922,73 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </TabsContent>
+
+          {/* ===== EFFECTS TAB ===== */}
+          <TabsContent value="effects" className="space-y-4">
+            <div className="glass rounded-xl p-6">
+              <div className="mb-6">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-emerald-400" />
+                  Настройки эффектов
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">Управление визуальными эффектами приложения</p>
+              </div>
+
+              {isLoadingSettings ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { key: "particles", emoji: "✨", name: "Частицы фона", desc: "Анимированные частицы на фоне страницы" },
+                    { key: "confetti", emoji: "🎊", name: "Конфетти", desc: "Эффект конфетти при получении достижений" },
+                    { key: "liquid_xp", emoji: "🌊", name: "Жидкий XP-бар", desc: "Жидкостная анимация прогресс-бара" },
+                    { key: "heart_animations", emoji: "💔", name: "Анимация сердец", desc: "Анимация потери и восстановления сердец" },
+                    { key: "streak_fire", emoji: "🔥", name: "Огонь стрика", desc: "Огненный эффект при серии ответов" },
+                    { key: "avatar_frames", emoji: "👑", name: "Рамки аватаров", desc: "Декоративные рамки по уровню" },
+                    { key: "micro_animations", emoji: "💫", name: "Микроанимации", desc: "Мелкие анимации кнопок и карточек" },
+                    { key: "adaptive_difficulty", emoji: "🎯", name: "Адаптивная сложность", desc: "Автоматическая подстройка сложности" },
+                  ].map((setting) => {
+                    const isOn = effectSettings[setting.key] === "true"
+                    return (
+                      <motion.div
+                        key={setting.key}
+                        className="glass rounded-xl p-4 flex items-center justify-between gap-4 hover:bg-white/[0.07] transition-colors"
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-2xl shrink-0">{setting.emoji}</span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{setting.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{setting.desc}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isOn}
+                          aria-label={`Toggle ${setting.name}`}
+                          onClick={() => toggleEffectSetting(setting.key, effectSettings[setting.key])}
+                          className="relative shrink-0 inline-flex h-[1.8em] w-[3.7em] cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                          style={{ backgroundColor: isOn ? "#3a4b39" : "#313033" }}
+                        >
+                          <span
+                            className="pointer-events-none inline-block h-[1.4em] w-[1.4em] rounded-full shadow-lg transition-transform duration-200 ease-in-out mt-[0.2em] ml-[0.2em]"
+                            style={{
+                              backgroundColor: isOn ? "#84da89" : "#aeaaae",
+                              transform: isOn ? "translateX(1.9em)" : "translateX(0)",
+                            }}
+                          />
+                        </button>
+                      </motion.div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

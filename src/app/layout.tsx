@@ -4,6 +4,8 @@ import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ParticlesBackground } from "@/components/effects/particles-background";
+import { AppSettingsProvider } from "@/hooks/use-app-settings";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -104,7 +106,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <AppSettingsProvider>
+            <ParticlesBackground />
+            <div className="relative z-[1]">{children}</div>
+          </AppSettingsProvider>
+        </ThemeProvider>
         <Toaster
           position="top-right"
           toastOptions={{

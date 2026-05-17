@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { pool } from "@/lib/db";
+import { cookies } from "next/headers";
 
 // Check if Google OAuth is properly configured
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
@@ -52,10 +53,58 @@ providers.push(
       // Auto-create demo user if not exists
       if (!result.rows[0] && credentials.email === "demo@ai-trainer.dev") {
         const id = genId();
+
+        // Check for referral code from cookie
+        let referredById: string | null = null;
+        try {
+          const cookieStore = await cookies();
+          const refCode = cookieStore.get("ref")?.value;
+          if (refCode) {
+            const referrerResult = await pool.query(
+              `SELECT id FROM users WHERE "referralCode" = $1`,
+              [refCode]
+            );
+            if (referrerResult.rows[0]) {
+              referredById = referrerResult.rows[0].id;
+            }
+          }
+        } catch {
+          // Cookie access may fail in some contexts
+        }
+
         await pool.query(
-          `INSERT INTO users (id, email, name, role, xp, level, streak, "maxStreak", "lastActiveAt") VALUES ($1, $2, $3, 'user', 0, 1, 0, 0, NOW())`,
-          [id, "demo@ai-trainer.dev", "Демо-пользователь"]
+          `INSERT INTO users (id, email, name, role, xp, level, streak, "maxStreak", "lastActiveAt", "referredBy") VALUES ($1, $2, $3, 'user', 0, 1, 0, 0, NOW(), $4)`,
+          [id, "demo@ai-trainer.dev", "Демо-пользователь", referredById]
         );
+
+        // Process referral rewards
+        if (referredById) {
+          try {
+            // Increment referrer's referral count and award XP to both
+            await pool.query(
+              `UPDATE users SET "referralCount" = COALESCE("referralCount", 0) + 1, xp = xp + 50 WHERE id = $1`,
+              [referredById]
+            );
+            await pool.query(
+              `UPDATE users SET xp = xp + 50 WHERE id = $1`,
+              [id]
+            );
+            // Log XP for referrer
+            await pool.query(
+              `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус', $3)`,
+              [genId(), referredById, id]
+            );
+            // Log XP for referee
+            await pool.query(
+              `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус (приглашённый)', $3)`,
+              [genId(), id, referredById]
+            );
+            console.log("[Auth] Referral applied for demo user:", id, "referred by:", referredById);
+          } catch (refErr) {
+            console.error("[Auth] Referral reward error (non-critical):", refErr);
+          }
+        }
+
         result = await pool.query(
           `SELECT id, email, name, image, role, xp, level, streak FROM users WHERE email = $1`,
           [credentials.email]
@@ -177,12 +226,57 @@ export const authOptions: NextAuthOptions = {
               );
             }
           } else {
-            // New user
+            // New user — check for referral code from cookie
+            let referredById: string | null = null;
+            try {
+              const cookieStore = await cookies();
+              const refCode = cookieStore.get("ref")?.value;
+              if (refCode) {
+                const referrerResult = await pool.query(
+                  `SELECT id FROM users WHERE "referralCode" = $1`,
+                  [refCode]
+                );
+                if (referrerResult.rows[0]) {
+                  referredById = referrerResult.rows[0].id;
+                }
+              }
+            } catch {
+              // Cookie access may fail in some contexts
+            }
+
             userId = genId();
             await pool.query(
-              `INSERT INTO users (id, email, name, image, role, xp, level, streak, "maxStreak", "lastActiveAt") VALUES ($1, $2, $3, $4, 'user', 0, 1, 0, 0, NOW())`,
-              [userId, user.email, user.name || null, user.image || null]
+              `INSERT INTO users (id, email, name, image, role, xp, level, streak, "maxStreak", "lastActiveAt", "referredBy") VALUES ($1, $2, $3, $4, 'user', 0, 1, 0, 0, NOW(), $5)`,
+              [userId, user.email, user.name || null, user.image || null, referredById]
             );
+
+            // Process referral rewards
+            if (referredById) {
+              try {
+                // Increment referrer's referral count and award XP to both
+                await pool.query(
+                  `UPDATE users SET "referralCount" = COALESCE("referralCount", 0) + 1, xp = xp + 50 WHERE id = $1`,
+                  [referredById]
+                );
+                await pool.query(
+                  `UPDATE users SET xp = xp + 50 WHERE id = $1`,
+                  [userId]
+                );
+                // Log XP for referrer
+                await pool.query(
+                  `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус', $3)`,
+                  [genId(), referredById, userId]
+                );
+                // Log XP for referee
+                await pool.query(
+                  `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус (приглашённый)', $3)`,
+                  [genId(), userId, referredById]
+                );
+                console.log("[Auth] Referral applied for Google user:", userId, "referred by:", referredById);
+              } catch (refErr) {
+                console.error("[Auth] Referral reward error (non-critical):", refErr);
+              }
+            }
           }
 
           // CRITICAL: Override user.id with our DB user ID

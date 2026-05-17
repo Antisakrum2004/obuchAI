@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     );
 
     const userResult = await query(
-      `SELECT id, name, email, image, role, xp, level, streak, "maxStreak", "lastActiveAt"
+      `SELECT id, name, email, image, role, xp, level, streak, "maxStreak", "lastActiveAt", "referralCode", "referralCount", "referredBy"
        FROM users WHERE id = $1`,
       [userId],
     );
@@ -72,6 +72,34 @@ export async function GET(request: NextRequest) {
     }
 
     const user = userResult.rows[0];
+
+    // Auto-generate referral code if missing
+    if (!user.referralCode) {
+      const emailPrefix = (user.email || "user").split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 8);
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      const referralCode = `${emailPrefix}-${randomSuffix}`;
+
+      try {
+        await query(
+          `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
+          [referralCode, userId]
+        );
+        user.referralCode = referralCode;
+      } catch {
+        // If there's a unique collision, try once more with a different suffix
+        const altSuffix = Math.random().toString(36).substring(2, 6);
+        const altCode = `${emailPrefix}-${altSuffix}`;
+        try {
+          await query(
+            `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
+            [altCode, userId]
+          );
+          user.referralCode = altCode;
+        } catch {
+          // Silently fail — referral code generation can be retried later
+        }
+      }
+    }
 
     // Calculate rank
     const rankResult = await query(
@@ -91,6 +119,9 @@ export async function GET(request: NextRequest) {
       ...user,
       rank,
       completedChallenges,
+      referralCode: user.referralCode,
+      referralCount: user.referralCount || 0,
+      referredBy: user.referredBy || null,
     });
   } catch (error) {
     console.error("Stats error:", error);

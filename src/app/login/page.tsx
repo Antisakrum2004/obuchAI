@@ -4,11 +4,21 @@ import { signIn, getProviders } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Zap, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginContent() {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [hasGoogle, setHasGoogle] = useState(false);
+  const searchParams = useSearchParams();
+
+  // Handle referral code from URL — store in cookie for the OAuth flow
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      document.cookie = `ref=${refCode}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     getProviders().then((providers) => {
@@ -90,7 +100,7 @@ export default function LoginPage() {
                     <span className="w-full border-t border-white/10" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-[#0a0a0f] px-2 text-muted-foreground">или</span>
+                    <span className="bg-background px-2 text-muted-foreground">или</span>
                   </div>
                 </div>
               </>
@@ -100,7 +110,7 @@ export default function LoginPage() {
             <Button
               onClick={handleDemoLogin}
               disabled={isLoading !== null}
-              className="w-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-12"
+              className="w-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-12 btn-bounce"
             >
               {isLoading === "demo" ? (
                 <div className="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
@@ -126,5 +136,17 @@ export default function LoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center animated-gradient">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }

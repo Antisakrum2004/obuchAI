@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, Target, Trophy, FlaskConical, Info } from "lucide-react";
+import { Home, Target, Trophy, Flame, Info } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard", label: "Главная", icon: Home },
   { href: "/challenges", label: "Задачи", icon: Target },
+  { href: "/marathon", label: "Марафон", icon: Flame },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
-  { href: "/playground", label: "Песочница", icon: FlaskConical },
   { href: "/about", label: "О проекте", icon: Info },
 ];
 
@@ -46,7 +46,7 @@ export function MobileTabBar() {
           );
         })}
         {/* Version indicator */}
-        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v2.0.0</span>
+        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v2.3.0</span>
       </div>
     </nav>
   );
