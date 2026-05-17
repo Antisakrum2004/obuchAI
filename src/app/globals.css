@@ -1037,3 +1037,146 @@ iframe[src*="vercel"],
   height: 0 !important;
   overflow: hidden !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PREMIUM ACHIEVEMENT SYSTEM — AAA Game UI
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Glow pulse — subtle breathing glow for unlocked cards */
+@keyframes achievement-glow-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Shine sweep — light reflection moving across the card */
+@keyframes achievement-shine-sweep {
+  0% { transform: translateX(-100%) rotate(15deg); }
+  100% { transform: translateX(200%) rotate(15deg); }
+}
+
+/* Legendary animated aura — rotating conic gradient border */
+@keyframes legendary-aura-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Float particles — subtle ambient floating dots */
+@keyframes achievement-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-6px) scale(1.2); opacity: 0.8; }
+}
+
+/* Lock icon bob */
+@keyframes lock-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* Achievement card — unlocked common/rare */
+.ach-card--unlocked {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+.ach-card--unlocked:hover {
+  transform: translateY(-6px) scale(1.02);
+}
+
+/* Shine overlay */
+.ach-card--unlocked::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 40%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.06) 45%,
+    rgba(255,255,255,0.12) 50%,
+    rgba(255,255,255,0.06) 55%,
+    transparent 100%
+  );
+  animation: achievement-shine-sweep 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Rarity glow classes — box-shadow behind card */
+.ach-glow--common {
+  box-shadow: 0 0 12px rgba(148,163,184,0.15), 0 0 24px rgba(148,163,184,0.05);
+}
+.ach-glow--common:hover {
+  box-shadow: 0 0 18px rgba(148,163,184,0.25), 0 0 36px rgba(148,163,184,0.10);
+}
+
+.ach-glow--rare {
+  box-shadow: 0 0 14px rgba(59,130,246,0.25), 0 0 28px rgba(59,130,246,0.10);
+}
+.ach-glow--rare:hover {
+  box-shadow: 0 0 22px rgba(59,130,246,0.40), 0 0 44px rgba(59,130,246,0.15);
+}
+
+.ach-glow--epic {
+  box-shadow: 0 0 16px rgba(139,92,246,0.30), 0 0 32px rgba(139,92,246,0.12);
+}
+.ach-glow--epic:hover {
+  box-shadow: 0 0 26px rgba(139,92,246,0.45), 0 0 52px rgba(139,92,246,0.18);
+}
+
+.ach-glow--legendary {
+  box-shadow: 0 0 20px rgba(255,184,0,0.30), 0 0 40px rgba(255,184,0,0.12), 0 0 60px rgba(251,146,60,0.06);
+}
+.ach-glow--legendary:hover {
+  box-shadow: 0 0 30px rgba(255,184,0,0.50), 0 0 60px rgba(255,184,0,0.20), 0 0 80px rgba(251,146,60,0.10);
+}
+
+/* Legendary animated border — rotating conic gradient */
+.ach-legendary-border {
+  position: relative;
+}
+.ach-legendary-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 26px;
+  background: conic-gradient(
+    from 0deg,
+    #FFB800,
+    #FF6B00,
+    #FFB800,
+    #FFD700,
+    #FFB800,
+    #FF6B00,
+    #FFB800
+  );
+  animation: legendary-aura-rotate 3s linear infinite;
+  z-index: -1;
+  opacity: 0.7;
+}
+.ach-legendary-border:hover::before {
+  opacity: 1;
+}
+
+/* Locked card */
+.ach-card--locked {
+  filter: grayscale(1);
+  opacity: 0.45;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.ach-card--locked:hover {
+  opacity: 0.55;
+  transform: translateY(-2px);
+}
+
+/* Progress ring */
+.ach-progress-ring {
+  transform: rotate(-90deg);
+}
+
+/* Rarity badge text colors */
+.ach-rarity--common { color: #94a3b8; }
+.ach-rarity--rare { color: #3b82f6; }
+.ach-rarity--epic { color: #8b5cf6; }
+.ach-rarity--legendary { color: #FFB800; }

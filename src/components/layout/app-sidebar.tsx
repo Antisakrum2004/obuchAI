@@ -13,6 +13,7 @@ import {
   Zap,
   Info,
   Flame,
+  Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +26,7 @@ const allNavItems = [
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
+  { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
   { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },
   { href: "/about", label: "О проекте", icon: Info, adminOnly: false },
   { href: "/admin", label: "Управление", icon: Settings, adminOnly: true },
@@ -97,7 +99,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           <ThemeToggle size="small" />
         </div>
         <p className="text-center text-[10px] text-muted-foreground/50">
-          v2.3.2
+          v2.4.0
         </p>
       </div>
     </div>
