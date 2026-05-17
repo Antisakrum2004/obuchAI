@@ -163,7 +163,7 @@ export default function DashboardPage() {
               <AvatarFrame level={level} image={image} name={name} size="lg" role={role} />
               <div>
                 <h1 className="text-2xl font-bold md:text-3xl">
-                  Привет, <span className="gradient-text">{name || "Разработчик"}</span>! 👋
+                  Привет, <span className="gradient-text">{name || "Разработчик"}</span>
                 </h1>
                 <p className="text-muted-foreground mt-1">
                   Продолжай обучение — каждый день на шаг ближе к мастерству
