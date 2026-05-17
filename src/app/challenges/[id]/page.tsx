@@ -88,25 +88,26 @@ function hashSeed(a: string, b: string): number {
   return Math.abs(hash);
 }
 
-// ★★★ JITTER-FREE: Pure opacity fade — NO translateX/translateY ★★★
-// translateX causes layout shifts & scrollbar jumps on varying content
-// Pure opacity = zero layout shift = zero jitter
+// ★★★ SLIDE TRANSITIONS: Old card slides out left, new slides in from right ★★★
 const contentVariants = {
   enter: {
     opacity: 0,
+    translateX: "100%",
   },
   center: {
     opacity: 1,
+    translateX: "0%",
   },
   exit: {
     opacity: 0,
+    translateX: "-100%",
   },
 };
 
-// 0.18s — snappy, imperceptible delay, zero visible jitter
+// 250ms smooth slide with ease-in-out
 const transitionConfig = {
-  duration: 0.18,
-  ease: [0.25, 0.1, 0.25, 1],
+  duration: 0.25,
+  ease: [0.4, 0, 0.2, 1],
 };
 
 export default function ChallengePage() {
@@ -180,8 +181,10 @@ export default function ChallengePage() {
   const isTransitioningRef = useRef(false);
 
   // ★ Swipe state
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const [swipeHintDismissed, setSwipeHintDismissed] = useState(false);
 
   // Timer
   useEffect(() => {
@@ -211,7 +214,7 @@ export default function ChallengePage() {
 
     // Cache miss — fetch from API
     fetchChallengeFromAPI(challengeId);
-  }, [challengeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [challengeId]);
 
   /** Apply challenge data to state */
   function applyChallengeData(data: ChallengeData) {
@@ -501,10 +504,11 @@ export default function ChallengePage() {
       .catch(() => {});
   }, [nextChallengeId, router, resetForNewChallenge]);
 
-  // ★ Swipe handlers (must be before conditional returns)
+  // ★ Swipe handlers — TikTok/Instagram style (1:1 tracking, velocity detection)
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    setIsSwiping(true);
   }, []);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -512,21 +516,42 @@ export default function ChallengePage() {
     const touch = e.touches[0];
     const deltaX = touch.clientX - touchStartRef.current.x;
     // Only track horizontal left-swipe, ignore right-swipe (clamp to 0)
+    // 1:1 finger tracking — no resistance factor
     const clamped = Math.min(deltaX, 0);
-    // Apply resistance: only move 40% of actual swipe distance
-    setSwipeOffset(clamped * 0.4);
+    setSwipeOffset(clamped);
   }, []);
 
   const handleTouchEnd = useCallback(() => {
     if (!touchStartRef.current) return;
-    // If swipe offset passed threshold (negative = left swipe)
-    // 80px real swipe × 0.4 resistance = -32px offset
-    if (swipeOffset < -32) {
-      handleNext();
+    const now = Date.now();
+    const elapsed = now - touchStartRef.current.time;
+    const distance = Math.abs(swipeOffset);
+    // Velocity in px/ms
+    const velocity = elapsed > 0 ? distance / elapsed : 0;
+
+    // Trigger if: threshold met (50px) OR fast swipe (>0.5px/ms) with some distance (>20px)
+    const shouldTrigger = swipeOffset < -50 || (velocity > 0.5 && swipeOffset < -20);
+
+    if (shouldTrigger && nextChallengeId) {
+      // Haptic feedback
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(10);
+      }
+      setSwipeHintDismissed(true);
+      // Animate slide out left, then load next
+      setSwipeOffset(-window.innerWidth);
+      setTimeout(() => {
+        handleNext();
+        setSwipeOffset(0);
+        setIsSwiping(false);
+      }, 200);
+    } else {
+      // Snap back with spring animation
+      setSwipeOffset(0);
+      setIsSwiping(false);
     }
     touchStartRef.current = null;
-    setSwipeOffset(0);
-  }, [swipeOffset, handleNext]);
+  }, [swipeOffset, handleNext, nextChallengeId]);
 
   // === CONDITIONAL RETURNS ===
 
@@ -621,16 +646,18 @@ export default function ChallengePage() {
 
   return (
     <AppLayout>
-      <div
-        className="mx-auto max-w-3xl relative"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : undefined,
-          transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'transform 0.05s linear',
-        }}
-      >
+      <div className="mx-auto max-w-3xl relative">
+        {/* ★ Swipe zone wraps only the challenge content area, NOT header/hearts */}
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : undefined,
+            transition: isSwiping ? 'none' : (swipeOffset === 0 ? 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'transform 0.2s ease-out'),
+            willChange: swipeOffset !== 0 ? 'transform' : 'auto',
+          }}
+        >
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -722,17 +749,18 @@ export default function ChallengePage() {
 
         {/* ═══ LAYER 2: ANIMATED CONTENT ═══ */}
         {/* CSS containment + will-change prevents layout reflow during transitions */}
-        <div style={{ minHeight: 500, contain: "layout style", willChange: "auto" }}>
+        <div style={{ minHeight: 500, contain: "layout style", willChange: "auto", position: "relative", overflow: "hidden" }}>
         {/* key=activeId — changes trigger AnimatePresence animation via STATE, not route */}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeId}
+            layoutId={`challenge-content-${activeId}`}
             variants={contentVariants}
             initial="enter"
             animate="center"
             exit="exit"
             transition={transitionConfig}
-            style={{ willChange: "opacity" }}
+            style={{ willChange: "transform, opacity" }}
           >
             {/* SOLVED OVERLAY */}
             {isSolved && !result && (
@@ -797,7 +825,9 @@ export default function ChallengePage() {
               </div>
             )}
 
-            {/* Challenge Content */}
+            {/* Challenge Content — relative container for result overlay */}
+            <div className="relative">
+            {/* Active challenge form */}
             {!result && !isSolved && !onCooldown && (
               <div className="glass rounded-2xl p-6 mb-6">
                 {parsedContent.text && (
@@ -870,34 +900,48 @@ export default function ChallengePage() {
               </div>
             )}
 
-            {/* Result */}
+            {/* Result overlay — fades in on top of challenge content, no layout shift */}
             {result && (
-              <ChallengeResult
-                isCorrect={result.isCorrect}
-                xpEarned={result.xpEarned}
-                baseXp={result.baseXp}
-                bonusXp={result.bonusXp}
-                explanation={result.explanation}
-                newLevel={result.newLevel}
-                newStreak={result.newStreak}
-                leveledUp={result.leveledUp}
-                timeMultiplier={result.timeMultiplier}
-                heartsMultiplier={result.heartsMultiplier}
-                onNext={handleNext}
-                hasNext={!!nextChallengeId}
-              />
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 z-10 flex items-start justify-center pt-4"
+                style={{ willChange: "opacity" }}
+              >
+                <ChallengeResult
+                  isCorrect={result.isCorrect}
+                  xpEarned={result.xpEarned}
+                  baseXp={result.baseXp}
+                  bonusXp={result.bonusXp}
+                  explanation={result.explanation}
+                  newLevel={result.newLevel}
+                  newStreak={result.newStreak}
+                  leveledUp={result.leveledUp}
+                  timeMultiplier={result.timeMultiplier}
+                  heartsMultiplier={result.heartsMultiplier}
+                  onNext={handleNext}
+                  hasNext={!!nextChallengeId}
+                />
+              </motion.div>
             )}
+            </div>{/* end relative container */}
           </motion.div>
         </AnimatePresence>
         </div>{/* end min-height wrapper */}
+        </div>{/* end swipe zone */}
 
-        {/* ★ Swipe indicator — subtle pulsing hint */}
-        {nextChallengeId && !result && !isSolved && (
-          <div className="flex items-center justify-center gap-1.5 mt-4 select-none">
+        {/* ★ Swipe indicator — fades out after first successful swipe */}
+        {nextChallengeId && !result && !isSolved && !swipeHintDismissed && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center justify-center gap-1.5 mt-4 select-none"
+          >
             <span className="text-xs text-muted-foreground/40">свайп влево</span>
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/40 animate-pulse" />
             <span className="inline-block text-muted-foreground/30">←</span>
-          </div>
+          </motion.div>
         )}
       </div>
     </AppLayout>

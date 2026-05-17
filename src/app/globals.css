@@ -118,37 +118,37 @@
 
 /* ═══ Slate Theme — dark gray with muted accents ═══ */
 .slate {
-  --background: #16162a;
-  --foreground: #e2e8f0;
-  --card: #1e1e3a;
-  --card-foreground: #e2e8f0;
-  --popover: #1e1e3a;
-  --popover-foreground: #e2e8f0;
-  --primary: #0d9668;
-  --primary-foreground: #16162a;
-  --secondary: #252545;
-  --secondary-foreground: #e2e8f0;
-  --muted: #252545;
-  --muted-foreground: #a5b4c8;
-  --accent: #252545;
-  --accent-foreground: #e2e8f0;
+  --background: #1e1e32;
+  --foreground: #eef2f7;
+  --card: #262646;
+  --card-foreground: #eef2f7;
+  --popover: #262646;
+  --popover-foreground: #eef2f7;
+  --primary: #10b981;
+  --primary-foreground: #1e1e32;
+  --secondary: #2e2e50;
+  --secondary-foreground: #eef2f7;
+  --muted: #2e2e50;
+  --muted-foreground: #b8c5d8;
+  --accent: #2e2e50;
+  --accent-foreground: #eef2f7;
   --destructive: #dc2626;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #0d9668;
-  --chart-1: #0d9668;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #10b981;
+  --chart-1: #10b981;
   --chart-2: #7c3aed;
   --chart-3: #d97706;
   --chart-4: #2563eb;
   --chart-5: #dc2626;
-  --sidebar: #12122a;
-  --sidebar-foreground: #e2e8f0;
-  --sidebar-primary: #0d9668;
-  --sidebar-primary-foreground: #16162a;
-  --sidebar-accent: #252545;
-  --sidebar-accent-foreground: #e2e8f0;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #0d9668;
+  --sidebar: #1a1a36;
+  --sidebar-foreground: #eef2f7;
+  --sidebar-primary: #10b981;
+  --sidebar-primary-foreground: #1e1e32;
+  --sidebar-accent: #2e2e50;
+  --sidebar-accent-foreground: #eef2f7;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #10b981;
 }
 
 @layer base {
@@ -343,7 +343,29 @@
 
 .xp-bar-track {
   position: relative;
-  overflow: hidden;
+}
+
+/* Shimmer streak moving across the gradient fill */
+@keyframes xp-bar-shimmer-move {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.xp-bar-shimmer {
+  animation: xp-bar-shimmer-move 2.5s ease-in-out infinite;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Pulse animation when XP increases */
+@keyframes xp-gain-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  30% { box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.4); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.xp-gain-pulse {
+  animation: xp-gain-pulse 0.6s ease-out;
 }
 
 .xp-liquid-fill {
@@ -396,6 +418,105 @@
   25% { box-shadow: 0 0 12px rgba(236, 72, 153, 0.5); }
   50% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.5); }
   75% { box-shadow: 0 0 12px rgba(16, 185, 129, 0.5); }
+}
+
+/* ═══ Admin Dragon Frame — WoW rare/blue card style ═══ */
+@keyframes dragon-border-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes dragon-glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(148, 163, 184, 0.3), 0 0 16px rgba(148, 163, 184, 0.1); }
+  50% { box-shadow: 0 0 14px rgba(148, 163, 184, 0.5), 0 0 28px rgba(148, 163, 184, 0.2); }
+}
+
+.avatar-frame-dragon {
+  position: relative;
+  animation: dragon-glow-pulse 4s ease-in-out infinite;
+}
+
+/* Bottom-right dragon wing */
+.avatar-frame-dragon::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 40%;
+  height: 40%;
+  border-radius: 50% 0 50% 50%;
+  background: linear-gradient(315deg, rgba(107, 114, 128, 0.5), rgba(156, 163, 175, 0.3));
+  transform: rotate(30deg);
+  pointer-events: none;
+  z-index: 1;
+  mask-image: radial-gradient(ellipse at 70% 70%, black 30%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 70% 70%, black 30%, transparent 70%);
+}
+
+.avatar-dragon-border {
+  position: relative;
+  padding: 5px;
+  background: conic-gradient(
+    from 0deg,
+    #4b5563 0deg,
+    #9ca3af 30deg,
+    #6b7280 60deg,
+    #d1d5db 90deg,
+    #4b5563 120deg,
+    #9ca3af 150deg,
+    #6b7280 180deg,
+    #d1d5db 210deg,
+    #4b5563 240deg,
+    #9ca3af 270deg,
+    #6b7280 300deg,
+    #d1d5db 330deg,
+    #4b5563 360deg
+  );
+  border-radius: 50%;
+}
+
+.avatar-dragon-border::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #4b5563 0deg,
+    #9ca3af 30deg,
+    #6b7280 60deg,
+    #d1d5db 90deg,
+    #4b5563 120deg,
+    #9ca3af 150deg,
+    #6b7280 180deg,
+    #d1d5db 210deg,
+    #4b5563 240deg,
+    #9ca3af 270deg,
+    #6b7280 300deg,
+    #d1d5db 330deg,
+    #4b5563 360deg
+  );
+  animation: dragon-border-rotate 30s linear infinite;
+  z-index: -1;
+  filter: blur(2px);
+  opacity: 0.6;
+}
+
+/* Dragon wings — top-left and bottom-right wing shapes */
+.avatar-dragon-border::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 40%;
+  height: 40%;
+  border-radius: 0 50% 50% 50%;
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.5), rgba(156, 163, 175, 0.3));
+  transform: rotate(-30deg);
+  pointer-events: none;
+  z-index: 1;
+  mask-image: radial-gradient(ellipse at 30% 30%, black 30%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at 30% 30%, black 30%, transparent 70%);
 }
 
 .avatar-frame-silver {
@@ -683,6 +804,17 @@
 
 .heart-breathing {
   animation: heart-breathing 2s ease-in-out infinite;
+}
+
+/* ═══ Streak today pulse animation ═══ */
+@keyframes streak-today-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.5), 0 0 60px rgba(245, 158, 11, 0.2);
+    transform: scale(1.05);
+  }
 }
 
 /* ═══ Streak fire effects ═══ */

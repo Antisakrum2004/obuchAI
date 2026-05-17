@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Flame } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface StreakCalendarProps {
   streak: number;
@@ -27,7 +28,17 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
     const isToday = i === 0;
     const isFuture = date > today;
 
-    days.push({ date, dayOfWeek, isoDate, isActive, isToday, isFuture });
+    // ★ Calculate which day of the streak this is (counting back from today)
+    let streakDay = 0;
+    if (isActive && streak > 0) {
+      // How many days back from today: i=0 → today, i=1 → yesterday, etc.
+      const daysBack = i;
+      if (daysBack < streak) {
+        streakDay = streak - daysBack;
+      }
+    }
+
+    days.push({ date, dayOfWeek, isoDate, isActive, isToday, isFuture, streakDay });
   }
 
   return (
@@ -44,31 +55,91 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
 
       {/* 7-day dots */}
       <div className="flex items-center justify-between gap-1">
-        {days.map((day) => (
-          <div key={day.isoDate} className="flex flex-col items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground">
-              {DAY_LABELS[day.dayOfWeek]}
-            </span>
-            <div className="relative">
-              <div
-                className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-                  day.isActive && "bg-amber-500/20 border-2 border-amber-500/40 text-amber-400",
-                  day.isActive && day.isToday && "bg-amber-500/30 border-amber-500/60 glow-amber",
-                  !day.isActive && !day.isFuture && "bg-white/5 border border-white/10 text-muted-foreground/50",
-                  day.isFuture && "bg-white/[0.02] border border-white/5 text-muted-foreground/20",
-                  day.isToday && !day.isActive && "border-amber-500/30 border-2"
-                )}
-              >
-                {day.isActive ? (
-                  <Flame className="h-3.5 w-3.5" />
-                ) : (
-                  <span className="text-[10px]">{day.date.getDate()}</span>
-                )}
+        {days.map((day, index) => {
+          // ★ Flame intensity based on streak day
+          // Day 1: barely lit (opacity 0.3), Day 7+: fully on fire
+          const flameIntensity = day.streakDay > 0
+            ? Math.min(day.streakDay / 7, 1)
+            : 0;
+          const hasFlame = day.streakDay > 0;
+          const isLargeFlame = day.streakDay >= 7;
+
+          return (
+            <motion.div
+              key={day.isoDate}
+              className="flex flex-col items-center gap-1.5"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                delay: index * 0.07,
+                duration: 0.3,
+                ease: "easeOut",
+              }}
+            >
+              <span className="text-[10px] text-muted-foreground">
+                {DAY_LABELS[day.dayOfWeek]}
+              </span>
+              <div className="relative">
+                <div
+                  className={cn(
+                    "h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                    day.isActive && "bg-amber-500/20 border-2 border-amber-500/40 text-amber-400",
+                    day.isActive && day.isToday && "bg-amber-500/30 border-amber-500/60 glow-amber",
+                    !day.isActive && !day.isFuture && "bg-white/5 border border-white/10 text-muted-foreground/50",
+                    day.isFuture && "bg-white/[0.02] border border-white/5 text-muted-foreground/20",
+                    day.isToday && !day.isActive && "border-amber-500/30 border-2"
+                  )}
+                  style={
+                    day.isToday && day.isActive
+                      ? { animation: "streak-today-pulse 2s ease-in-out infinite" }
+                      : undefined
+                  }
+                >
+                  {hasFlame ? (
+                    <motion.div
+                      initial={{ scale: 0.3, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{
+                        delay: index * 0.07 + 0.15,
+                        type: "spring",
+                        stiffness: 300,
+                        damping: 15,
+                      }}
+                      className="relative flex items-center justify-center"
+                    >
+                      {/* Flame with intensity-based sizing and color */}
+                      <Flame
+                        className={cn(
+                          isLargeFlame
+                            ? "h-4 w-4"
+                            : "h-3.5 w-3.5",
+                          isLargeFlame
+                            ? "text-orange-400"
+                            : "text-amber-400"
+                        )}
+                        style={{
+                          opacity: 0.4 + flameIntensity * 0.6,
+                          filter: `brightness(${0.6 + flameIntensity * 0.4})`,
+                        }}
+                      />
+                      {/* Flame glow for intense days */}
+                      {isLargeFlame && (
+                        <div
+                          className="absolute inset-0 rounded-full"
+                          style={{
+                            boxShadow: `0 0 ${6 + flameIntensity * 8}px rgba(245, 158, 11, ${0.2 + flameIntensity * 0.3})`,
+                          }}
+                        />
+                      )}
+                    </motion.div>
+                  ) : (
+                    <span className="text-[10px]">{day.date.getDate()}</span>
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Streak status */}

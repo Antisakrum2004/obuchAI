@@ -9,7 +9,6 @@ import { SkillProgressList } from "@/components/dashboard/skill-progress-list";
 import { RecentAchievements } from "@/components/dashboard/recent-achievements";
 import { WeeklyXpChart } from "@/components/dashboard/weekly-xp-chart";
 import { ReferralCard } from "@/components/profile/referral-card";
-import { LevelBadge } from "@/components/gamification/level-badge";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { StreakCalendar } from "@/components/gamification/streak-calendar";
@@ -48,7 +47,7 @@ interface AchievementItem {
 }
 
 export default function DashboardPage() {
-  const { xp, level, streak, name, image, completedChallenges, rank } = useUserStore();
+  const { xp, level, streak, name, image, role, completedChallenges, rank } = useUserStore();
   const { data: dailyData, isLoading: dailyLoading } = useDailyChallenge();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [skills, setSkills] = useState<SkillProgressItem[]>([]);
@@ -158,7 +157,7 @@ export default function DashboardPage() {
         >
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <AvatarFrame level={level} image={image} name={name} size="lg" />
+              <AvatarFrame level={level} image={image} name={name} size="lg" role={role} />
               <div>
                 <h1 className="text-2xl font-bold md:text-3xl">
                   Привет, <span className="gradient-text">{name || "Разработчик"}</span>! 👋
@@ -169,7 +168,6 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="hidden sm:flex items-center gap-4">
-              <LevelBadge level={level} size="lg" />
               <div className="text-right space-y-1">
                 <StreakCounter streak={streak} />
                 <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
@@ -177,9 +175,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Mobile: Level + Streak + Hearts row */}
+          {/* Mobile: Streak + Hearts row */}
           <div className="flex sm:hidden items-center gap-3 mb-4">
-            <LevelBadge level={level} size="md" />
             <StreakCounter streak={streak} />
             <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
           </div>

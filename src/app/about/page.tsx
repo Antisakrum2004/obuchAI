@@ -13,11 +13,13 @@ import {
   FlaskConical,
   Sparkles,
   ChevronRight,
+  ChevronLeft,
   AlertTriangle,
   TrendingUp,
   Star,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 const sections = [
@@ -128,8 +130,36 @@ const colorMap: Record<string, { bg: string; text: string; border: string; glow:
 };
 
 export default function AboutPage() {
+  const router = useRouter();
+
+  const handleBack = () => {
+    // If there's no navigation history (direct link), default to /dashboard
+    if (typeof window !== "undefined" && window.history.length <= 1) {
+      router.push("/dashboard");
+    } else {
+      router.back();
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto pb-8">
+      {/* Back button */}
+      <motion.div
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3 }}
+        className="mb-4"
+      >
+        <Button
+          variant="ghost"
+          onClick={handleBack}
+          className="text-muted-foreground hover:text-foreground gap-1.5 -ml-2 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 text-sm sm:text-xs"
+        >
+          <ChevronLeft className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          Назад
+        </Button>
+      </motion.div>
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}

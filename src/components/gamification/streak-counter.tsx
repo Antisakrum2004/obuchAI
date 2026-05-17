@@ -52,7 +52,9 @@ function FireParticles() {
 
 export function StreakCounter({ streak, className }: StreakCounterProps) {
   const { streakFire } = useAppSettings();
-  const isOnFire = streakFire && streak >= 7;
+  // ★ Updated thresholds: >=3 basic fire, >=7 medium, >=14 intense, >=30 legendary
+  const isOnFire = streakFire && streak >= 3;
+  const isMedium = streakFire && streak >= 7;
   const isIntense = streakFire && streak >= 14;
   const isLegendary = streakFire && streak >= 30;
 
@@ -66,18 +68,22 @@ export function StreakCounter({ streak, className }: StreakCounterProps) {
       <div
         className={cn(
           "relative flex items-center gap-1.5 rounded-full px-3 py-1.5",
-          // Base styles
+          // Base styles (no fire)
           !isOnFire && streak > 0 && "bg-amber-500/15 border border-amber-500/20",
           !isOnFire && streak === 0 && "bg-white/5 border border-white/5",
-          // Fire tier: streak >= 7
-          isOnFire && !isIntense && "streak-fire-border bg-amber-500/15",
-          // Intense tier: streak >= 14
+          // Basic fire tier: streak >= 3
+          isOnFire && !isMedium && "bg-amber-500/15 border border-amber-500/30",
+          // Medium fire tier: streak >= 7
+          isMedium && !isIntense && "streak-fire-border bg-amber-500/15",
+          // Intense fire tier: streak >= 14
           isIntense && !isLegendary && "streak-fire-border-intense bg-amber-500/20",
           // Legendary tier: streak >= 30
           isLegendary && "streak-fire-border-legendary bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-orange-500/20"
         )}
         style={
-          isOnFire && !isIntense
+          isOnFire && !isMedium
+            ? { boxShadow: "0 0 10px rgba(245, 158, 11, 0.2), 0 0 20px rgba(245, 158, 11, 0.08)" }
+            : isMedium && !isIntense
             ? { boxShadow: "0 0 15px rgba(245, 158, 11, 0.3), 0 0 30px rgba(245, 158, 11, 0.1)" }
             : isIntense && !isLegendary
             ? { boxShadow: "0 0 20px rgba(239, 68, 68, 0.4), 0 0 40px rgba(245, 158, 11, 0.2)" }
@@ -95,7 +101,8 @@ export function StreakCounter({ streak, className }: StreakCounterProps) {
             isOnFire ? "streak-flame-wobble" : "",
             !isOnFire && streak > 0 ? "h-4 w-4 text-amber-400" : "",
             !isOnFire && streak === 0 ? "h-4 w-4 text-muted-foreground" : "",
-            isOnFire && !isIntense ? "h-5 w-5 text-amber-400" : "",
+            isOnFire && !isMedium ? "h-4 w-4 text-amber-400" : "",
+            isMedium && !isIntense ? "h-5 w-5 text-amber-400" : "",
             isIntense && !isLegendary ? "h-5 w-5 text-orange-400" : "",
             isLegendary ? "h-6 w-6 text-yellow-300 streak-flame-legendary" : ""
           )}

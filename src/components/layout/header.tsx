@@ -3,7 +3,6 @@
 import { useUserStore } from "@/store/user-store";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
-import { LevelBadge } from "@/components/gamification/level-badge";
 import { Button } from "@/components/ui/button";
 import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { AnimatedNumber } from "@/components/gamification/animated-number";
@@ -25,7 +24,7 @@ interface HeaderProps {
 
 export function Header({ onMenuToggle }: HeaderProps) {
   const { data: session } = useSession();
-  const { xp, level, streak, name, image, id: userId } = useUserStore();
+  const { xp, level, streak, name, image, role, id: userId } = useUserStore();
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-md md:px-6">
@@ -41,8 +40,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
 
       {/* XP Bar - main area */}
       <div className="flex flex-1 items-center gap-4">
-        <LevelBadge level={level} />
-        <XPBar currentXp={xp} level={level} className="hidden sm:flex max-w-xs" />
+        <XPBar currentXp={xp} level={level} className="hidden sm:flex max-w-xs" compact />
       </div>
 
       {/* Right side */}
@@ -54,12 +52,12 @@ export function Header({ onMenuToggle }: HeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-auto w-auto rounded-full p-0">
-                <AvatarFrame level={level} image={image} name={name} size="sm" />
+                <AvatarFrame level={level} image={image} name={name} size="sm" role={role} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 bg-card border-border">
               <div className="flex items-center gap-2 p-2">
-                <AvatarFrame level={level} image={image} name={name} size="sm" />
+                <AvatarFrame level={level} image={image} name={name} size="sm" role={role} />
                 <div>
                   <p className="text-sm font-medium">{name}</p>
                   <p className="text-xs text-muted-foreground">
