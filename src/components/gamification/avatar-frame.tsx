@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface AvatarFrameProps {
   level: number;
@@ -67,8 +68,7 @@ const tierLevelBadgeBg: Record<FrameTier, string> = {
   rainbow: "bg-gradient-to-br from-pink-500 via-purple-500 to-emerald-500",
 };
 
-// ★ Glow style per tier — CSS box-shadow that radiates OUTWARD only, max 15% of avatar size
-// glow color + ring border color per tier
+// ★ Glow style per tier — CSS box-shadow that radiates OUTWARDS only, max 15% of avatar size
 const tierGlowStyle: Record<FrameTier, { shadow: string; ring: string }> = {
   bronze: {
     shadow: "0 0 8px 2px rgba(180,120,60,0.35), 0 0 16px 4px rgba(210,160,100,0.15)",
@@ -98,6 +98,7 @@ const tierGlowStyle: Record<FrameTier, { shadow: string; ring: string }> = {
 
 export function AvatarFrame({ level, image, name, size = "md", role, className }: AvatarFrameProps) {
   const { avatarFrames } = useAppSettings();
+  const isMobile = useIsMobile();
   const tier = getTier(level);
   const px = sizeMap[size];
   const textSize = sizeTextMap[size];
@@ -124,25 +125,35 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★★★ ADMIN DRAGON FRAME ★★★ (kept as is)
+  // ★★★ ADMIN DRAGON FRAME ★★★
   if (isAdmin) {
     const frameThickness = Math.round(px * 0.12);
     const containerSize = px + frameThickness * 2;
     const badgeOffset = Math.round(frameThickness * 0.3);
 
+    // On mobile: no filter:blur(), no infinite animations — just static glow
+    // On desktop: keep the full animated experience
     return (
       <div
         className={cn("relative inline-flex items-center justify-center", className)}
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Glow layer */}
+        {/* Glow layer — no filter:blur on mobile, static box-shadow instead */}
         <div
           className="absolute rounded-full z-[1]"
           style={{
             width: containerSize,
             height: containerSize,
-            background: "radial-gradient(circle, rgba(0,212,255,0.15) 0%, rgba(0,180,220,0.05) 50%, transparent 75%)",
-            filter: "blur(6px)",
+            ...(isMobile
+              ? {
+                  // Mobile: static box-shadow glow (no filter, no animation)
+                  boxShadow: "0 0 20px rgba(0,212,255,0.20), 0 0 40px rgba(124,58,237,0.15)",
+                }
+              : {
+                  // Desktop: animated radial gradient with blur
+                  background: "radial-gradient(circle, rgba(0,212,255,0.15) 0%, rgba(0,180,220,0.05) 50%, transparent 75%)",
+                  filter: "blur(6px)",
+                }),
           }}
         />
 
@@ -160,11 +171,15 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           </AvatarFallback>
         </Avatar>
 
-        {/* Dragon frame PNG overlay */}
+        {/* Dragon frame PNG overlay — no filter animations on mobile */}
         <img
           src="/frames/dragon-frame.png"
           alt=""
-          className="absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none"
+          className={cn("absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none", !isMobile && "admin-avatar__frame")}
+          style={isMobile ? {
+            // Mobile: static drop-shadow (no animation, no filter in keyframes)
+            filter: "drop-shadow(0 0 8px rgba(0,212,255,0.25))",
+          } : undefined}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}

@@ -465,25 +465,7 @@
   100% { transform: translateY(-12px) scale(0.3); opacity: 0; }
 }
 
-.admin-avatar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.admin-avatar__image {
-  border-radius: 999px;
-  object-fit: cover;
-  position: relative;
-  z-index: 2;
-  border: 3px solid rgba(0, 212, 255, 0.15);
-  box-shadow:
-    0 0 24px rgba(0, 212, 255, 0.20),
-    0 0 60px rgba(124, 58, 237, 0.25),
-    inset 0 0 12px rgba(0, 212, 255, 0.05);
-}
-
+/* Admin dragon frame animation — desktop only (mobile uses static drop-shadow) */
 .admin-avatar__frame {
   position: absolute;
   width: 100%;
@@ -497,144 +479,7 @@
   animation: dragonPulse 4s ease-in-out infinite;
 }
 
-.admin-avatar__glow {
-  border-radius: 999px;
-  background:
-    radial-gradient(
-      circle,
-      rgba(0, 212, 255, 0.28) 0%,
-      rgba(124, 58, 237, 0.22) 35%,
-      rgba(255, 170, 0, 0.12) 55%,
-      transparent 75%
-    );
-  z-index: 1;
-  filter: blur(20px);
-  animation: glowRotate 8s linear infinite;
-}
-
-.admin-avatar__ring {
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background: conic-gradient(
-    from 0deg,
-    rgba(0, 212, 255, 0.5),
-    rgba(124, 58, 237, 0.3),
-    rgba(255, 170, 0, 0.4),
-    rgba(0, 212, 255, 0.1),
-    rgba(255, 170, 0, 0.3),
-    rgba(0, 212, 255, 0.5)
-  ) border-box;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  z-index: 1;
-  animation: ringRotate 6s linear infinite;
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.15);
-}
-
-/* ═══ Tiered Avatar Frame Effects ═══ */
-
-/* --- Glow layers per tier --- */
-.avatar-tier-glow-bronze {
-  background: radial-gradient(circle, rgba(180,120,60,0.20) 0%, rgba(210,160,100,0.10) 50%, transparent 75%);
-  filter: blur(12px);
-}
-
-.avatar-tier-glow-silver {
-  background: radial-gradient(circle, rgba(180,190,210,0.25) 0%, rgba(200,205,215,0.12) 50%, transparent 75%);
-  filter: blur(14px);
-  animation: glowRotate 12s linear infinite;
-}
-
-.avatar-tier-glow-gold {
-  background: radial-gradient(circle, rgba(234,179,8,0.30) 0%, rgba(245,190,50,0.15) 50%, transparent 75%);
-  filter: blur(16px);
-  animation: glowRotate 10s linear infinite;
-}
-
-.avatar-tier-glow-emerald {
-  background: radial-gradient(circle, rgba(16,185,129,0.30) 0%, rgba(52,211,153,0.15) 50%, transparent 75%);
-  filter: blur(18px);
-  animation: glowRotate 8s linear infinite;
-}
-
-.avatar-tier-glow-platinum {
-  background: radial-gradient(circle, rgba(139,92,246,0.30) 0%, rgba(168,85,247,0.15) 45%, rgba(59,130,246,0.10) 65%, transparent 80%);
-  filter: blur(20px);
-  animation: glowRotate 6s linear infinite;
-}
-
-.avatar-tier-glow-rainbow {
-  background: radial-gradient(circle, rgba(236,72,153,0.25) 0%, rgba(139,92,246,0.20) 30%, rgba(59,130,246,0.15) 50%, rgba(16,185,129,0.20) 70%, transparent 85%);
-  filter: blur(22px);
-  animation: glowRotate 5s linear infinite;
-}
-
-/* --- Border styles per tier --- */
-.avatar-tier-border-bronze {
-  border: 2px solid rgba(180,120,60,0.50);
-  box-shadow: 0 0 8px rgba(180,120,60,0.15);
-}
-
-.avatar-tier-border-silver {
-  border: 2.5px solid rgba(180,190,210,0.60);
-  box-shadow: 0 0 12px rgba(180,190,210,0.20);
-}
-
-.avatar-tier-border-gold {
-  border: 3px solid rgba(234,179,8,0.60);
-  box-shadow: 0 0 16px rgba(234,179,8,0.25), 0 0 30px rgba(234,179,8,0.10);
-  animation: avatar-glow-pulse 2.5s ease-in-out infinite;
-}
-
-.avatar-tier-border-emerald {
-  border: 3px solid rgba(16,185,129,0.60);
-  box-shadow: 0 0 16px rgba(16,185,129,0.30), 0 0 32px rgba(16,185,129,0.12);
-  animation: avatar-glow-pulse 2s ease-in-out infinite;
-}
-
-.avatar-tier-border-platinum {
-  border: 3px solid rgba(168,85,247,0.60);
-  box-shadow: 0 0 20px rgba(139,92,246,0.30), 0 0 40px rgba(168,85,247,0.15);
-  animation: avatar-rainbow-pulse 2.5s ease-in-out infinite;
-}
-
-.avatar-tier-border-rainbow {
-  border: 3px solid rgba(236,72,153,0.50);
-  box-shadow: 0 0 24px rgba(236,72,153,0.25), 0 0 48px rgba(139,92,246,0.15), 0 0 60px rgba(16,185,129,0.10);
-  animation: avatar-rainbow-pulse 2s ease-in-out infinite;
-}
-
-/* --- Frame PNG animation per tier --- */
-.avatar-tier-frame-bronze {
-  animation: dragonPulse 5s ease-in-out infinite;
-  filter: drop-shadow(0 0 4px rgba(180,120,60,0.20));
-}
-
-.avatar-tier-frame-silver {
-  animation: dragonPulse 4.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 6px rgba(180,190,210,0.25));
-}
-
-.avatar-tier-frame-gold {
-  animation: dragonPulse 4s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px rgba(234,179,8,0.30)) drop-shadow(0 0 14px rgba(245,190,50,0.15));
-}
-
-.avatar-tier-frame-emerald {
-  animation: dragonPulse 3.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 10px rgba(16,185,129,0.35)) drop-shadow(0 0 18px rgba(52,211,153,0.20));
-}
-
-.avatar-tier-frame-platinum {
-  animation: dragonPulse 3s ease-in-out infinite;
-  filter: drop-shadow(0 0 12px rgba(139,92,246,0.35)) drop-shadow(0 0 22px rgba(168,85,247,0.20));
-}
-
-.avatar-tier-frame-rainbow {
-  animation: dragonPulse 2.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 14px rgba(236,72,153,0.35)) drop-shadow(0 0 26px rgba(139,92,246,0.25)) drop-shadow(0 0 32px rgba(16,185,129,0.15));
-}
+/* ═══ Tiered Avatar Frame Effects — now handled via inline box-shadow in component ═══ */
 
 /* ═══ Button Bounce & Card Hover Micro-animations ═══ */
 .btn-bounce {
@@ -1180,3 +1025,99 @@ iframe[src*="vercel"],
 .ach-rarity--rare { color: #3b82f6; }
 .ach-rarity--epic { color: #8b5cf6; }
 .ach-rarity--legendary { color: #FFB800; }
+
+/* ═══ CSS-only Fire Particles for StreakCounter ═══ */
+@keyframes streak-fire-particle-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(-20px) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.streak-fire-particle {
+  position: absolute;
+  bottom: -2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  animation: streak-fire-particle-rise 2s ease-out infinite;
+  pointer-events: none;
+}
+
+.streak-fire-particle-1 {
+  left: 20%;
+  background: #f59e0b;
+  animation-delay: 0s;
+  animation-duration: 1.8s;
+}
+
+.streak-fire-particle-2 {
+  left: 50%;
+  background: #ef4444;
+  animation-delay: 0.6s;
+  animation-duration: 2.0s;
+}
+
+.streak-fire-particle-3 {
+  left: 75%;
+  background: #f59e0b;
+  animation-delay: 1.2s;
+  animation-duration: 1.9s;
+}
+
+/* ═══ Mobile Performance Optimizations ═══ */
+/* Reduce expensive CSS effects on small screens for smoother performance */
+@media (max-width: 767px) {
+  /* Lighter glassmorphism — less blur = less GPU work */
+  .glass {
+    backdrop-filter: blur(6px);
+  }
+
+  /* Slow down/simplify heavy animations */
+  .admin-avatar__frame {
+    animation-duration: 8s;
+  }
+
+  /* Achievement cards — slower shine sweep on mobile */
+  .ach-card--unlocked::after {
+    animation-duration: 8s;
+  }
+
+  /* Legendary aura — slower rotation */
+  .ach-legendary-border::before {
+    animation-duration: 6s;
+  }
+
+  /* Streak fire borders — slower animation */
+  .streak-fire-border::before {
+    animation-duration: 5s;
+  }
+
+  .streak-fire-border-intense::before {
+    animation-duration: 3s;
+  }
+
+  .streak-fire-border-intense {
+    animation-duration: 4s;
+  }
+
+  .streak-fire-border-legendary::before {
+    animation-duration: 3s;
+  }
+
+  .streak-fire-border-legendary {
+    animation-duration: 4s;
+  }
+
+  /* Slower particle drift on mobile (less repaint) */
+  .particle-drift {
+    animation-duration: 30s;
+  }
+}

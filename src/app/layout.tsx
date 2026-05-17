@@ -34,73 +34,29 @@ export default function RootLayout({
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
-        {/* 
-          This script runs BEFORE the page renders and kills the Vercel Toolbar.
-          Must be in <head> with strategy="beforeInteractive" to run before Vercel injection.
+        {/*
+          Lightweight Vercel Toolbar blocker — runs once on load, then stops.
+          No MutationObserver, no setInterval — just CSS hiding + one-time cleanup.
         */}
         <Script id="kill-vercel-toolbar" strategy="beforeInteractive">
           {`
             // Block Vercel Toolbar before it loads
             window.__VERCEL_TOOLBAR_DISABLED = true;
             
-            // Intercept and remove Vercel toolbar script/iframe injections
-            if (typeof MutationObserver !== 'undefined') {
-              var vtObserver = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                  mutation.addedNodes.forEach(function(node) {
-                    if (node && node.nodeType === 1) {
-                      var el = node;
-                      var tag = (el.tagName || '').toLowerCase();
-                      var id = el.id || '';
-                      var cls = el.className || '';
-                      var src = el.src || el.getAttribute('src') || '';
-                      
-                      if (
-                        tag.indexOf('vercel') !== -1 ||
-                        id.indexOf('vercel') !== -1 ||
-                        (typeof cls === 'string' && cls.indexOf('vercel') !== -1) ||
-                        src.indexOf('vercel.com/toolbar') !== -1 ||
-                        src.indexOf('vercel.live') !== -1
-                      ) {
-                        el.remove();
-                      }
-                      
-                      // Check shadow DOM hosts
-                      if (el.shadowRoot) {
-                        var sr = el.shadowRoot;
-                        sr.querySelectorAll('*').forEach(function(child) {
-                          child.remove();
-                        });
-                      }
-                      
-                      // Check children too
-                      var children = el.querySelectorAll ? el.querySelectorAll('[id*="vercel"], [class*="vercel"], iframe[src*="vercel"]') : [];
-                      children.forEach(function(child) {
-                        child.remove();
-                      });
-                    }
-                  });
-                });
-              });
-              
-              // Start observing immediately when body is available
-              function startObserving() {
-                if (document.body) {
-                  vtObserver.observe(document.body, { childList: true, subtree: true });
-                } else {
-                  setTimeout(startObserving, 10);
-                }
-              }
-              startObserving();
+            // One-time cleanup: remove any existing Vercel elements, then stop.
+            // CSS rules in globals.css handle ongoing hiding.
+            function cleanupToolbar() {
+              var selectors = 'iframe[src*="vercel"], [id*="vercel-toolbar"], [class*="vercel-toolbar"], [data-testid="vercel-toolbar"], [class*="vc-bottom"]';
+              document.querySelectorAll(selectors).forEach(function(el) { el.remove(); });
             }
             
-            // Also periodically clean up
-            function cleanupToolbar() {
-              document.querySelectorAll('iframe[src*="vercel"], [id*="vercel-toolbar"], [class*="vercel-toolbar"], [data-testid="vercel-toolbar"]').forEach(function(el) {
-                el.remove();
-              });
+            // Run cleanup a few times in the first 3 seconds, then stop entirely
+            if (typeof window !== 'undefined') {
+              setTimeout(cleanupToolbar, 100);
+              setTimeout(cleanupToolbar, 500);
+              setTimeout(cleanupToolbar, 1500);
+              setTimeout(cleanupToolbar, 3000);
             }
-            setInterval(cleanupToolbar, 500);
           `}
         </Script>
       </head>

@@ -170,18 +170,12 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="hidden sm:flex items-center gap-4">
-              <div className="text-right space-y-1">
+            <div className="flex items-center gap-4">
+              <div className="text-right space-y-1 flex items-center gap-3">
                 <StreakCounter streak={streak} />
                 <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
               </div>
             </div>
-          </div>
-
-          {/* Mobile: Streak + Hearts row */}
-          <div className="flex sm:hidden items-center gap-3 mb-4">
-            <StreakCounter streak={streak} />
-            <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
           </div>
 
           {/* XP Progress */}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 /* ─── Particle data (static, generated once) ─── */
 
@@ -17,9 +18,10 @@ interface ParticleData {
   driftY: number; // px range ±40
 }
 
-const PARTICLE_COUNT = 18;
+const DESKTOP_COUNT = 18;
+const MOBILE_COUNT = 6;
 
-function generateParticles(): ParticleData[] {
+function generateParticles(count: number): ParticleData[] {
   // Seeded pseudo-random for consistent SSR/CSR output
   const seed = 42;
   let s = seed;
@@ -28,7 +30,7 @@ function generateParticles(): ParticleData[] {
     return (s - 1) / 2147483646;
   };
 
-  return Array.from({ length: PARTICLE_COUNT }, (_, i) => {
+  return Array.from({ length: count }, (_, i) => {
     const duration = 15 + Math.floor(rand() * 16); // 15-30s
     return {
       id: i,
@@ -44,7 +46,8 @@ function generateParticles(): ParticleData[] {
   });
 }
 
-const PARTICLES = generateParticles();
+const DESKTOP_PARTICLES = generateParticles(DESKTOP_COUNT);
+const MOBILE_PARTICLES = generateParticles(MOBILE_COUNT);
 
 /* ─── Custom event name for XP flash ─── */
 export const XP_EARNED_EVENT = "particles:xp-earned";
@@ -91,6 +94,7 @@ function generateBurst(count: number): BurstParticle[] {
 
 export function ParticlesBackground() {
   const { particles } = useAppSettings();
+  const isMobile = useIsMobile();
   const [flashing, setFlashing] = useState(false);
   const [burstParticles, setBurstParticles] = useState<BurstParticle[]>([]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -102,18 +106,20 @@ export function ParticlesBackground() {
     // Flash existing particles brighter
     setFlashing(true);
 
-    // Add burst particles
-    setBurstParticles((prev) => {
-      const newBurst = generateBurst(count);
-      // Keep total burst under 12 to avoid perf issues
-      const combined = [...prev, ...newBurst];
-      return combined.slice(-12);
-    });
+    // Add burst particles (skip on mobile for perf)
+    if (!isMobile) {
+      setBurstParticles((prev) => {
+        const newBurst = generateBurst(count);
+        // Keep total burst under 12 to avoid perf issues
+        const combined = [...prev, ...newBurst];
+        return combined.slice(-12);
+      });
+    }
 
     // Clear flash after 1.2s
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setFlashing(false), 1200);
-  }, []);
+  }, [isMobile]);
 
   // Remove burst particles after they've had time to animate
   useEffect(() => {
@@ -133,24 +139,26 @@ export function ParticlesBackground() {
   }, [handleXpEarned]);
 
   const colorMap = {
-    emerald: flashing ? "rgba(52, 211, 153, 0.5)" : "rgba(52, 211, 153, 0.2)", // emerald-400 with /20 or /50
-    purple: flashing ? "rgba(192, 132, 252, 0.5)" : "rgba(192, 132, 252, 0.2)", // purple-400 with /20 or /50
+    emerald: flashing ? "rgba(52, 211, 153, 0.5)" : "rgba(52, 211, 153, 0.2)",
+    purple: flashing ? "rgba(192, 132, 252, 0.5)" : "rgba(192, 132, 252, 0.2)",
   };
 
   const burstColorMap = {
-    emerald: "rgba(52, 211, 153, 0.45)", // slightly brighter burst
+    emerald: "rgba(52, 211, 153, 0.45)",
     purple: "rgba(192, 132, 252, 0.45)",
   };
 
   if (!particles) return null;
+
+  const activeParticles = isMobile ? MOBILE_PARTICLES : DESKTOP_PARTICLES;
 
   return (
     <div
       aria-hidden="true"
       className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
     >
-      {/* Persistent particles */}
-      {PARTICLES.map((p) => (
+      {/* Persistent particles — fewer on mobile */}
+      {activeParticles.map((p) => (
         <div
           key={p.id}
           className="particle-drift"
@@ -165,7 +173,6 @@ export function ParticlesBackground() {
             willChange: "transform",
             animationDuration: `${p.duration}s`,
             animationDelay: `${p.delay}s`,
-            // CSS custom properties for the drift keyframe
             ["--drift-x" as string]: `${p.driftX}px`,
             ["--drift-y" as string]: `${p.driftY}px`,
             transition: "background-color 0.3s ease",
@@ -173,8 +180,8 @@ export function ParticlesBackground() {
         />
       ))}
 
-      {/* Burst particles (XP flash) */}
-      {burstParticles.map((p) => (
+      {/* Burst particles (XP flash) — desktop only */}
+      {!isMobile && burstParticles.map((p) => (
         <div
           key={p.id}
           className="particle-drift particle-burst"

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { xpProgressInLevel } from "@/lib/gamification";
 import { useEffect, useRef, useState } from "react";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Tooltip,
   TooltipContent,
@@ -95,24 +96,9 @@ function getLiquidColors(tier: string) {
   }
 }
 
-function Bubble({ color, delay, left }: { color: string; delay: number; left: string }) {
-  return (
-    <span
-      className="xp-bubble absolute rounded-full"
-      style={{
-        background: color,
-        width: "4px",
-        height: "4px",
-        left,
-        bottom: "10%",
-        animationDelay: `${delay}s`,
-      }}
-    />
-  );
-}
-
 export function XPBar({ currentXp, level, className, showLabel = true, compact = false }: XPBarProps) {
   const { liquidXp } = useAppSettings();
+  const isMobile = useIsMobile();
   const { current, required, percentage } = xpProgressInLevel(currentXp);
   const tier = getLevelTier(level);
   const colors = getLiquidColors(tier);
@@ -138,8 +124,11 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
   const pct = Math.max(percentage, 0);
   const pctDisplay = Math.round(pct);
 
-  // ─── Liquid mode ───
-  if (liquidXp) {
+  // On mobile OR compact mode, use simple gradient bar (no liquid, no bubbles)
+  const useSimpleBar = compact || isMobile;
+
+  // ─── Liquid mode (desktop only, non-compact) ───
+  if (liquidXp && !useSimpleBar) {
     return (
       <div className={cn("flex items-center gap-2", className)}>
         {/* Level number on left */}
@@ -195,14 +184,6 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
                   />
                 </div>
 
-                {/* Bubbles */}
-                {pct > 5 && !compact && (
-                  <>
-                    <Bubble color={colors.bubble} delay={0} left="20%" />
-                    <Bubble color={colors.bubble} delay={2.5} left="65%" />
-                  </>
-                )}
-
                 {/* Glow tip at end of fill */}
                 {pct > 2 && (
                   <div
@@ -237,6 +218,7 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
   }
 
   // ─── Standard (non-liquid) mode — beautiful gradient bar ───
+  // Also used for mobile (no bubbles, no wave, simple gradient + shimmer)
   return (
     <div className={cn("flex items-center gap-2", className)}>
       {/* Current level on left */}
@@ -279,13 +261,15 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
                   background: barGradient,
                 }}
               >
-                {/* Shimmer streak moving across the fill */}
-                <div
-                  className="xp-bar-shimmer absolute inset-0"
-                  style={{
-                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 45%, rgba(255,255,255,0.25) 55%, transparent 100%)",
-                  }}
-                />
+                {/* Shimmer streak moving across the fill — skip on mobile */}
+                {!isMobile && (
+                  <div
+                    className="xp-bar-shimmer absolute inset-0"
+                    style={{
+                      background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 45%, rgba(255,255,255,0.25) 55%, transparent 100%)",
+                    }}
+                  />
+                )}
               </div>
 
               {/* Glow tip at end of fill */}

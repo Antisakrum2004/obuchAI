@@ -2,69 +2,30 @@
 
 import { Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface StreakCounterProps {
   streak: number;
   className?: string;
 }
 
-/** Fire particles that float up behind the counter (streak >= 14) */
-function FireParticles() {
-  const particles = [
-    { left: "15%", size: 4, delay: 0, duration: 1.8 },
-    { left: "40%", size: 3, delay: 0.4, duration: 2.0 },
-    { left: "60%", size: 5, delay: 0.8, duration: 1.6 },
-    { left: "80%", size: 3, delay: 1.2, duration: 2.2 },
-    { left: "30%", size: 4, delay: 1.6, duration: 1.9 },
-  ];
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {particles.map((p, i) => (
-        <motion.div
-          key={i}
-          className="absolute rounded-full"
-          style={{
-            left: p.left,
-            bottom: "-2px",
-            width: p.size,
-            height: p.size,
-            background: i % 2 === 0 ? "#f59e0b" : "#ef4444",
-          }}
-          animate={{
-            y: [0, -20, -35],
-            opacity: [0.8, 0.5, 0],
-            scale: [1, 0.6, 0],
-          }}
-          transition={{
-            duration: p.duration,
-            delay: p.delay,
-            repeat: Infinity,
-            ease: "easeOut",
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function StreakCounter({ streak, className }: StreakCounterProps) {
   const { streakFire } = useAppSettings();
+  const isMobile = useIsMobile();
+
   // ★ Updated thresholds: >=3 basic fire, >=7 medium, >=14 intense, >=30 legendary
   const isOnFire = streakFire && streak >= 3;
   const isMedium = streakFire && streak >= 7;
   const isIntense = streakFire && streak >= 14;
   const isLegendary = streakFire && streak >= 30;
 
+  // Fire particles only on desktop, only for streak >= 14
+  // Replaced Framer Motion with CSS-only particles for performance
+  const showFireParticles = isIntense && !isMobile;
+
   return (
-    <motion.div
-      className={cn("relative", className)}
-      initial={isOnFire ? { scale: 0.8, opacity: 0 } : false}
-      animate={isOnFire ? { scale: 1, opacity: 1 } : false}
-      transition={{ type: "spring", stiffness: 200, damping: 15 }}
-    >
+    <div className={cn("relative", className)}>
       <div
         className={cn(
           "relative flex items-center gap-1.5 rounded-full px-3 py-1.5",
@@ -92,8 +53,14 @@ export function StreakCounter({ streak, className }: StreakCounterProps) {
             : undefined
         }
       >
-        {/* Fire particles (streak >= 14) */}
-        {isIntense && <FireParticles />}
+        {/* CSS-only fire particles (desktop, streak >= 14) */}
+        {showFireParticles && (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+            <span className="streak-fire-particle streak-fire-particle-1" />
+            <span className="streak-fire-particle streak-fire-particle-2" />
+            <span className="streak-fire-particle streak-fire-particle-3" />
+          </div>
+        )}
 
         <Flame
           className={cn(
@@ -122,17 +89,12 @@ export function StreakCounter({ streak, className }: StreakCounterProps) {
 
       {/* LEGENDARY label */}
       {isLegendary && (
-        <motion.div
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, type: "spring" }}
-          className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap"
-        >
+        <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap">
           <span className="text-[8px] font-black tracking-[0.2em] uppercase bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent streak-legendary-label">
             LEGENDARY
           </span>
-        </motion.div>
+        </div>
       )}
-    </motion.div>
+    </div>
   );
 }

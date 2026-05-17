@@ -64,8 +64,8 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     fetchSettings();
-    // Re-fetch every 60 seconds
-    const interval = setInterval(fetchSettings, 60000);
+    // Re-fetch every 120 seconds (reduced from 60s for mobile perf)
+    const interval = setInterval(fetchSettings, 120000);
     return () => clearInterval(interval);
   }, [fetchSettings]);
 
