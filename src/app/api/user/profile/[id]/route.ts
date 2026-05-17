@@ -10,7 +10,7 @@ export async function GET(
 
     // Fetch user basic info
     const userResult = await query(
-      `SELECT id, name, image, xp, level, streak, "maxStreak", "createdAt"
+      `SELECT id, name, image, xp, level, streak, "maxStreak", "createdAt", role
        FROM users WHERE id = $1`,
       [userId]
     );
@@ -80,6 +80,7 @@ export async function GET(
       streak: user.streak,
       maxStreak: user.maxStreak,
       createdAt: user.createdAt,
+      role: user.role,
       rank,
       achievements: achievementsResult.rows.map((a) => ({
         id: a.id,

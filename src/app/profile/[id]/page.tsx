@@ -33,6 +33,7 @@ interface ProfileData {
   streak: number;
   maxStreak: number;
   createdAt: string;
+  role: string | null;
   rank: number;
   achievements: {
     id: string;
