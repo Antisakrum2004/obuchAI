@@ -3,13 +3,12 @@
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { PremiumAchievementCard, type AchievementRarity } from "@/components/gamification/premium-achievement-card";
+import { type AchievementIconName } from "@/components/gamification/achievement-icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
 import { Award, Sparkles, Filter } from "lucide-react";
 
 // ★ Rarity mapping from achievement slug/category
-// We map known achievement names to rarities; unknown defaults to common
 const ACHIEVEMENT_RARITIES: Record<string, AchievementRarity> = {
   "first-lesson": "common",
   "7-day-streak": "rare",
@@ -21,7 +20,30 @@ const ACHIEVEMENT_RARITIES: Record<string, AchievementRarity> = {
   "knowledge-beast": "epic",
   "no-skip-week": "rare",
   "legendary-student": "legendary",
-  // Generic fallbacks by XP reward
+};
+
+// ★ SVG icon mapping from achievement slug to icon name
+const ACHIEVEMENT_ICONS_MAP: Record<string, AchievementIconName> = {
+  "first-lesson": "CardReturn",
+  "7-day-streak": "Flame",
+  "night-learner": "Launch",
+  "ai-master": "SwordStrike",
+  "deep-focus": "Shield",
+  "speed-runner": "Rush",
+  "100-tasks-done": "Reward",
+  "knowledge-beast": "Strength",
+  "no-skip-week": "Recycle",
+  "legendary-student": "FireArrow",
+  "ice-cold": "IceCard",
+  "grab-it": "GrabCard",
+  "mystery-solver": "Mystery",
+  "silenced": "Silenced",
+  "repaint": "Repaint",
+  "check-plus": "CheckPlus",
+  "one-life": "OneLife",
+  "double-xp": "TwoMult",
+  "penalty": "MinusOne",
+  "bonus": "PlusOne",
 };
 
 // Map XP reward ranges to rarity if slug not found
@@ -108,11 +130,7 @@ export default function AchievementsPage() {
     <AppLayout>
       <div className="mx-auto max-w-6xl">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
+        <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20">
               <Award className="h-5 w-5 text-purple-400" />
@@ -124,15 +142,10 @@ export default function AchievementsPage() {
               </p>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Stats bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="glass rounded-2xl p-5 mb-6"
-        >
+        <div className="glass rounded-2xl p-5 mb-6">
           <div className="flex flex-col sm:flex-row items-center gap-4">
             {/* Progress circle */}
             <div className="relative flex items-center justify-center" style={{ width: 64, height: 64 }}>
@@ -185,15 +198,10 @@ export default function AchievementsPage() {
               </div>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Filter tabs */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none"
-        >
+        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none">
           <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
           {filterOptions.map((opt) => (
             <button
@@ -209,18 +217,16 @@ export default function AchievementsPage() {
               {opt.label}
             </button>
           ))}
-        </motion.div>
+        </div>
 
-        {/* Achievements grid */}
+        {/* Achievements grid — denser with smaller cards */}
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="glass rounded-3xl p-5">
-                <Skeleton className="h-[72px] w-[72px] rounded-2xl mx-auto mb-4" />
-                <Skeleton className="h-3 w-16 mx-auto mb-2" />
-                <Skeleton className="h-4 w-24 mx-auto mb-1" />
-                <Skeleton className="h-3 w-32 mx-auto mb-3" />
-                <Skeleton className="h-5 w-14 mx-auto rounded-full" />
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="glass rounded-lg p-3 pt-7">
+                <Skeleton className="h-2 w-10 mx-auto mb-2" />
+                <Skeleton className="h-3 w-16 mx-auto mb-1" />
+                <Skeleton className="h-2 w-10 mx-auto" />
               </div>
             ))}
           </div>
@@ -232,24 +238,19 @@ export default function AchievementsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {sorted.map((achievement, index) => (
-              <motion.div
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {sorted.map((achievement) => (
+              <PremiumAchievementCard
                 key={achievement.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(index * 0.04, 0.5), duration: 0.4 }}
-              >
-                <PremiumAchievementCard
-                  name={achievement.name}
-                  description={achievement.description}
-                  icon={achievement.icon}
-                  rarity={getRarity(achievement.slug, achievement.xpReward)}
-                  xpReward={achievement.xpReward}
-                  earned={achievement.earned}
-                  earnedAt={achievement.earnedAt}
-                />
-              </motion.div>
+                name={achievement.name}
+                description={achievement.description}
+                icon={achievement.icon}
+                iconName={ACHIEVEMENT_ICONS_MAP[achievement.slug?.toLowerCase().replace(/_/g, "-") || ""]}
+                rarity={getRarity(achievement.slug, achievement.xpReward)}
+                xpReward={achievement.xpReward}
+                earned={achievement.earned}
+                earnedAt={achievement.earnedAt}
+              />
             ))}
           </div>
         )}

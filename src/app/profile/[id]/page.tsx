@@ -9,8 +9,33 @@ import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { ShareCardButton } from "@/components/profile/share-card";
 import { ReferralCard } from "@/components/profile/referral-card";
-import { AchievementCard } from "@/components/gamification/achievement-card";
+import { PremiumAchievementCard, type AchievementRarity } from "@/components/gamification/premium-achievement-card";
+import { type AchievementIconName } from "@/components/gamification/achievement-icons";
 import { categoryEmoji, categoryLabel } from "@/lib/gamification";
+
+// Icon mapping for profile achievements
+const ACHIEVEMENT_ICONS_MAP_PROFILE: Record<string, AchievementIconName> = {
+  "first-lesson": "CardReturn",
+  "7-day-streak": "Flame",
+  "night-learner": "Launch",
+  "ai-master": "SwordStrike",
+  "deep-focus": "Shield",
+  "speed-runner": "Rush",
+  "100-tasks-done": "Reward",
+  "knowledge-beast": "Strength",
+  "no-skip-week": "Recycle",
+  "legendary-student": "FireArrow",
+  "ice-cold": "IceCard",
+  "grab-it": "GrabCard",
+  "mystery-solver": "Mystery",
+  "silenced": "Silenced",
+  "repaint": "Repaint",
+  "check-plus": "CheckPlus",
+  "one-life": "OneLife",
+  "double-xp": "TwoMult",
+  "penalty": "MinusOne",
+  "bonus": "PlusOne",
+};
 import { useUserStore } from "@/store/user-store";
 import { motion } from "framer-motion";
 import {
@@ -431,24 +456,31 @@ export default function ProfilePage() {
                   Достижений пока нет
                 </p>
               ) : (
-                <motion.div
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1"
-                  variants={staggerContainer}
-                  initial="hidden"
-                  animate="show"
+                <div
+                  className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-96 overflow-y-auto pr-1"
                 >
-                  {profile.achievements.map((achievement) => (
-                    <motion.div key={achievement.id} variants={staggerItem}>
-                      <AchievementCard
+                  {profile.achievements.map((achievement) => {
+                    const slugKey = achievement.slug?.toLowerCase().replace(/_/g, "-") || "";
+                    const iconName: AchievementIconName | undefined = ACHIEVEMENT_ICONS_MAP_PROFILE[slugKey];
+                    let rarity: AchievementRarity = "common";
+                    if (achievement.xpReward >= 1000) rarity = "legendary";
+                    else if (achievement.xpReward >= 500) rarity = "epic";
+                    else if (achievement.xpReward >= 150) rarity = "rare";
+                    return (
+                      <PremiumAchievementCard
+                        key={achievement.id}
                         name={achievement.name}
                         description={achievement.description}
                         icon={achievement.icon}
-                        earned={true}
+                        iconName={iconName}
+                        rarity={rarity}
                         xpReward={achievement.xpReward}
+                        earned={true}
+                        earnedAt={achievement.earnedAt}
                       />
-                    </motion.div>
-                  ))}
-                </motion.div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </motion.div>

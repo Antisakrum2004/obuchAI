@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { motion } from "framer-motion";
 
 // --- Types ---
@@ -919,7 +920,7 @@ export default function AdminPage() {
                       <th className="text-left px-3 py-2.5 font-medium">IP</th>
                       <th className="text-left px-3 py-2.5 font-medium">Зарегистрирован</th>
                       <th className="text-left px-3 py-2.5 font-medium">Последний вход</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Действие</th>
+                      <th className="text-right px-3 py-2.5 font-medium w-10">Действие</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -951,14 +952,24 @@ export default function AdminPage() {
                         {/* Role */}
                         <td className="px-3 py-3">
                           <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5 text-muted-foreground"}`}>
-                            {user.role === "admin" ? "👑 Админ" : "Пользователь"}
+                            {user.role === "admin" ? "Admin" : "User"}
                           </Badge>
                         </td>
                         {/* Progress */}
                         <td className="px-3 py-3">
-                          <div className="space-y-0.5">
-                            <p className="text-xs"><span className="text-emerald-400">Ур. {user.level}</span> • <span className="text-amber-400">{user.xp} XP</span></p>
-                            <p className="text-xs text-muted-foreground">🔥 {user.streak} дней • ❤️ {user.hearts} • {user._count.attempts} попыток</p>
+                          <div className="space-y-1 min-w-[120px]">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-emerald-400 font-medium">Ур.{user.level}</span>
+                              <span className="text-amber-400">{user.xp} XP</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                              <div className="h-full rounded-full bg-emerald-500/40" style={{ width: `${Math.min(((user.xp % 100) / 100) * 100, 100)}%` }} />
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                              <span>🔥{user.streak}</span>
+                              <span>❤️{user.hearts}</span>
+                              <span>{user._count.attempts} поп.</span>
+                            </div>
                           </div>
                         </td>
                         {/* Device */}
@@ -983,27 +994,42 @@ export default function AdminPage() {
                           <p className="text-xs text-muted-foreground">{user.lastActiveAt ? formatRelative(user.lastActiveAt) : <span className="text-muted-foreground/50">—</span>}</p>
                         </td>
                         {/* Action */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-0.5">
-                            <Button size="sm" variant="ghost" onClick={() => deleteUser(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Удалить">
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => toggleBanUser(user)} className={`h-7 w-7 p-0 ${user.banned ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-amber-400"}`} title={user.banned ? "Разблокировать" : "Заблокировать"}>
-                              {user.banned ? <Shield className="h-3 w-3" /> : <Ban className="h-3 w-3" />}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => addHearts(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-pink-400" title="Добавить сердца">
-                              <Heart className="h-3 w-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => addXp(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400" title="Добавить/убрать XP">
-                              <Zap className="h-3 w-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => resetStreak(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Сбросить стрик">
-                              <RotateCcw className="h-3 w-3" />
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" title="Сменить роль">
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                          </div>
+                        <td className="px-3 py-3 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-[#111118] border-white/10">
+                              <DropdownMenuItem onClick={() => deleteUser(user)} className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer">
+                                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                Удалить
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-white/5" />
+                              <DropdownMenuItem onClick={() => toggleBanUser(user)} className="cursor-pointer">
+                                {user.banned ? <Shield className="h-3.5 w-3.5 mr-2 text-emerald-400" /> : <Ban className="h-3.5 w-3.5 mr-2 text-amber-400" />}
+                                {user.banned ? "Разблокировать" : "Заблокировать"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => toggleUserRole(user)} className="cursor-pointer">
+                                <Edit className="h-3.5 w-3.5 mr-2" />
+                                Сменить роль
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-white/5" />
+                              <DropdownMenuItem onClick={() => addHearts(user)} className="cursor-pointer">
+                                <Heart className="h-3.5 w-3.5 mr-2 text-pink-400" />
+                                Добавить сердца
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => addXp(user)} className="cursor-pointer">
+                                <Zap className="h-3.5 w-3.5 mr-2 text-amber-400" />
+                                Изменить XP
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => resetStreak(user)} className="cursor-pointer">
+                                <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                                Сбросить стрик
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))}
@@ -1027,7 +1053,7 @@ export default function AdminPage() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium truncate">{user.name || "—"}</p>
                           <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5 text-muted-foreground"} text-[10px] h-5`}>
-                            {user.role === "admin" ? "👑" : "👤"}
+                            {user.role === "admin" ? "Admin" : "User"}
                           </Badge>
                           {user.banned && (
                             <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] h-5 px-1">
@@ -1051,26 +1077,43 @@ export default function AdminPage() {
                           <span>Рег: {formatDate(user.createdAt)}</span>
                           {user.lastActiveAt && <span>Вход: {formatRelative(user.lastActiveAt)}</span>}
                         </div>
-                        {/* Mobile action buttons */}
-                        <div className="flex items-center gap-1 pt-1">
-                          <Button size="sm" variant="ghost" onClick={() => deleteUser(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Удалить">
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => toggleBanUser(user)} className={`h-7 w-7 p-0 ${user.banned ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-amber-400"}`} title={user.banned ? "Разблокировать" : "Заблокировать"}>
-                            {user.banned ? <Shield className="h-3 w-3" /> : <Ban className="h-3 w-3" />}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => addHearts(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-pink-400" title="Добавить сердца">
-                            <Heart className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => addXp(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400" title="Добавить/убрать XP">
-                            <Zap className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => resetStreak(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Сбросить стрик">
-                            <RotateCcw className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" title="Сменить роль">
-                            <Edit className="h-3 w-3" />
-                          </Button>
+                        {/* Mobile actions dropdown */}
+                        <div className="pt-1">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="bg-[#111118] border-white/10">
+                              <DropdownMenuItem onClick={() => deleteUser(user)} className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer">
+                                <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                Удалить
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-white/5" />
+                              <DropdownMenuItem onClick={() => toggleBanUser(user)} className="cursor-pointer">
+                                {user.banned ? <Shield className="h-3.5 w-3.5 mr-2 text-emerald-400" /> : <Ban className="h-3.5 w-3.5 mr-2 text-amber-400" />}
+                                {user.banned ? "Разблокировать" : "Заблокировать"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => toggleUserRole(user)} className="cursor-pointer">
+                                <Edit className="h-3.5 w-3.5 mr-2" />
+                                Сменить роль
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-white/5" />
+                              <DropdownMenuItem onClick={() => addHearts(user)} className="cursor-pointer">
+                                <Heart className="h-3.5 w-3.5 mr-2 text-pink-400" />
+                                Добавить сердца
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => addXp(user)} className="cursor-pointer">
+                                <Zap className="h-3.5 w-3.5 mr-2 text-amber-400" />
+                                Изменить XP
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => resetStreak(user)} className="cursor-pointer">
+                                <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                                Сбросить стрик
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     </div>

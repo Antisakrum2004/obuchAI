@@ -32,10 +32,10 @@ export function WeeklyXpChart({ data, className }: WeeklyXpChartProps) {
       </div>
 
       {/* Bar chart */}
-      <div className="flex items-end gap-2 h-28">
+      <div className="flex items-end gap-2 h-32">
         {data.map((value, i) => {
-          // Cap at 85% max to leave headroom for value labels above
-          const height = Math.max((value / maxVal) * 85, value > 0 ? 8 : 2);
+          // Cap at 70% max to leave headroom for value labels above the bars
+          const height = Math.max((value / maxVal) * 70, value > 0 ? 8 : 2);
           const isToday = i === todayIndex;
           const hasValue = value > 0;
 
@@ -43,7 +43,7 @@ export function WeeklyXpChart({ data, className }: WeeklyXpChartProps) {
             <div key={i} className="flex-1 flex flex-col items-center gap-1">
               {/* Value label — placed ABOVE the bar container */}
               <span className={cn(
-                "text-[10px] font-medium transition-opacity h-4 flex items-end",
+                "text-[10px] font-medium transition-opacity h-5 flex items-end pb-0.5",
                 hasValue ? "text-emerald-400 opacity-100" : "text-muted-foreground/30 opacity-0"
               )}>
                 {value > 0 ? value : ""}

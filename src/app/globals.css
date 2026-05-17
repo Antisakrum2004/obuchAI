@@ -307,55 +307,7 @@
   animation: speed-glow 1.5s ease-in-out infinite;
 }
 
-/* ═══ XP Bar Liquid Fill Effect ═══ */
-@keyframes xp-wave-rotate {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes xp-shimmer-move {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-@keyframes xp-bubble-rise {
-  0% {
-    transform: translateY(0) scale(1);
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 0.8;
-  }
-  100% {
-    transform: translateY(-20px) scale(0.3);
-    opacity: 0;
-  }
-}
-
-@keyframes xp-splash {
-  0% { transform: scaleY(1); }
-  20% { transform: scaleY(1.15); }
-  40% { transform: scaleY(0.95); }
-  60% { transform: scaleY(1.05); }
-  80% { transform: scaleY(0.98); }
-  100% { transform: scaleY(1); }
-}
-
-.xp-bar-track {
-  position: relative;
-}
-
-/* Shimmer streak moving across the gradient fill */
-@keyframes xp-bar-shimmer-move {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
-}
-
-.xp-bar-shimmer {
-  animation: xp-bar-shimmer-move 2.5s ease-in-out infinite;
-  opacity: 0.7;
-  pointer-events: none;
-}
+/* ═══ XP Bar ═══ */
 
 /* Pulse animation when XP increases */
 @keyframes xp-gain-pulse {
@@ -366,35 +318,6 @@
 
 .xp-gain-pulse {
   animation: xp-gain-pulse 0.6s ease-out;
-}
-
-.xp-liquid-fill {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  overflow: hidden;
-  border-radius: 0 0 9999px 9999px;
-}
-
-.xp-liquid-splash {
-  animation: xp-splash 0.8s ease-out;
-}
-
-.xp-wave {
-  animation: xp-wave-rotate 3s linear infinite;
-  opacity: 0.5;
-}
-
-.xp-shimmer {
-  animation: xp-shimmer-move 3s ease-in-out infinite;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.xp-bubble {
-  animation: xp-bubble-rise 3s ease-out infinite;
-  pointer-events: none;
 }
 
 /* ═══ Avatar Frame Effects ═══ */
@@ -884,140 +807,26 @@ iframe[src*="vercel"],
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PREMIUM ACHIEVEMENT SYSTEM — AAA Game UI
+   ACHIEVEMENT SYSTEM — Clean Square Cards
    ═══════════════════════════════════════════════════════════════ */
 
-/* Glow pulse — subtle breathing glow for unlocked cards */
-@keyframes achievement-glow-pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* Shine sweep — light reflection moving across the card */
-@keyframes achievement-shine-sweep {
-  0% { transform: translateX(-100%) rotate(15deg); }
-  100% { transform: translateX(200%) rotate(15deg); }
-}
-
-/* Legendary animated aura — rotating conic gradient border */
-@keyframes legendary-aura-rotate {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Float particles — subtle ambient floating dots */
-@keyframes achievement-float {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
-  50% { transform: translateY(-6px) scale(1.2); opacity: 0.8; }
-}
-
-/* Lock icon bob */
-@keyframes lock-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
-
-/* Achievement card — unlocked common/rare */
+/* Achievement card — unlocked */
 .ach-card--unlocked {
   position: relative;
-  overflow: hidden;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .ach-card--unlocked:hover {
-  transform: translateY(-6px) scale(1.02);
-}
-
-/* Shine overlay */
-.ach-card--unlocked::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 40%;
-  height: 200%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255,255,255,0.06) 45%,
-    rgba(255,255,255,0.12) 50%,
-    rgba(255,255,255,0.06) 55%,
-    transparent 100%
-  );
-  animation: achievement-shine-sweep 4s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Rarity glow classes — box-shadow behind card */
-.ach-glow--common {
-  box-shadow: 0 0 12px rgba(148,163,184,0.15), 0 0 24px rgba(148,163,184,0.05);
-}
-.ach-glow--common:hover {
-  box-shadow: 0 0 18px rgba(148,163,184,0.25), 0 0 36px rgba(148,163,184,0.10);
-}
-
-.ach-glow--rare {
-  box-shadow: 0 0 14px rgba(59,130,246,0.25), 0 0 28px rgba(59,130,246,0.10);
-}
-.ach-glow--rare:hover {
-  box-shadow: 0 0 22px rgba(59,130,246,0.40), 0 0 44px rgba(59,130,246,0.15);
-}
-
-.ach-glow--epic {
-  box-shadow: 0 0 16px rgba(139,92,246,0.30), 0 0 32px rgba(139,92,246,0.12);
-}
-.ach-glow--epic:hover {
-  box-shadow: 0 0 26px rgba(139,92,246,0.45), 0 0 52px rgba(139,92,246,0.18);
-}
-
-.ach-glow--legendary {
-  box-shadow: 0 0 20px rgba(255,184,0,0.30), 0 0 40px rgba(255,184,0,0.12), 0 0 60px rgba(251,146,60,0.06);
-}
-.ach-glow--legendary:hover {
-  box-shadow: 0 0 30px rgba(255,184,0,0.50), 0 0 60px rgba(255,184,0,0.20), 0 0 80px rgba(251,146,60,0.10);
-}
-
-/* Legendary animated border — rotating conic gradient */
-.ach-legendary-border {
-  position: relative;
-}
-.ach-legendary-border::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 26px;
-  background: conic-gradient(
-    from 0deg,
-    #FFB800,
-    #FF6B00,
-    #FFB800,
-    #FFD700,
-    #FFB800,
-    #FF6B00,
-    #FFB800
-  );
-  animation: legendary-aura-rotate 3s linear infinite;
-  z-index: -1;
-  opacity: 0.7;
-}
-.ach-legendary-border:hover::before {
-  opacity: 1;
+  transform: translateY(-3px);
 }
 
 /* Locked card */
 .ach-card--locked {
+  opacity: 0.3;
   filter: grayscale(1);
-  opacity: 0.45;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition: opacity 0.2s ease;
 }
 .ach-card--locked:hover {
-  opacity: 0.55;
-  transform: translateY(-2px);
-}
-
-/* Progress ring */
-.ach-progress-ring {
-  transform: rotate(-90deg);
+  opacity: 0.4;
 }
 
 /* Rarity badge text colors */
@@ -1083,16 +892,6 @@ iframe[src*="vercel"],
   /* Slow down/simplify heavy animations */
   .admin-avatar__frame {
     animation-duration: 8s;
-  }
-
-  /* Achievement cards — slower shine sweep on mobile */
-  .ach-card--unlocked::after {
-    animation-duration: 8s;
-  }
-
-  /* Legendary aura — slower rotation */
-  .ach-legendary-border::before {
-    animation-duration: 6s;
   }
 
   /* Streak fire borders — slower animation */
