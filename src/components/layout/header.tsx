@@ -6,17 +6,11 @@ import { StreakCounter } from "@/components/gamification/streak-counter";
 import { Button } from "@/components/ui/button";
 import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { AnimatedNumber } from "@/components/gamification/animated-number";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Menu, LogOut, User, Info } from "lucide-react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { Menu } from "lucide-react";
+import { signIn, useSession } from "next-auth/react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useState } from "react";
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -25,6 +19,7 @@ interface HeaderProps {
 export function Header({ onMenuToggle }: HeaderProps) {
   const { data: session } = useSession();
   const { xp, level, streak, name, image, role, id: userId } = useUserStore();
+  const [hovered, setHovered] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-md md:px-6">
@@ -49,45 +44,32 @@ export function Header({ onMenuToggle }: HeaderProps) {
         <StreakCounter streak={streak} />
 
         {session ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-auto w-auto rounded-full p-0">
-                <AvatarFrame level={level} image={image} name={name} size="sm" role={role} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-card border-border">
-              <div className="flex items-center gap-2 p-2">
-                <AvatarFrame level={level} image={image} name={name} size="sm" role={role} />
-                <div>
-                  <p className="text-sm font-medium">{name}</p>
+          <Link
+            href={userId ? `/profile/${userId}` : "/dashboard"}
+            className="relative"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+          >
+            {/* Avatar — scales up on hover */}
+            <div
+              className="transition-transform duration-200 ease-out"
+              style={{ transform: hovered ? "scale(1.12)" : "scale(1)" }}
+            >
+              <AvatarFrame level={level} image={image} name={name} size="sm" role={role} />
+            </div>
+
+            {/* Hover tooltip — XP & level */}
+            {hovered && (
+              <div className="absolute top-full right-0 mt-2 z-50 pointer-events-none">
+                <div className="glass rounded-lg px-3 py-2 border border-white/10 shadow-xl whitespace-nowrap">
+                  <p className="text-sm font-medium text-foreground">{name}</p>
                   <p className="text-xs text-muted-foreground">
                     Уровень {level} • <AnimatedNumber value={xp} /> XP
                   </p>
                 </div>
               </div>
-              <DropdownMenuSeparator className="bg-white/5" />
-              <DropdownMenuItem asChild>
-                <Link href={userId ? `/profile/${userId}` : "/dashboard"} className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  Профиль
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/about" className="cursor-pointer">
-                  <Info className="mr-2 h-4 w-4" />
-                  О проекте
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-white/5" />
-              <DropdownMenuItem
-                onClick={() => signOut()}
-                className="cursor-pointer text-red-400"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Выйти
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </Link>
         ) : (
           <Button
             variant="outline"

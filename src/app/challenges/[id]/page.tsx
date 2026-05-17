@@ -180,11 +180,8 @@ export default function ChallengePage() {
   // ★ Guard: ignore URL param changes during state transitions
   const isTransitioningRef = useRef(false);
 
-  // ★ Swipe state
-  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [swipeHintDismissed, setSwipeHintDismissed] = useState(false);
+  // ★ Swipe disabled (not working well on mobile yet)
+  // Swipe state kept as stub for future re-enable
 
   // Timer
   useEffect(() => {
@@ -509,54 +506,7 @@ export default function ChallengePage() {
       .catch(() => {});
   }, [nextChallengeId, router, resetForNewChallenge]);
 
-  // ★ Swipe handlers — TikTok/Instagram style (1:1 tracking, velocity detection)
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
-    setIsSwiping(true);
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - touchStartRef.current.x;
-    // Only track horizontal left-swipe, ignore right-swipe (clamp to 0)
-    // 1:1 finger tracking — no resistance factor
-    const clamped = Math.min(deltaX, 0);
-    setSwipeOffset(clamped);
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    if (!touchStartRef.current) return;
-    const now = Date.now();
-    const elapsed = now - touchStartRef.current.time;
-    const distance = Math.abs(swipeOffset);
-    // Velocity in px/ms
-    const velocity = elapsed > 0 ? distance / elapsed : 0;
-
-    // Trigger if: threshold met (50px) OR fast swipe (>0.5px/ms) with some distance (>20px)
-    const shouldTrigger = swipeOffset < -50 || (velocity > 0.5 && swipeOffset < -20);
-
-    if (shouldTrigger && nextChallengeId) {
-      // Haptic feedback
-      if (typeof navigator !== "undefined" && navigator.vibrate) {
-        navigator.vibrate(10);
-      }
-      setSwipeHintDismissed(true);
-      // Animate slide out left, then load next
-      setSwipeOffset(-window.innerWidth);
-      setTimeout(() => {
-        handleNext();
-        setSwipeOffset(0);
-        setIsSwiping(false);
-      }, 200);
-    } else {
-      // Snap back with spring animation
-      setSwipeOffset(0);
-      setIsSwiping(false);
-    }
-    touchStartRef.current = null;
-  }, [swipeOffset, handleNext, nextChallengeId]);
+  // ★ Swipe handlers disabled — removed touch tracking
 
   // === CONDITIONAL RETURNS ===
 
@@ -653,16 +603,7 @@ export default function ChallengePage() {
     <AppLayout>
       <div className="mx-auto max-w-3xl relative">
         {/* ★ Swipe zone wraps only the challenge content area, NOT header/hearts */}
-        <div
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          style={{
-            transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : undefined,
-            transition: isSwiping ? 'none' : (swipeOffset === 0 ? 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'transform 0.2s ease-out'),
-            willChange: swipeOffset !== 0 ? 'transform' : 'auto',
-          }}
-        >
+        <div>
         <XPAnimation amount={result?.xpEarned || 0} show={showXpAnimation} onComplete={() => setShowXpAnimation(false)} />
         <LevelUpModal
           show={showLevelUp}
@@ -931,20 +872,9 @@ export default function ChallengePage() {
           </motion.div>
         </AnimatePresence>
         </div>{/* end min-height wrapper */}
-        </div>{/* end swipe zone */}
+        </div>{/* end content wrapper */}
 
-        {/* ★ Swipe indicator — fades out after first successful swipe */}
-        {nextChallengeId && !result && !isSolved && !swipeHintDismissed && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-center justify-center gap-1.5 mt-4 select-none"
-          >
-            <span className="text-xs text-muted-foreground/40">свайп влево</span>
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400/40 animate-pulse" />
-            <span className="inline-block text-muted-foreground/30">←</span>
-          </motion.div>
-        )}
+        {/* Swipe indicator removed — swipe disabled */}
       </div>
     </AppLayout>
   );

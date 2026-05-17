@@ -67,24 +67,33 @@ const tierLevelBadgeBg: Record<FrameTier, string> = {
   rainbow: "bg-gradient-to-br from-pink-500 via-purple-500 to-emerald-500",
 };
 
-// Frame PNG path per tier
-const tierFrameImage: Record<FrameTier, string> = {
-  bronze: "/frames/frame-bronze.png",
-  silver: "/frames/frame-silver.png",
-  gold: "/frames/frame-gold.png",
-  emerald: "/frames/frame-emerald.png",
-  platinum: "/frames/frame-platinum.png",
-  rainbow: "/frames/frame-rainbow.png",
-};
-
-// Border ring style per tier (CSS fallback)
-const tierRingStyle: Record<FrameTier, string> = {
-  bronze: "ring-2 ring-orange-600/60",
-  silver: "ring-2 ring-gray-300/60",
-  gold: "ring-2 ring-amber-400/70",
-  emerald: "ring-2 ring-emerald-400/70",
-  platinum: "ring-2 ring-purple-400/70",
-  rainbow: "ring-2 ring-pink-400/60",
+// ★ Glow style per tier — CSS box-shadow that radiates OUTWARD only, max 15% of avatar size
+// glow color + ring border color per tier
+const tierGlowStyle: Record<FrameTier, { shadow: string; ring: string }> = {
+  bronze: {
+    shadow: "0 0 8px 2px rgba(180,120,60,0.35), 0 0 16px 4px rgba(210,160,100,0.15)",
+    ring: "ring-2 ring-orange-600/50",
+  },
+  silver: {
+    shadow: "0 0 10px 2px rgba(180,190,210,0.40), 0 0 20px 5px rgba(200,205,215,0.18)",
+    ring: "ring-2 ring-gray-300/50",
+  },
+  gold: {
+    shadow: "0 0 12px 3px rgba(234,179,8,0.45), 0 0 24px 6px rgba(245,190,50,0.20)",
+    ring: "ring-2 ring-amber-400/60",
+  },
+  emerald: {
+    shadow: "0 0 14px 3px rgba(16,185,129,0.45), 0 0 28px 7px rgba(52,211,153,0.20)",
+    ring: "ring-2 ring-emerald-400/60",
+  },
+  platinum: {
+    shadow: "0 0 16px 4px rgba(139,92,246,0.45), 0 0 32px 8px rgba(168,85,247,0.22)",
+    ring: "ring-2 ring-purple-400/60",
+  },
+  rainbow: {
+    shadow: "0 0 18px 4px rgba(236,72,153,0.40), 0 0 28px 6px rgba(139,92,246,0.25), 0 0 36px 8px rgba(16,185,129,0.18)",
+    ring: "ring-2 ring-pink-400/50",
+  },
 };
 
 export function AvatarFrame({ level, image, name, size = "md", role, className }: AvatarFrameProps) {
@@ -115,7 +124,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★★★ ADMIN DRAGON FRAME ★★★ (unchanged — user said it's fine)
+  // ★★★ ADMIN DRAGON FRAME ★★★ (kept as is)
   if (isAdmin) {
     const frameThickness = Math.round(px * 0.12);
     const containerSize = px + frameThickness * 2;
@@ -137,7 +146,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           }}
         />
 
-        {/* Avatar image centered at full px size */}
+        {/* Avatar image at full px size */}
         <Avatar
           className="relative z-[2] rounded-full"
           style={{ width: px, height: px }}
@@ -183,27 +192,30 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★★★ TIERED USER FRAMES ★★★
-  // Frame sits OUTSIDE the avatar — avatar at full px size, frame ring wraps around outside
-  // Thin frame: ~5% of avatar size on each side
-  const frameThickness = Math.round(px * 0.05);
-  const containerSize = px + frameThickness * 2;
-  const badgeOffset = Math.round(frameThickness * 0.2);
+  // ★★★ TIERED USER FRAMES — just colored glow outward, no PNG ★★★
+  // Container is slightly bigger to accommodate the glow (15% outward)
+  const glowPadding = Math.round(px * 0.15);
+  const containerSize = px + glowPadding * 2;
+  const glow = tierGlowStyle[tier];
 
   return (
     <div
       className={cn("relative inline-flex items-center justify-center", className)}
       style={{ width: containerSize, height: containerSize }}
     >
-      {/* Tier glow */}
+      {/* Tier glow — radiates OUTWARD only, behind avatar */}
       <div
-        className={cn("absolute rounded-full z-[1]", `avatar-tier-glow-${tier}`)}
-        style={{ width: "90%", height: "90%" }}
+        className="absolute rounded-full z-[1]"
+        style={{
+          width: px + 4,
+          height: px + 4,
+          boxShadow: glow.shadow,
+        }}
       />
 
-      {/* Avatar image at FULL px size — not shrunk */}
+      {/* Avatar image at FULL px size */}
       <Avatar
-        className={cn("relative z-[2] rounded-full", tierRingStyle[tier])}
+        className={cn("relative z-[2] rounded-full", glow.ring)}
         style={{ width: px, height: px }}
       >
         <AvatarImage src={image || undefined} alt={name || ""} />
@@ -211,16 +223,6 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           {initial}
         </AvatarFallback>
       </Avatar>
-
-      {/* Frame PNG overlay — covers container, ring sits OUTSIDE avatar */}
-      <img
-        src={tierFrameImage[tier]}
-        alt=""
-        className={cn("absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none", `avatar-tier-frame-${tier}`)}
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = "none";
-        }}
-      />
 
       {/* Level badge */}
       <span
@@ -232,8 +234,8 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
         style={{
           width: badgeSize,
           height: badgeSize,
-          bottom: badgeOffset,
-          right: badgeOffset,
+          bottom: 0,
+          right: 0,
           fontSize: size === "sm" ? 7 : size === "md" ? 9 : 12,
           lineHeight: 1,
         }}

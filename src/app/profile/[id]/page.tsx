@@ -19,10 +19,13 @@ import {
   Target,
   Crosshair,
   ArrowLeft,
+  LogOut,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { signOut } from "next-auth/react";
 
 interface ProfileData {
   id: string;
@@ -450,6 +453,34 @@ export default function ProfilePage() {
             </div>
           </motion.div>
         </div>
+
+        {/* Account actions — only on own profile */}
+        {isOwnProfile && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="flex flex-col sm:flex-row gap-3 pt-2"
+          >
+            <Link href="/about" className="flex-1">
+              <Button
+                variant="outline"
+                className="w-full gap-2 border-white/10 bg-white/5 hover:bg-white/10"
+              >
+                <Info className="h-4 w-4" />
+                О проекте
+              </Button>
+            </Link>
+            <Button
+              variant="outline"
+              onClick={() => signOut()}
+              className="flex-1 gap-2 border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400"
+            >
+              <LogOut className="h-4 w-4" />
+              Выйти
+            </Button>
+          </motion.div>
+        )}
       </div>
     </AppLayout>
   );
