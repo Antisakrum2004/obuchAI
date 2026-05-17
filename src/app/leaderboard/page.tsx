@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trophy, Medal, Flame, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 interface LeaderboardEntry {
   rank: number;
@@ -16,15 +17,8 @@ interface LeaderboardEntry {
   xp: number;
   streak: number;
   level: number;
+  role: string | null;
 }
-
-const podiumColors = [
-  "text-amber-400 border-amber-500/30 bg-amber-500/10",
-  "text-gray-300 border-gray-400/30 bg-gray-400/10",
-  "text-amber-600 border-amber-600/30 bg-amber-600/10",
-];
-
-const podiumSizes = ["h-20 w-20", "h-16 w-16", "h-16 w-16"];
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -98,7 +92,7 @@ export default function LeaderboardPage() {
           </div>
         ) : (
           <>
-            {/* Podium */}
+            {/* Podium — top 3 with avatar frames */}
             {top3.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -108,61 +102,68 @@ export default function LeaderboardPage() {
               >
                 {/* 2nd place */}
                 {top3[1] && (
-                  <div className="flex flex-col items-center">
-                    <Avatar className={cn("border-2 mb-2", podiumColors[1], podiumSizes[1])}>
-                      <AvatarImage src={top3[1].image || undefined} />
-                      <AvatarFallback className="bg-gray-400/20 text-gray-300">
-                        {top3[1].name?.charAt(0)?.toUpperCase() || "2"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm font-medium text-gray-300">{top3[1].name}</p>
+                  <Link href={`/profile/${top3[1].id}`} className="flex flex-col items-center group">
+                    <div className="mb-2">
+                      <AvatarFrame
+                        level={top3[1].level}
+                        image={top3[1].image}
+                        name={top3[1].name}
+                        size="sm"
+                        role={top3[1].role}
+                      />
+                    </div>
+                    <p className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">{top3[1].name}</p>
                     <p className="text-xs text-muted-foreground">{top3[1].xp.toLocaleString()} XP</p>
                     <div className="mt-2 h-16 w-20 rounded-t-lg bg-gray-400/10 border border-gray-400/20 border-b-0 flex items-center justify-center">
                       <span className="text-2xl font-bold text-gray-300">2</span>
                     </div>
-                  </div>
+                  </Link>
                 )}
 
                 {/* 1st place */}
                 {top3[0] && (
-                  <div className="flex flex-col items-center">
-                    <div className="relative">
-                      <Medal className="absolute -top-3 left-1/2 -translate-x-1/2 h-6 w-6 text-amber-400" />
+                  <Link href={`/profile/${top3[0].id}`} className="flex flex-col items-center group">
+                    <div className="relative mb-2">
+                      <Medal className="absolute -top-3 left-1/2 -translate-x-1/2 h-6 w-6 text-amber-400 z-10" />
+                      <AvatarFrame
+                        level={top3[0].level}
+                        image={top3[0].image}
+                        name={top3[0].name}
+                        size="md"
+                        role={top3[0].role}
+                      />
                     </div>
-                    <Avatar className={cn("border-2 mb-2", podiumColors[0], podiumSizes[0])}>
-                      <AvatarImage src={top3[0].image || undefined} />
-                      <AvatarFallback className="bg-amber-400/20 text-amber-400 text-xl">
-                        {top3[0].name?.charAt(0)?.toUpperCase() || "1"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm font-bold text-amber-400">{top3[0].name}</p>
+                    <p className="text-sm font-bold text-amber-400 group-hover:text-amber-300 transition-colors">{top3[0].name}</p>
                     <p className="text-xs text-muted-foreground">{top3[0].xp.toLocaleString()} XP</p>
                     <div className="mt-2 h-24 w-20 rounded-t-lg bg-amber-500/10 border border-amber-500/20 border-b-0 flex items-center justify-center glow-amber">
                       <span className="text-3xl font-bold text-amber-400">1</span>
                     </div>
-                  </div>
+                  </Link>
                 )}
 
                 {/* 3rd place */}
                 {top3[2] && (
-                  <div className="flex flex-col items-center">
-                    <Avatar className={cn("border-2 mb-2", podiumColors[2], podiumSizes[2])}>
-                      <AvatarImage src={top3[2].image || undefined} />
-                      <AvatarFallback className="bg-amber-600/20 text-amber-600">
-                        {top3[2].name?.charAt(0)?.toUpperCase() || "3"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm font-medium text-amber-600">{top3[2].name}</p>
+                  <Link href={`/profile/${top3[2].id}`} className="flex flex-col items-center group">
+                    <div className="mb-2">
+                      <AvatarFrame
+                        level={top3[2].level}
+                        image={top3[2].image}
+                        name={top3[2].name}
+                        size="sm"
+                        role={top3[2].role}
+                      />
+                    </div>
+                    <p className="text-sm font-medium text-amber-600 group-hover:text-amber-500 transition-colors">{top3[2].name}</p>
                     <p className="text-xs text-muted-foreground">{top3[2].xp.toLocaleString()} XP</p>
                     <div className="mt-2 h-12 w-20 rounded-t-lg bg-amber-600/10 border border-amber-600/20 border-b-0 flex items-center justify-center">
                       <span className="text-2xl font-bold text-amber-600">3</span>
                     </div>
-                  </div>
+                  </Link>
                 )}
               </motion.div>
             )}
 
-            {/* Rest of leaderboard */}
+            {/* Rest of leaderboard — with avatar frames */}
             <div className="glass rounded-xl overflow-hidden">
               {rest.map((entry, index) => (
                 <motion.div
@@ -170,26 +171,31 @@ export default function LeaderboardPage() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.1 + index * 0.03 }}
-                  className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors"
                 >
-                  <span className="w-8 text-center text-sm font-bold text-muted-foreground">
-                    {entry.rank}
-                  </span>
-                  <Avatar className="h-8 w-8 border border-white/10">
-                    <AvatarImage src={entry.image || undefined} />
-                    <AvatarFallback className="bg-white/5 text-xs">
-                      {entry.name?.charAt(0)?.toUpperCase() || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="flex-1 text-sm font-medium truncate">{entry.name}</span>
-                  <div className="flex items-center gap-1 text-xs text-amber-400">
-                    <Flame className="h-3 w-3" />
-                    {entry.streak}
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-emerald-400 font-semibold">
-                    <Zap className="h-3 w-3" />
-                    {entry.xp.toLocaleString()}
-                  </div>
+                  <Link
+                    href={`/profile/${entry.id}`}
+                    className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors"
+                  >
+                    <span className="w-8 text-center text-sm font-bold text-muted-foreground">
+                      {entry.rank}
+                    </span>
+                    <AvatarFrame
+                      level={entry.level}
+                      image={entry.image}
+                      name={entry.name}
+                      size="sm"
+                      role={entry.role}
+                    />
+                    <span className="flex-1 text-sm font-medium truncate">{entry.name}</span>
+                    <div className="flex items-center gap-1 text-xs text-amber-400">
+                      <Flame className="h-3 w-3" />
+                      {entry.streak}
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-emerald-400 font-semibold">
+                      <Zap className="h-3 w-3" />
+                      {entry.xp.toLocaleString()}
+                    </div>
+                  </Link>
                 </motion.div>
               ))}
             </div>

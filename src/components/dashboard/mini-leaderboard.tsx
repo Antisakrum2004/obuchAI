@@ -11,6 +11,7 @@ interface LeaderboardEntry {
   streak: number;
   level?: number;
   image?: string | null;
+  role?: string | null;
   isCurrentUser?: boolean;
 }
 
@@ -55,7 +56,7 @@ export function MiniLeaderboard({ entries, className }: MiniLeaderboardProps) {
               >
                 {entry.rank}
               </span>
-              <AvatarFrame level={entry.level || 1} image={entry.image} name={entry.name} size="sm" />
+              <AvatarFrame level={entry.level || 1} image={entry.image} name={entry.name} size="sm" role={entry.role} />
               <span
                 className={cn(
                   "flex-1 text-sm truncate",

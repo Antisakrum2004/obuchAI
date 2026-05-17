@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const period = searchParams.get("period") || "alltime";
 
     const usersResult = await query(
-      `SELECT id, name, image, xp, streak, level FROM users ORDER BY xp DESC LIMIT 100`,
+      `SELECT id, name, image, xp, streak, level, role FROM users ORDER BY xp DESC LIMIT 100`,
     );
 
     if (period === "alltime") {
@@ -19,6 +19,7 @@ export async function GET(request: Request) {
         xp: user.xp,
         streak: user.streak,
         level: user.level,
+        role: user.role,
       }));
       return NextResponse.json(leaderboard);
     }
@@ -58,6 +59,7 @@ export async function GET(request: Request) {
       xp: user.xp,
       streak: user.streak,
       level: user.level,
+      role: user.role,
     }));
 
     return NextResponse.json(leaderboard);

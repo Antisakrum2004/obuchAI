@@ -28,6 +28,9 @@ interface LeaderboardEntry {
   name: string;
   xp: number;
   streak: number;
+  level?: number;
+  image?: string | null;
+  role?: string | null;
   isCurrentUser?: boolean;
 }
 
