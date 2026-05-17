@@ -21,7 +21,8 @@ export const metadata: Metadata = {
   title: "AI Тренажёр для 1C разработчиков",
   description: "Ежедневный AI-тренажёр для 1C разработчиков. Прокачай навыки работы с AI инструментами.",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
 };
 

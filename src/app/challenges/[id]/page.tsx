@@ -255,8 +255,10 @@ export default function ChallengePage() {
   useEffect(() => {
     fetch("/api/challenges")
       .then((r) => r.json())
-      .then((data: ChallengeListItem[]) => {
-        setChallengeList(data);
+      .then((data) => {
+        // API returns { challenges: [...], difficultyBoost } or flat array
+        const list: ChallengeListItem[] = Array.isArray(data) ? data : (data.challenges || []);
+        setChallengeList(list);
       })
       .catch(() => {});
   }, []);
@@ -500,7 +502,10 @@ export default function ChallengePage() {
 
     fetch("/api/challenges")
       .then((r) => r.json())
-      .then((listData) => setChallengeList(listData))
+      .then((listData) => {
+        const list: ChallengeListItem[] = Array.isArray(listData) ? listData : (listData.challenges || []);
+        setChallengeList(list);
+      })
       .catch(() => {});
   }, [nextChallengeId, router, resetForNewChallenge]);
 

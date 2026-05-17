@@ -119,29 +119,28 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★ Admin dragon frame — WoW rare card style with dragon-frame.png overlay
+  // ★ Admin dragon frame — WoW legendary card style
+  // Pure CSS + dragon-frame.png overlay with glow, pulse, and scale effects
   if (isAdmin) {
-    // Dragon frame needs more space — the frame image is 100% of the container
-    // Avatar sits at 72% inside, centered
-    const containerSize = Math.round(px * 1.4); // Frame is bigger than avatar
-    const avatarSize = Math.round(containerSize * 0.68);
+    // Dragon frame needs more space — the frame extends beyond the avatar
+    const containerSize = Math.round(px * 1.5);
+    const avatarSize = Math.round(containerSize * 0.62);
+    const badgeOffset = Math.round(containerSize * 0.04);
 
     return (
       <div
         className={cn("admin-avatar relative inline-flex items-center justify-center", className)}
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Glow layer */}
-        <div
-          className="admin-avatar__glow absolute rounded-full"
-          style={{
-            width: "78%",
-            height: "78%",
-          }}
-        />
-        {/* Avatar image */}
+        {/* Layer 0: Background glow — rotating radial gradient */}
+        <div className="admin-avatar__glow absolute" style={{ width: "80%", height: "80%" }} />
+
+        {/* Layer 1: Animated conic gradient border ring */}
+        <div className="admin-avatar__ring absolute" style={{ width: "88%", height: "88%" }} />
+
+        {/* Layer 2: Avatar image — centered, smaller than container */}
         <Avatar
-          className="admin-avatar__image relative z-[2] border-[3px] border-white/12"
+          className="admin-avatar__image relative z-[2]"
           style={{ width: avatarSize, height: avatarSize }}
         >
           <AvatarImage src={image || undefined} alt={name || ""} />
@@ -149,26 +148,38 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
             {initial}
           </AvatarFallback>
         </Avatar>
-        {/* Dragon frame overlay */}
+
+        {/* Layer 3: Dragon frame PNG overlay */}
         <img
           src="/frames/dragon-frame.png"
           alt=""
           className="admin-avatar__frame absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none"
+          onError={(e) => {
+            // If PNG fails to load, hide it — CSS layers still provide a great effect
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
         />
-        {/* Level badge */}
+
+        {/* Layer 4: Corner dragon accents — CSS-only decorative elements */}
+        <div className="admin-avatar__corner admin-avatar__corner--tl absolute top-[2%] left-[2%] z-[4] pointer-events-none" />
+        <div className="admin-avatar__corner admin-avatar__corner--tr absolute top-[2%] right-[2%] z-[4] pointer-events-none" />
+        <div className="admin-avatar__corner admin-avatar__corner--bl absolute bottom-[2%] left-[2%] z-[4] pointer-events-none" />
+        <div className="admin-avatar__corner admin-avatar__corner--br absolute bottom-[2%] right-[2%] z-[4] pointer-events-none" />
+
+        {/* Layer 5: Level badge — on top of everything */}
         <span
           className={cn(
-            "absolute z-[4] flex items-center justify-center rounded-full font-bold text-white border border-white/30",
-            badgeText,
-            tierLevelBadgeBg[tier]
+            "absolute z-[5] flex items-center justify-center rounded-full font-bold text-white border-2 border-cyan-400/40 shadow-[0_0_8px_rgba(0,212,255,0.5)]",
+            badgeText
           )}
           style={{
-            width: badgeSize,
-            height: badgeSize,
-            bottom: Math.round(containerSize * 0.05),
-            right: Math.round(containerSize * 0.05),
+            width: badgeSize + 4,
+            height: badgeSize + 4,
+            bottom: badgeOffset,
+            right: badgeOffset,
             fontSize: size === "sm" ? 8 : size === "md" ? 9 : 12,
             lineHeight: 1,
+            background: "linear-gradient(135deg, #0d9488, #0891b2)",
           }}
         >
           {level}

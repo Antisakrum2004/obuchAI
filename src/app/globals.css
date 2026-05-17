@@ -420,7 +420,7 @@
   75% { box-shadow: 0 0 12px rgba(16, 185, 129, 0.5); }
 }
 
-/* ═══ Admin Dragon Frame — WoW rare card style ═══ */
+/* ═══ Admin Dragon Frame — WoW legendary card style ═══ */
 @keyframes dragonPulse {
   0% {
     transform: scale(1);
@@ -430,10 +430,10 @@
   }
 
   50% {
-    transform: scale(1.02);
+    transform: scale(1.03);
     filter:
-      drop-shadow(0 0 18px rgba(0, 212, 255, 0.45))
-      drop-shadow(0 0 34px rgba(255, 170, 0, 0.34));
+      drop-shadow(0 0 22px rgba(0, 212, 255, 0.50))
+      drop-shadow(0 0 40px rgba(255, 170, 0, 0.38));
   }
 
   100% {
@@ -449,6 +449,22 @@
   100% { transform: rotate(360deg); }
 }
 
+@keyframes ringRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes dragonEyeGlow {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 4px rgba(0, 212, 255, 0.4); }
+  50% { opacity: 1; box-shadow: 0 0 10px rgba(0, 212, 255, 0.8), 0 0 20px rgba(0, 212, 255, 0.3); }
+}
+
+@keyframes dragonFlameParticle {
+  0% { transform: translateY(0) scale(1); opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-12px) scale(0.3); opacity: 0; }
+}
+
 .admin-avatar {
   position: relative;
   display: flex;
@@ -461,10 +477,11 @@
   object-fit: cover;
   position: relative;
   z-index: 2;
-  border: 3px solid rgba(255, 255, 255, 0.12);
+  border: 3px solid rgba(0, 212, 255, 0.15);
   box-shadow:
-    0 0 20px rgba(0, 212, 255, 0.18),
-    0 0 50px rgba(124, 58, 237, 0.22);
+    0 0 24px rgba(0, 212, 255, 0.20),
+    0 0 60px rgba(124, 58, 237, 0.25),
+    inset 0 0 12px rgba(0, 212, 255, 0.05);
 }
 
 .admin-avatar__frame {
@@ -485,14 +502,50 @@
   background:
     radial-gradient(
       circle,
-      rgba(0, 212, 255, 0.22) 0%,
-      rgba(124, 58, 237, 0.18) 45%,
+      rgba(0, 212, 255, 0.28) 0%,
+      rgba(124, 58, 237, 0.22) 35%,
+      rgba(255, 170, 0, 0.12) 55%,
       transparent 75%
     );
   z-index: 1;
-  filter: blur(18px);
-  animation: glowRotate 10s linear infinite;
+  filter: blur(20px);
+  animation: glowRotate 8s linear infinite;
 }
+
+.admin-avatar__ring {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: conic-gradient(
+    from 0deg,
+    rgba(0, 212, 255, 0.5),
+    rgba(124, 58, 237, 0.3),
+    rgba(255, 170, 0, 0.4),
+    rgba(0, 212, 255, 0.1),
+    rgba(255, 170, 0, 0.3),
+    rgba(0, 212, 255, 0.5)
+  ) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: 1;
+  animation: ringRotate 6s linear infinite;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.15);
+}
+
+/* Corner dragon accents — small glowing dots at 4 corners of the frame */
+.admin-avatar__corner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.7);
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.6), 0 0 12px rgba(0, 212, 255, 0.3);
+  animation: dragonEyeGlow 3s ease-in-out infinite;
+}
+
+.admin-avatar__corner--tl { animation-delay: 0s; }
+.admin-avatar__corner--tr { animation-delay: 0.75s; }
+.admin-avatar__corner--bl { animation-delay: 1.5s; }
+.admin-avatar__corner--br { animation-delay: 2.25s; }
 
 .avatar-frame-silver {
   border: 3px solid #9ca3af;
