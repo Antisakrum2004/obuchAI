@@ -34,7 +34,11 @@ export async function GET() {
       const total = Number(result.rows[0]?.total || 0);
       xpByDay.push(total);
       if (total > 0) {
-        activeDays.push(date.toISOString().split("T")[0]);
+        // Use local date format to avoid UTC offset issues on the frontend
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        activeDays.push(`${y}-${m}-${d}`);
       }
     }
 

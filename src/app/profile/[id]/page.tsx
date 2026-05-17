@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { LevelBadge } from "@/components/gamification/level-badge";
+import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { ShareCardButton } from "@/components/profile/share-card";
@@ -243,23 +242,14 @@ export default function ProfilePage() {
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative flex flex-col sm:flex-row items-center gap-6">
-              {/* Avatar */}
-              <div className="relative">
-                <div className="w-24 h-24 rounded-full p-[3px] bg-gradient-to-br from-emerald-500 to-purple-500">
-                  <Avatar className="h-full w-full border-2 border-[#0d0d1a]">
-                    <AvatarImage
-                      src={profile.image || undefined}
-                      alt={profile.name}
-                    />
-                    <AvatarFallback className="bg-emerald-500/20 text-emerald-400 text-2xl font-bold">
-                      {profile.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-                <div className="absolute -bottom-1 -right-1">
-                  <LevelBadge level={profile.level} size="sm" />
-                </div>
-              </div>
+              {/* Avatar with tier frame */}
+              <AvatarFrame
+                level={profile.level}
+                image={profile.image}
+                name={profile.name}
+                size="lg"
+                role={profile.role}
+              />
 
               {/* Name + details */}
               <div className="flex-1 text-center sm:text-left">

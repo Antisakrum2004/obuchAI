@@ -13,6 +13,14 @@ interface StreakCalendarProps {
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
+/** Format date as YYYY-MM-DD in local timezone (avoids UTC offset issues) */
+function toLocalISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export function StreakCalendar({ streak, activeDays = [], className }: StreakCalendarProps) {
   // Get last 7 days
   const days = [];
@@ -23,19 +31,18 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     const dayOfWeek = (date.getDay() + 6) % 7; // Monday=0
-    const isoDate = date.toISOString().split("T")[0];
+    const isoDate = toLocalISODate(date);
     const isActive = activeDays.includes(isoDate);
     const isToday = i === 0;
     const isFuture = date > today;
 
-    // ★ Calculate which day of the streak this is (counting back from today)
+    // ★ KEY FIX: A day is part of the streak if it falls within the streak range
+    // counting back from today, regardless of whether the API reported it as "active"
+    // i=0 → today (streak day N), i=1 → yesterday (streak day N-1), etc.
     let streakDay = 0;
-    if (isActive && streak > 0) {
-      // How many days back from today: i=0 → today, i=1 → yesterday, etc.
-      const daysBack = i;
-      if (daysBack < streak) {
-        streakDay = streak - daysBack;
-      }
+    if (streak > 0 && i < streak) {
+      // This day is within the streak range
+      streakDay = streak - i;
     }
 
     days.push({ date, dayOfWeek, isoDate, isActive, isToday, isFuture, streakDay });
@@ -56,11 +63,12 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
       {/* 7-day dots */}
       <div className="flex items-center justify-between gap-1">
         {days.map((day, index) => {
-          // ★ Flame intensity based on streak day
-          // Day 1: barely lit (opacity 0.3), Day 7+: fully on fire
+          // ★ Flame intensity based on streak day number
+          // Day 1: barely lit, Day 7+: fully on fire
           const flameIntensity = day.streakDay > 0
             ? Math.min(day.streakDay / 7, 1)
             : 0;
+          // ★ Show flame on EVERY day that's part of the streak
           const hasFlame = day.streakDay > 0;
           const isLargeFlame = day.streakDay >= 7;
 
@@ -83,14 +91,18 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
                 <div
                   className={cn(
                     "h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-                    day.isActive && "bg-amber-500/20 border-2 border-amber-500/40 text-amber-400",
-                    day.isActive && day.isToday && "bg-amber-500/30 border-amber-500/60 glow-amber",
-                    !day.isActive && !day.isFuture && "bg-white/5 border border-white/10 text-muted-foreground/50",
+                    // ★ Streak day styling (active or not — if it's part of streak, show fire)
+                    hasFlame && "bg-amber-500/20 border-2 border-amber-500/40 text-amber-400",
+                    hasFlame && day.isToday && "bg-amber-500/30 border-amber-500/60",
+                    // Active but not in streak range (shouldn't happen normally)
+                    !hasFlame && day.isActive && "bg-amber-500/15 border-2 border-amber-500/30 text-amber-400",
+                    // Inactive
+                    !hasFlame && !day.isActive && !day.isFuture && "bg-white/5 border border-white/10 text-muted-foreground/50",
                     day.isFuture && "bg-white/[0.02] border border-white/5 text-muted-foreground/20",
-                    day.isToday && !day.isActive && "border-amber-500/30 border-2"
+                    day.isToday && !hasFlame && "border-amber-500/30 border-2"
                   )}
                   style={
-                    day.isToday && day.isActive
+                    day.isToday && hasFlame
                       ? { animation: "streak-today-pulse 2s ease-in-out infinite" }
                       : undefined
                   }
@@ -107,7 +119,7 @@ export function StreakCalendar({ streak, activeDays = [], className }: StreakCal
                       }}
                       className="relative flex items-center justify-center"
                     >
-                      {/* Flame with intensity-based sizing and color */}
+                      {/* Flame icon — size/color based on streak day */}
                       <Flame
                         className={cn(
                           isLargeFlame

@@ -532,69 +532,108 @@
   box-shadow: 0 0 16px rgba(0, 212, 255, 0.15);
 }
 
-/* Corner dragon accents — small glowing dots at 4 corners of the frame */
-.admin-avatar__corner {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.7);
-  box-shadow: 0 0 6px rgba(0, 212, 255, 0.6), 0 0 12px rgba(0, 212, 255, 0.3);
-  animation: dragonEyeGlow 3s ease-in-out infinite;
+/* ═══ Tiered Avatar Frame Effects ═══ */
+
+/* --- Glow layers per tier --- */
+.avatar-tier-glow-bronze {
+  background: radial-gradient(circle, rgba(180,120,60,0.20) 0%, rgba(210,160,100,0.10) 50%, transparent 75%);
+  filter: blur(12px);
 }
 
-.admin-avatar__corner--tl { animation-delay: 0s; }
-.admin-avatar__corner--tr { animation-delay: 0.75s; }
-.admin-avatar__corner--bl { animation-delay: 1.5s; }
-.admin-avatar__corner--br { animation-delay: 2.25s; }
-
-.avatar-frame-silver {
-  border: 3px solid #9ca3af;
-  background: linear-gradient(90deg, #9ca3af 0%, #e5e7eb 45%, #9ca3af 55%, #6b7280 100%);
-  background-size: 200% 100%;
-  animation: avatar-shimmer 3s ease-in-out infinite;
+.avatar-tier-glow-silver {
+  background: radial-gradient(circle, rgba(180,190,210,0.25) 0%, rgba(200,205,215,0.12) 50%, transparent 75%);
+  filter: blur(14px);
+  animation: glowRotate 12s linear infinite;
 }
 
-.avatar-frame-gold {
-  border: 3px solid #eab308;
-  box-shadow: 0 0 10px rgba(234, 179, 8, 0.5);
+.avatar-tier-glow-gold {
+  background: radial-gradient(circle, rgba(234,179,8,0.30) 0%, rgba(245,190,50,0.15) 50%, transparent 75%);
+  filter: blur(16px);
+  animation: glowRotate 10s linear infinite;
+}
+
+.avatar-tier-glow-emerald {
+  background: radial-gradient(circle, rgba(16,185,129,0.30) 0%, rgba(52,211,153,0.15) 50%, transparent 75%);
+  filter: blur(18px);
+  animation: glowRotate 8s linear infinite;
+}
+
+.avatar-tier-glow-platinum {
+  background: radial-gradient(circle, rgba(139,92,246,0.30) 0%, rgba(168,85,247,0.15) 45%, rgba(59,130,246,0.10) 65%, transparent 80%);
+  filter: blur(20px);
+  animation: glowRotate 6s linear infinite;
+}
+
+.avatar-tier-glow-rainbow {
+  background: radial-gradient(circle, rgba(236,72,153,0.25) 0%, rgba(139,92,246,0.20) 30%, rgba(59,130,246,0.15) 50%, rgba(16,185,129,0.20) 70%, transparent 85%);
+  filter: blur(22px);
+  animation: glowRotate 5s linear infinite;
+}
+
+/* --- Border styles per tier --- */
+.avatar-tier-border-bronze {
+  border: 2px solid rgba(180,120,60,0.50);
+  box-shadow: 0 0 8px rgba(180,120,60,0.15);
+}
+
+.avatar-tier-border-silver {
+  border: 2.5px solid rgba(180,190,210,0.60);
+  box-shadow: 0 0 12px rgba(180,190,210,0.20);
+}
+
+.avatar-tier-border-gold {
+  border: 3px solid rgba(234,179,8,0.60);
+  box-shadow: 0 0 16px rgba(234,179,8,0.25), 0 0 30px rgba(234,179,8,0.10);
+  animation: avatar-glow-pulse 2.5s ease-in-out infinite;
+}
+
+.avatar-tier-border-emerald {
+  border: 3px solid rgba(16,185,129,0.60);
+  box-shadow: 0 0 16px rgba(16,185,129,0.30), 0 0 32px rgba(16,185,129,0.12);
   animation: avatar-glow-pulse 2s ease-in-out infinite;
 }
 
-.avatar-frame-platinum {
-  position: relative;
-  padding: 4px;
-  background: conic-gradient(from 0deg, #e5e7eb, #a78bfa, #93c5fd, #e5e7eb);
-  animation: avatar-gradient-rotate 4s linear infinite;
+.avatar-tier-border-platinum {
+  border: 3px solid rgba(168,85,247,0.60);
+  box-shadow: 0 0 20px rgba(139,92,246,0.30), 0 0 40px rgba(168,85,247,0.15);
+  animation: avatar-rainbow-pulse 2.5s ease-in-out infinite;
 }
 
-.avatar-frame-platinum::before {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, #e5e7eb, #a78bfa, #93c5fd, #e5e7eb);
-  animation: avatar-gradient-rotate 4s linear infinite;
-  z-index: -1;
+.avatar-tier-border-rainbow {
+  border: 3px solid rgba(236,72,153,0.50);
+  box-shadow: 0 0 24px rgba(236,72,153,0.25), 0 0 48px rgba(139,92,246,0.15), 0 0 60px rgba(16,185,129,0.10);
+  animation: avatar-rainbow-pulse 2s ease-in-out infinite;
 }
 
-.avatar-frame-rainbow {
-  position: relative;
-  padding: 4px;
-  background: conic-gradient(from 0deg, #f472b6, #a78bfa, #60a5fa, #34d399, #fbbf24, #f472b6);
-  animation: avatar-gradient-rotate 3s linear infinite;
-  animation: avatar-rainbow-pulse 3s ease-in-out infinite, avatar-gradient-rotate 3s linear infinite;
+/* --- Frame PNG animation per tier --- */
+.avatar-tier-frame-bronze {
+  animation: dragonPulse 5s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(180,120,60,0.20));
 }
 
-.avatar-frame-rainbow::before {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, #f472b6, #a78bfa, #60a5fa, #34d399, #fbbf24, #f472b6);
-  animation: avatar-gradient-rotate 3s linear infinite;
-  z-index: -1;
-  filter: blur(6px);
-  opacity: 0.5;
+.avatar-tier-frame-silver {
+  animation: dragonPulse 4.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(180,190,210,0.25));
+}
+
+.avatar-tier-frame-gold {
+  animation: dragonPulse 4s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(234,179,8,0.30)) drop-shadow(0 0 14px rgba(245,190,50,0.15));
+}
+
+.avatar-tier-frame-emerald {
+  animation: dragonPulse 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(16,185,129,0.35)) drop-shadow(0 0 18px rgba(52,211,153,0.20));
+}
+
+.avatar-tier-frame-platinum {
+  animation: dragonPulse 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(139,92,246,0.35)) drop-shadow(0 0 22px rgba(168,85,247,0.20));
+}
+
+.avatar-tier-frame-rainbow {
+  animation: dragonPulse 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 14px rgba(236,72,153,0.35)) drop-shadow(0 0 26px rgba(139,92,246,0.25)) drop-shadow(0 0 32px rgba(16,185,129,0.15));
 }
 
 /* ═══ Button Bounce & Card Hover Micro-animations ═══ */

@@ -37,36 +37,46 @@ const levelBadgeTextMap = {
   lg: "text-xs",
 } as const;
 
-function getTier(level: number): "basic" | "silver" | "gold" | "platinum" | "rainbow" {
-  if (level <= 5) return "basic";
-  if (level <= 10) return "silver";
-  if (level <= 20) return "gold";
-  if (level <= 30) return "platinum";
+// ★ Tier system: each tier unlocks a more elaborate frame
+// 1+: bronze border, 5+: silver shimmer, 10+: gold glow, 15+: emerald diamond, 25+: platinum conic, 35+: rainbow
+type FrameTier = "bronze" | "silver" | "gold" | "emerald" | "platinum" | "rainbow";
+
+function getTier(level: number): FrameTier {
+  if (level < 5) return "bronze";
+  if (level < 10) return "silver";
+  if (level < 15) return "gold";
+  if (level < 25) return "emerald";
+  if (level < 35) return "platinum";
   return "rainbow";
 }
 
-const tierFallbackBg: Record<string, string> = {
-  basic: "bg-gray-500/20 text-gray-400",
+const tierFallbackBg: Record<FrameTier, string> = {
+  bronze: "bg-orange-900/30 text-orange-300",
   silver: "bg-gray-400/20 text-gray-300",
   gold: "bg-amber-500/20 text-amber-400",
+  emerald: "bg-emerald-500/20 text-emerald-300",
   platinum: "bg-purple-500/20 text-purple-300",
   rainbow: "bg-gradient-to-br from-pink-500/20 via-purple-500/20 to-emerald-500/20 text-pink-300",
 };
 
-const tierBorderClass: Record<string, string> = {
-  basic: "border-2 border-gray-500/40",
-  silver: "avatar-frame-silver",
-  gold: "avatar-frame-gold",
-  platinum: "avatar-frame-platinum",
-  rainbow: "avatar-frame-rainbow",
-};
-
-const tierLevelBadgeBg: Record<string, string> = {
-  basic: "bg-gray-500",
+// ★ Level badge background color per tier
+const tierLevelBadgeBg: Record<FrameTier, string> = {
+  bronze: "bg-orange-700",
   silver: "bg-gray-400",
   gold: "bg-amber-500",
+  emerald: "bg-emerald-500",
   platinum: "bg-purple-500",
   rainbow: "bg-gradient-to-br from-pink-500 via-purple-500 to-emerald-500",
+};
+
+// ★ Frame image path per tier (PNG overlays from /frames/)
+const tierFrameImage: Record<FrameTier, string | null> = {
+  bronze: "/frames/frame-bronze.png",
+  silver: "/frames/frame-silver.png",
+  gold: "/frames/frame-gold.png",
+  emerald: "/frames/frame-emerald.png",
+  platinum: "/frames/frame-platinum.png",
+  rainbow: "/frames/frame-rainbow.png",
 };
 
 export function AvatarFrame({ level, image, name, size = "md", role, className }: AvatarFrameProps) {
@@ -75,12 +85,12 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
   const px = sizeMap[size];
   const textSize = sizeTextMap[size];
   const initial = name?.charAt(0)?.toUpperCase() || "U";
-  const isComplexFrame = avatarFrames && (tier === "platinum" || tier === "rainbow");
   const isAdmin = role === "admin";
 
   // Level badge rendering
   const badgeSize = levelBadgeSizeMap[size];
   const badgeText = levelBadgeTextMap[size];
+
   const levelBadge = (
     <span
       className={cn(
@@ -119,54 +129,49 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★ Admin dragon frame — WoW legendary card style
-  // Pure CSS + dragon-frame.png overlay with glow, pulse, and scale effects
+  // ★★★ ADMIN DRAGON FRAME ★★★
+  // Legendary dragon frame — only the dragon PNG + glow, no extra dots
   if (isAdmin) {
-    // Dragon frame needs more space — the frame extends beyond the avatar
     const containerSize = Math.round(px * 1.5);
-    const avatarSize = Math.round(containerSize * 0.62);
+    const avatarSize = Math.round(containerSize * 0.60);
     const badgeOffset = Math.round(containerSize * 0.04);
 
     return (
       <div
-        className={cn("admin-avatar relative inline-flex items-center justify-center", className)}
+        className="admin-avatar relative inline-flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Layer 0: Background glow — rotating radial gradient */}
+        {/* Background glow */}
         <div className="admin-avatar__glow absolute" style={{ width: "80%", height: "80%" }} />
 
-        {/* Layer 1: Animated conic gradient border ring */}
+        {/* Animated conic gradient border ring */}
         <div className="admin-avatar__ring absolute" style={{ width: "88%", height: "88%" }} />
 
-        {/* Layer 2: Avatar image — centered, smaller than container */}
+        {/* Avatar image — use admin avatar image if no custom one */}
         <Avatar
           className="admin-avatar__image relative z-[2]"
           style={{ width: avatarSize, height: avatarSize }}
         >
-          <AvatarImage src={image || undefined} alt={name || ""} />
-          <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
-            {initial}
+          <AvatarImage
+            src={image || "/avatars/admin-avatar.png"}
+            alt={name || "Admin"}
+          />
+          <AvatarFallback className={cn("bg-gray-900 text-cyan-400 font-bold", textSize)}>
+            👑
           </AvatarFallback>
         </Avatar>
 
-        {/* Layer 3: Dragon frame PNG overlay */}
+        {/* Dragon frame PNG overlay — the only decoration */}
         <img
           src="/frames/dragon-frame.png"
           alt=""
           className="admin-avatar__frame absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none"
           onError={(e) => {
-            // If PNG fails to load, hide it — CSS layers still provide a great effect
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
 
-        {/* Layer 4: Corner dragon accents — CSS-only decorative elements */}
-        <div className="admin-avatar__corner admin-avatar__corner--tl absolute top-[2%] left-[2%] z-[4] pointer-events-none" />
-        <div className="admin-avatar__corner admin-avatar__corner--tr absolute top-[2%] right-[2%] z-[4] pointer-events-none" />
-        <div className="admin-avatar__corner admin-avatar__corner--bl absolute bottom-[2%] left-[2%] z-[4] pointer-events-none" />
-        <div className="admin-avatar__corner admin-avatar__corner--br absolute bottom-[2%] right-[2%] z-[4] pointer-events-none" />
-
-        {/* Layer 5: Level badge — on top of everything */}
+        {/* Level badge */}
         <span
           className={cn(
             "absolute z-[5] flex items-center justify-center rounded-full font-bold text-white border-2 border-cyan-400/40 shadow-[0_0_8px_rgba(0,212,255,0.5)]",
@@ -188,43 +193,66 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // For platinum and rainbow, we use a wrapper with padding for the conic gradient border
-  if (isComplexFrame) {
-    return (
-      <div
-        className={cn(
-          "relative inline-block rounded-full",
-          tierBorderClass[tier],
-          className
-        )}
-        style={{ width: px + 8, height: px + 8 }}
-      >
-        <Avatar
-          className="rounded-full"
-          style={{ width: px, height: px }}
-        >
-          <AvatarImage src={image || undefined} alt={name || ""} />
-          <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
-            {initial}
-          </AvatarFallback>
-        </Avatar>
-        {levelBadge}
-      </div>
-    );
-  }
+  // ★★★ TIERED USER FRAMES ★★★
+  // Each tier has a frame PNG overlay + CSS effects
+  const frameImage = tierFrameImage[tier];
+  // Container is slightly larger than avatar to accommodate the frame
+  const containerSize = Math.round(px * 1.35);
+  const avatarInnerSize = Math.round(containerSize * 0.66);
+  const badgeOffset = Math.round(containerSize * 0.03);
 
   return (
-    <div className={cn("relative inline-block", className)} style={{ width: px, height: px }}>
+    <div
+      className={cn("relative inline-flex items-center justify-center", className)}
+      style={{ width: containerSize, height: containerSize }}
+    >
+      {/* Tier glow */}
+      <div
+        className={cn("absolute rounded-full z-[1]", `avatar-tier-glow-${tier}`)}
+        style={{ width: "78%", height: "78%" }}
+      />
+
+      {/* Avatar image */}
       <Avatar
-        className={cn(tierBorderClass[tier])}
-        style={{ width: px, height: px }}
+        className={cn("relative z-[2] rounded-full", `avatar-tier-border-${tier}`)}
+        style={{ width: avatarInnerSize, height: avatarInnerSize }}
       >
         <AvatarImage src={image || undefined} alt={name || ""} />
         <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
           {initial}
         </AvatarFallback>
       </Avatar>
-      {levelBadge}
+
+      {/* Frame PNG overlay */}
+      {frameImage && (
+        <img
+          src={frameImage}
+          alt=""
+          className={cn("absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none", `avatar-tier-frame-${tier}`)}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+      )}
+
+      {/* Level badge */}
+      <span
+        className={cn(
+          "absolute z-[4] flex items-center justify-center rounded-full font-bold text-white border border-white/30",
+          badgeText,
+          tierLevelBadgeBg[tier]
+        )}
+        style={{
+          width: badgeSize,
+          height: badgeSize,
+          bottom: badgeOffset,
+          right: badgeOffset,
+          fontSize: size === "sm" ? 8 : size === "md" ? 9 : 12,
+          lineHeight: 1,
+        }}
+      >
+        {level}
+      </span>
     </div>
   );
 }
