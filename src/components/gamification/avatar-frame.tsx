@@ -77,7 +77,7 @@ const tierFrameImage: Record<FrameTier, string> = {
   rainbow: "/frames/frame-rainbow.png",
 };
 
-// Border ring style per tier (CSS ring around avatar, visible when PNG fails)
+// Border ring style per tier (CSS fallback)
 const tierRingStyle: Record<FrameTier, string> = {
   bronze: "ring-2 ring-orange-600/60",
   silver: "ring-2 ring-gray-300/60",
@@ -115,10 +115,8 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★★★ ADMIN DRAGON FRAME ★★★
-  // Dragon frame PNG overlay sits right on the avatar contour
+  // ★★★ ADMIN DRAGON FRAME ★★★ (unchanged — user said it's fine)
   if (isAdmin) {
-    // Frame ring thickness: ~12% of avatar size on each side
     const frameThickness = Math.round(px * 0.12);
     const containerSize = px + frameThickness * 2;
     const badgeOffset = Math.round(frameThickness * 0.3);
@@ -139,7 +137,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           }}
         />
 
-        {/* Avatar image centered */}
+        {/* Avatar image centered at full px size */}
         <Avatar
           className="relative z-[2] rounded-full"
           style={{ width: px, height: px }}
@@ -153,7 +151,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           </AvatarFallback>
         </Avatar>
 
-        {/* Dragon frame PNG overlay — same size as container, object-contain */}
+        {/* Dragon frame PNG overlay */}
         <img
           src="/frames/dragon-frame.png"
           alt=""
@@ -186,8 +184,9 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
   }
 
   // ★★★ TIERED USER FRAMES ★★★
-  // Frame PNG overlay sits right on the avatar contour — tight ring
-  const frameThickness = Math.round(px * 0.10);
+  // Frame sits OUTSIDE the avatar — avatar at full px size, frame ring wraps around outside
+  // Thin frame: ~5% of avatar size on each side
+  const frameThickness = Math.round(px * 0.05);
   const containerSize = px + frameThickness * 2;
   const badgeOffset = Math.round(frameThickness * 0.2);
 
@@ -202,7 +201,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
         style={{ width: "90%", height: "90%" }}
       />
 
-      {/* Avatar image centered */}
+      {/* Avatar image at FULL px size — not shrunk */}
       <Avatar
         className={cn("relative z-[2] rounded-full", tierRingStyle[tier])}
         style={{ width: px, height: px }}
@@ -213,7 +212,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
         </AvatarFallback>
       </Avatar>
 
-      {/* Frame PNG overlay — same size as container, follows avatar contour */}
+      {/* Frame PNG overlay — covers container, ring sits OUTSIDE avatar */}
       <img
         src={tierFrameImage[tier]}
         alt=""
