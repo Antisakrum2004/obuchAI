@@ -23,7 +23,7 @@ function toLocalISODate(date: Date): string {
 
 export function StreakCalendar({ streak, activeDays = [], className }: StreakCalendarProps) {
   // Get last 7 days
-  const days = [];
+  const days: { date: Date; dayOfWeek: number; isoDate: string; isActive: boolean; isToday: boolean; isFuture: boolean; streakDay: number }[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 

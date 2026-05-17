@@ -12,6 +12,8 @@ interface UserState {
   level: number;
   streak: number;
   maxStreak: number;
+  completedChallenges: number;
+  rank: number;
   isLoading: boolean;
   setUser: (user: Partial<UserState>) => void;
   addXp: (amount: number) => void;
@@ -31,6 +33,8 @@ const initialState = {
   level: 1,
   streak: 0,
   maxStreak: 0,
+  completedChallenges: 0,
+  rank: 0,
   isLoading: true,
 };
 

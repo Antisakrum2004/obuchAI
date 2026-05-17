@@ -55,7 +55,7 @@ function createPrismaClient(): PrismaClient {
   }
 
   // Use a separate Pool for Prisma adapter (not the same as the raw query pool)
-  const adapterPool = new Pool({ connectionString: databaseUrl })
+  const adapterPool = new Pool({ connectionString: databaseUrl }) as unknown as import('@neondatabase/serverless').PoolConfig
   const adapter = new PrismaNeon(adapterPool)
 
   return new PrismaClient({

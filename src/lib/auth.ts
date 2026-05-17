@@ -283,10 +283,10 @@ export const authOptions: NextAuthOptions = {
           user.id = userId;
 
           // Store user data on user object for JWT callback
-          (user as Record<string, unknown>).role = userResult.rows[0]?.role || "user";
-          (user as Record<string, unknown>).xp = userResult.rows[0]?.xp || 0;
-          (user as Record<string, unknown>).level = userResult.rows[0]?.level || 1;
-          (user as Record<string, unknown>).streak = userResult.rows[0]?.streak || 0;
+          (user as unknown as Record<string, unknown>).role = userResult.rows[0]?.role || "user";
+          (user as unknown as Record<string, unknown>).xp = userResult.rows[0]?.xp || 0;
+          (user as unknown as Record<string, unknown>).level = userResult.rows[0]?.level || 1;
+          (user as unknown as Record<string, unknown>).streak = userResult.rows[0]?.streak || 0;
 
           // Upsert account record
           try {
@@ -334,12 +334,12 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         // Copy custom fields from user (set in signIn callback for Google)
-        const role = (user as Record<string, unknown>).role;
+        const role = (user as unknown as Record<string, unknown>).role;
         if (role) {
           token.role = role;
-          token.xp = (user as Record<string, unknown>).xp || 0;
-          token.level = (user as Record<string, unknown>).level || 1;
-          token.streak = (user as Record<string, unknown>).streak || 0;
+          token.xp = (user as unknown as Record<string, unknown>).xp || 0;
+          token.level = (user as unknown as Record<string, unknown>).level || 1;
+          token.streak = (user as unknown as Record<string, unknown>).streak || 0;
         } else {
           // Fallback: fetch from DB if not set
           if (user.email) {
@@ -390,11 +390,11 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as Record<string, unknown>).id = token.id;
-        (session.user as Record<string, unknown>).role = token.role;
-        (session.user as Record<string, unknown>).xp = token.xp;
-        (session.user as Record<string, unknown>).level = token.level;
-        (session.user as Record<string, unknown>).streak = token.streak;
+        (session.user as unknown as Record<string, unknown>).id = token.id;
+        (session.user as unknown as Record<string, unknown>).role = token.role;
+        (session.user as unknown as Record<string, unknown>).xp = token.xp;
+        (session.user as unknown as Record<string, unknown>).level = token.level;
+        (session.user as unknown as Record<string, unknown>).streak = token.streak;
       }
       return session;
     },
