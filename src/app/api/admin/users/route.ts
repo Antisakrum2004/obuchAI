@@ -10,6 +10,19 @@ export async function GET() {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
+    // Ensure banned & hearts columns exist before querying
+    const alterStatements = [
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS "banned" BOOLEAN NOT NULL DEFAULT false;`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS "hearts" INTEGER NOT NULL DEFAULT 3;`,
+    ];
+    for (const sql of alterStatements) {
+      try {
+        await pool.query(sql);
+      } catch {
+        // Column already exists — ignore
+      }
+    }
+
     // Use raw SQL to avoid Prisma schema sync issues with ALTER TABLE columns
     const usersResult = await pool.query(`
       SELECT
@@ -21,6 +34,8 @@ export async function GET() {
         u.level,
         u.streak,
         u."maxStreak",
+        u.hearts,
+        u.banned,
         u.image,
         u."createdAt",
         u."lastActiveAt",
@@ -41,6 +56,8 @@ export async function GET() {
       level: Number(row.level) || 1,
       streak: Number(row.streak) || 0,
       maxStreak: Number(row.maxStreak) || 0,
+      hearts: Number(row.hearts) || 3,
+      banned: row.banned === true || row.banned === true,
       image: row.image,
       createdAt: row.createdAt,
       lastActiveAt: row.lastActiveAt,

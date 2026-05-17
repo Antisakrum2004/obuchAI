@@ -56,52 +56,11 @@ function getTipColor(tier: string): string {
   }
 }
 
-function getLiquidColors(tier: string) {
-  switch (tier) {
-    case "emerald":
-      return {
-        fill: "linear-gradient(180deg, #34d399 0%, #10b981 40%, #059669 100%)",
-        wave: "rgba(52, 211, 153, 0.4)",
-        shimmer: "rgba(167, 243, 208, 0.3)",
-        bubble: "rgba(167, 243, 208, 0.5)",
-      };
-    case "blue-purple":
-      return {
-        fill: "linear-gradient(180deg, #a78bfa 0%, #8b5cf6 40%, #7c3aed 100%)",
-        wave: "rgba(167, 139, 250, 0.4)",
-        shimmer: "rgba(196, 181, 253, 0.3)",
-        bubble: "rgba(196, 181, 253, 0.5)",
-      };
-    case "amber-gold":
-      return {
-        fill: "linear-gradient(180deg, #fbbf24 0%, #f59e0b 40%, #d97706 100%)",
-        wave: "rgba(251, 191, 36, 0.4)",
-        shimmer: "rgba(253, 230, 138, 0.3)",
-        bubble: "rgba(253, 230, 138, 0.5)",
-      };
-    case "rainbow":
-      return {
-        fill: "linear-gradient(180deg, #f472b6 0%, #a78bfa 30%, #60a5fa 60%, #34d399 100%)",
-        wave: "rgba(167, 139, 250, 0.4)",
-        shimmer: "rgba(255, 255, 255, 0.3)",
-        bubble: "rgba(255, 255, 255, 0.5)",
-      };
-    default:
-      return {
-        fill: "linear-gradient(180deg, #34d399 0%, #10b981 100%)",
-        wave: "rgba(52, 211, 153, 0.4)",
-        shimmer: "rgba(167, 243, 208, 0.3)",
-        bubble: "rgba(167, 243, 208, 0.5)",
-      };
-  }
-}
-
 export function XPBar({ currentXp, level, className, showLabel = true, compact = false }: XPBarProps) {
   const { liquidXp } = useAppSettings();
   const isMobile = useIsMobile();
   const { current, required, percentage } = xpProgressInLevel(currentXp);
   const tier = getLevelTier(level);
-  const colors = getLiquidColors(tier);
   const barGradient = getBarGradient(tier);
   const tipColor = getTipColor(tier);
   const prevPercentageRef = useRef(percentage);
@@ -124,10 +83,10 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
   const pct = Math.max(percentage, 0);
   const pctDisplay = Math.round(pct);
 
-  // On mobile OR compact mode, use simple gradient bar (no liquid, no bubbles)
+  // On mobile OR compact mode, use simple gradient bar (no liquid)
   const useSimpleBar = compact || isMobile;
 
-  // ─── Liquid mode (desktop only, non-compact) ───
+  // ─── Liquid mode (desktop only, non-compact) — simplified ───
   if (liquidXp && !useSimpleBar) {
     return (
       <div className={cn("flex items-center gap-2", className)}>
@@ -154,35 +113,17 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
           <Tooltip>
             <TooltipTrigger asChild>
               <div className={cn("xp-bar-track w-full overflow-hidden rounded-full bg-white/5 relative", barHeight)}>
-                {/* Liquid fill */}
+                {/* Colored fill — only covers pct% of the track */}
                 <div
                   className={cn(
-                    "xp-liquid-fill absolute bottom-0 left-0 right-0 transition-[height] duration-700 ease-out",
+                    "absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out",
                     pulse && "xp-gain-pulse"
                   )}
                   style={{
-                    height: `${pct}%`,
-                    background: colors.fill,
+                    width: `${pct}%`,
+                    background: barGradient,
                   }}
-                >
-                  {/* Wave surface */}
-                  <div
-                    className="xp-wave absolute left-[-25%] right-[-25%] top-[-60%] h-[120%]"
-                    style={{
-                      borderRadius: "40% 40% 35% 35%",
-                      background: colors.wave,
-                      animationDuration: "3s",
-                    }}
-                  />
-
-                  {/* Shimmer highlight */}
-                  <div
-                    className="xp-shimmer absolute inset-0"
-                    style={{
-                      background: `linear-gradient(90deg, transparent 0%, ${colors.shimmer} 45%, ${colors.shimmer} 55%, transparent 100%)`,
-                    }}
-                  />
-                </div>
+                />
 
                 {/* Glow tip at end of fill */}
                 {pct > 2 && (
@@ -217,8 +158,7 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
     );
   }
 
-  // ─── Standard (non-liquid) mode — beautiful gradient bar ───
-  // Also used for mobile (no bubbles, no wave, simple gradient + shimmer)
+  // ─── Standard (non-liquid) mode — simple gradient bar ───
   return (
     <div className={cn("flex items-center gap-2", className)}>
       {/* Current level on left */}
@@ -250,27 +190,17 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
                 pulse && "xp-gain-pulse"
               )}
             >
-              {/* Gradient fill */}
+              {/* Gradient fill — only covers pct% of the track */}
               <div
                 className={cn(
-                  "absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out overflow-hidden",
+                  "absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out",
                   barHeight
                 )}
                 style={{
                   width: `${pct}%`,
                   background: barGradient,
                 }}
-              >
-                {/* Shimmer streak moving across the fill — skip on mobile */}
-                {!isMobile && (
-                  <div
-                    className="xp-bar-shimmer absolute inset-0"
-                    style={{
-                      background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.25) 45%, rgba(255,255,255,0.25) 55%, transparent 100%)",
-                    }}
-                  />
-                )}
-              </div>
+              />
 
               {/* Glow tip at end of fill */}
               {pct > 2 && (

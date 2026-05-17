@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw } from "lucide-react";
 import { motion } from "framer-motion";
 
 // --- Types ---
@@ -57,6 +57,8 @@ interface UserAdmin {
   xp: number;
   level: number;
   streak: number;
+  hearts: number;
+  banned: boolean;
   image: string | null;
   createdAt: string;
   lastActiveAt: string | null;
@@ -380,7 +382,7 @@ export default function AdminPage() {
     }
   };
 
-  // --- User role toggle ---
+  // --- User action helpers ---
   const toggleUserRole = async (user: UserAdmin) => {
     const newRole = user.role === "admin" ? "user" : "admin";
     if (!confirm(`Сменить роль ${user.email} на "${newRole}"?`)) return;
@@ -392,6 +394,111 @@ export default function AdminPage() {
       });
       if (res.ok) {
         showToast("Роль обновлена");
+        fetchData();
+      } else {
+        showToast("Ошибка", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    }
+  };
+
+  const deleteUser = async (user: UserAdmin) => {
+    if (!confirm(`Удалить пользователя ${user.email}? Это действие необратимо. Все попытки будут удалены.`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Пользователь удалён");
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || "Ошибка удаления", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    }
+  };
+
+  const toggleBanUser = async (user: UserAdmin) => {
+    const newBanned = !user.banned;
+    if (!confirm(newBanned ? `Заблокировать ${user.email}?` : `Разблокировать ${user.email}?`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banned: newBanned }),
+      });
+      if (res.ok) {
+        showToast(newBanned ? "Пользователь заблокирован" : "Пользователь разблокирован");
+        fetchData();
+      } else {
+        showToast("Ошибка", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    }
+  };
+
+  const addHearts = async (user: UserAdmin) => {
+    const input = prompt(`Текущие сердца: ${user.hearts}. Введите количество для добавления (отрицательное для удаления):`);
+    if (input === null) return;
+    const delta = parseInt(input, 10);
+    if (isNaN(delta)) {
+      showToast("Введите число", "err");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heartsDelta: delta }),
+      });
+      if (res.ok) {
+        showToast(`Сердца обновлены (${delta > 0 ? "+" : ""}${delta})`);
+        fetchData();
+      } else {
+        showToast("Ошибка", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    }
+  };
+
+  const addXp = async (user: UserAdmin) => {
+    const input = prompt(`Текущий XP: ${user.xp}. Введите количество для добавления (отрицательное для удаления):`);
+    if (input === null) return;
+    const delta = parseInt(input, 10);
+    if (isNaN(delta)) {
+      showToast("Введите число", "err");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xpDelta: delta }),
+      });
+      if (res.ok) {
+        showToast(`XP обновлён (${delta > 0 ? "+" : ""}${delta})`);
+        fetchData();
+      } else {
+        showToast("Ошибка", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    }
+  };
+
+  const resetStreak = async (user: UserAdmin) => {
+    if (!confirm(`Сбросить стрик ${user.email}? (Текущий: ${user.streak})`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ streak: 0 }),
+      });
+      if (res.ok) {
+        showToast("Стрик сброшен");
         fetchData();
       } else {
         showToast("Ошибка", "err");
@@ -771,8 +878,8 @@ export default function AdminPage() {
                 <p className="text-xs text-muted-foreground">Активны за 24ч</p>
               </div>
               <div className="glass rounded-xl p-3">
-                <p className="text-xl font-bold text-purple-400">{users.filter(u => { if (!u.lastActiveAt) return false; const d = new Date(u.lastActiveAt); const now = new Date(); return now.getTime() - d.getTime() < 7*24*60*60*1000; }).length}</p>
-                <p className="text-xs text-muted-foreground">Активны за 7 дней</p>
+                <p className="text-xl font-bold text-red-400">{users.filter(u => u.banned).length}</p>
+                <p className="text-xs text-muted-foreground">Заблокированы</p>
               </div>
             </div>
 
@@ -817,7 +924,7 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {users.map((user) => (
-                      <tr key={user.id} className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                      <tr key={user.id} className={`border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors ${user.banned ? "opacity-60" : ""}`}>
                         {/* User */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
@@ -829,7 +936,14 @@ export default function AdminPage() {
                               )}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-medium truncate max-w-[180px]">{user.name || "—"}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium truncate max-w-[180px]">{user.name || "—"}</p>
+                                {user.banned && (
+                                  <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] h-4 px-1">
+                                    Заблокирован
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground truncate max-w-[180px]">{user.email}</p>
                             </div>
                           </div>
@@ -844,7 +958,7 @@ export default function AdminPage() {
                         <td className="px-3 py-3">
                           <div className="space-y-0.5">
                             <p className="text-xs"><span className="text-emerald-400">Ур. {user.level}</span> • <span className="text-amber-400">{user.xp} XP</span></p>
-                            <p className="text-xs text-muted-foreground">🔥 {user.streak} дней • {user._count.attempts} попыток</p>
+                            <p className="text-xs text-muted-foreground">🔥 {user.streak} дней • ❤️ {user.hearts} • {user._count.attempts} попыток</p>
                           </div>
                         </td>
                         {/* Device */}
@@ -870,9 +984,26 @@ export default function AdminPage() {
                         </td>
                         {/* Action */}
                         <td className="px-4 py-3 text-right">
-                          <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 p-0 text-xs text-muted-foreground hover:text-foreground" title="Сменить роль">
-                            <Edit className="h-3 w-3" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <Button size="sm" variant="ghost" onClick={() => deleteUser(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Удалить">
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => toggleBanUser(user)} className={`h-7 w-7 p-0 ${user.banned ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-amber-400"}`} title={user.banned ? "Разблокировать" : "Заблокировать"}>
+                              {user.banned ? <Shield className="h-3 w-3" /> : <Ban className="h-3 w-3" />}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => addHearts(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-pink-400" title="Добавить сердца">
+                              <Heart className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => addXp(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400" title="Добавить/убрать XP">
+                              <Zap className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => resetStreak(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Сбросить стрик">
+                              <RotateCcw className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" title="Сменить роль">
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -883,7 +1014,7 @@ export default function AdminPage() {
               {/* Mobile cards */}
               <div className="md:hidden">
                 {users.map((user) => (
-                  <div key={user.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                  <div key={user.id} className={`px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors ${user.banned ? "opacity-60" : ""}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 text-sm font-bold shrink-0">
                         {user.image ? (
@@ -898,12 +1029,18 @@ export default function AdminPage() {
                           <Badge variant="outline" className={`${user.role === "admin" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-white/5 border-white/5 text-muted-foreground"} text-[10px] h-5`}>
                             {user.role === "admin" ? "👑" : "👤"}
                           </Badge>
+                          {user.banned && (
+                            <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 text-[9px] h-5 px-1">
+                              Заблокирован
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
                           <span className="text-emerald-400">Ур. {user.level}</span>
                           <span className="text-amber-400">{user.xp} XP</span>
                           <span>🔥 {user.streak}</span>
+                          <span>❤️ {user.hearts}</span>
                           <span>{user._count.attempts} поп.</span>
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -914,10 +1051,28 @@ export default function AdminPage() {
                           <span>Рег: {formatDate(user.createdAt)}</span>
                           {user.lastActiveAt && <span>Вход: {formatRelative(user.lastActiveAt)}</span>}
                         </div>
+                        {/* Mobile action buttons */}
+                        <div className="flex items-center gap-1 pt-1">
+                          <Button size="sm" variant="ghost" onClick={() => deleteUser(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Удалить">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => toggleBanUser(user)} className={`h-7 w-7 p-0 ${user.banned ? "text-emerald-400 hover:text-emerald-300" : "text-muted-foreground hover:text-amber-400"}`} title={user.banned ? "Разблокировать" : "Заблокировать"}>
+                            {user.banned ? <Shield className="h-3 w-3" /> : <Ban className="h-3 w-3" />}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => addHearts(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-pink-400" title="Добавить сердца">
+                            <Heart className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => addXp(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400" title="Добавить/убрать XP">
+                            <Zap className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => resetStreak(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400" title="Сбросить стрик">
+                            <RotateCcw className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" title="Сменить роль">
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
-                      <Button size="sm" variant="ghost" onClick={() => toggleUserRole(user)} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0" title="Сменить роль">
-                        <Edit className="h-3 w-3" />
-                      </Button>
                     </div>
                   </div>
                 ))}
