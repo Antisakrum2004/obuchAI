@@ -261,6 +261,44 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   };
 
+  /** Reset all error items back to pending */
+  const handleResetErrors = async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset-errors" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось сбросить ошибки");
+    }
+  };
+
+  /** Clear completed items from the queue */
+  const handleClearDone = async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear-done" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось очистить очередь");
+    }
+  };
+
   const hasActiveItems = items.some(
     (item) => item.status === "pending" || item.status === "processing"
   );
@@ -268,6 +306,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
   const pendingGroupCount = groups.filter(
     (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
   ).length;
+  const errorGroupCount = groups.filter((g) => g.overallStatus === "error").length;
+  const doneGroupCount = groups.filter((g) => g.overallStatus === "done").length;
 
   return (
     <div className={cn("glass rounded-xl p-5 border-white/5 space-y-4", className)}>
@@ -296,6 +336,28 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                 <Zap className="h-3.5 w-3.5" />
               )}
               Обработать всё
+            </Button>
+          )}
+          {/* Reset errors button */}
+          {errorGroupCount > 0 && (
+            <Button
+              size="sm"
+              onClick={handleResetErrors}
+              className="h-8 text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Сбросить ошибки
+            </Button>
+          )}
+          {/* Clear done button */}
+          {doneGroupCount > 0 && (
+            <Button
+              size="sm"
+              onClick={handleClearDone}
+              className="h-8 text-xs bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 gap-1.5"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Очистить готовые
             </Button>
           )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>

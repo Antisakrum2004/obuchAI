@@ -57,3 +57,59 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// POST /api/knowledge/queue — Reset error items back to pending (admin only)
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { action } = body as { action?: string };
+
+    if (action === "reset-errors") {
+      // Reset all error items back to pending
+      const { rowCount } = await pool.query(
+        `UPDATE processing_queue
+         SET status = 'pending', error = NULL, progress = 0, "startedAt" = NULL, "completedAt" = NULL, "updatedAt" = NOW()
+         WHERE status = 'error'`
+      );
+
+      // Also reset article status back to pending for errored articles
+      await pool.query(
+        `UPDATE articles SET status = 'pending', "errorMessage" = NULL, "updatedAt" = NOW()
+         WHERE status = 'error'`
+      );
+
+      return NextResponse.json({
+        message: `Сброшено ${rowCount} элементов очереди из ошибки в ожидание`,
+        resetCount: rowCount,
+      });
+    }
+
+    if (action === "clear-done") {
+      // Remove completed items from the queue
+      const { rowCount } = await pool.query(
+        `DELETE FROM processing_queue WHERE status = 'done'`
+      );
+
+      return NextResponse.json({
+        message: `Удалено ${rowCount} завершённых элементов из очереди`,
+        deletedCount: rowCount,
+      });
+    }
+
+    return NextResponse.json(
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done" },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error("Error in queue action:", error);
+    return NextResponse.json(
+      { error: "Ошибка при выполнении действия с очередью" },
+      { status: 500 }
+    );
+  }
+}
