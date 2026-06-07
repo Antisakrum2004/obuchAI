@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-
-// Generate a cuid-like ID
-function genId(): string {
-  return "cl" + Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
-}
+import { genId } from "@/lib/gen-id";
 
 // Ensure knowledge hub tables exist before seeding
 async function ensureKnowledgeTables() {

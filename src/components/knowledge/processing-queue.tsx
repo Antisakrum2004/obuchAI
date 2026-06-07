@@ -19,6 +19,10 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Sparkles,
+  BookOpen,
+  GitBranch,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -79,11 +83,18 @@ const typeLabels: Record<string, string> = {
   graph_build: "Построение графа",
 };
 
+// AI processing types with icons
+const aiTypes = [
+  { type: "metadata", label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
+  { type: "glossary", label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
+  { type: "graph", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
+] as const;
+
 export function ProcessingQueue({ className }: ProcessingQueueProps) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [processing, setProcessing] = useState(false);
+  const [processing, setProcessing] = useState<string | null>(null);
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -118,19 +129,38 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
     return () => clearInterval(interval);
   }, [items, fetchQueue]);
 
-  const handleStartProcessing = async (articleId: string) => {
-    setProcessing(true);
+  const handleStartProcessing = async (articleId: string, type: string) => {
+    setProcessing(type);
     try {
       await fetch("/api/knowledge/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articleId, type: "metadata" }),
+        body: JSON.stringify({ articleId, type }),
       });
       fetchQueue();
     } catch {
       // silently fail
     } finally {
-      setProcessing(false);
+      setProcessing(null);
+    }
+  };
+
+  const handleStartAll = async (articleId: string) => {
+    setProcessing("all");
+    try {
+      // Run all three types sequentially: metadata → glossary → graph
+      for (const { type } of aiTypes) {
+        await fetch("/api/knowledge/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articleId, type }),
+        });
+      }
+      fetchQueue();
+    } catch {
+      // silently fail
+    } finally {
+      setProcessing(null);
     }
   };
 
@@ -252,30 +282,47 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
                     {item.completedAt &&
                       ` · Завершено: ${new Date(item.completedAt).toLocaleString("ru-RU")}`}
                   </p>
-                </div>
 
-                {/* Action buttons */}
-                {item.status === "pending" && (
-                  <div className="flex gap-1 shrink-0">
-                    <Button
-                      size="sm"
-                      onClick={() => handleStartProcessing(item.articleId)}
-                      disabled={processing}
-                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-7 px-2 text-xs"
-                    >
-                      <Play className="h-3 w-3 mr-1" />
-                      Запуск
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleCancel(item.id)}
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                )}
+                  {/* Action buttons for pending items */}
+                  {item.status === "pending" && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {aiTypes.map(({ type, label, icon: TypeIcon, color }) => (
+                        <Button
+                          key={type}
+                          size="sm"
+                          onClick={() => handleStartProcessing(item.articleId, type)}
+                          disabled={!!processing}
+                          className={cn(
+                            "h-6 px-2 text-[10px] gap-1",
+                            "bg-white/5 border border-white/10 hover:bg-white/10",
+                            color
+                          )}
+                          variant="outline"
+                        >
+                          <TypeIcon className="h-2.5 w-2.5" />
+                          {label}
+                        </Button>
+                      ))}
+                      <Button
+                        size="sm"
+                        onClick={() => handleStartAll(item.articleId)}
+                        disabled={!!processing}
+                        className="h-6 px-2 text-[10px] gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                      >
+                        <Zap className="h-2.5 w-2.5" />
+                        Все
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleCancel(item.id)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-red-400"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}

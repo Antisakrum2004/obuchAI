@@ -5,6 +5,9 @@ import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// Allowed fields for update (whitelist to prevent SQL injection)
+const ALLOWED_FIELDS = new Set(["name", "slug", "description", "icon", "order", "isPublished"]);
+
 // GET /api/knowledge/spaces/[id] — Get single space with categories and article counts
 export async function GET(
   _request: Request,
@@ -63,9 +66,16 @@ export async function PUT(
     const values: unknown[] = [];
     let idx = 1;
 
+    // Only allow whitelisted fields
     for (const [key, value] of Object.entries(body)) {
-      fields.push(`"${key}" = $${idx++}`);
-      values.push(value);
+      if (ALLOWED_FIELDS.has(key)) {
+        fields.push(`"${key}" = $${idx++}`);
+        values.push(value);
+      }
+    }
+
+    if (fields.length === 0) {
+      return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
     }
 
     fields.push(`"updatedAt" = NOW()`);
