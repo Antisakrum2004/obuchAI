@@ -25,6 +25,11 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { MediaUpload } from "@/components/knowledge/media-upload";
+import { MediaViewer } from "@/components/knowledge/media-viewer";
+import type { UploadedMedia } from "@/components/knowledge/media-upload";
+import { Paperclip } from "lucide-react";
+import { useUserStore } from "@/store/user-store";
 import { cn } from "@/lib/utils";
 
 interface ArticleDetail {
@@ -66,6 +71,9 @@ export default function ArticlePage({
   const [id, setId] = useState<string>("");
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mediaKey, setMediaKey] = useState(0);
+  const { role } = useUserStore();
+  const isAdmin = role === "admin";
 
   useEffect(() => {
     params.then((p) => setId(p.id));
@@ -230,6 +238,34 @@ export default function ArticlePage({
                 <article className="prose-custom">
                   <ReactMarkdown>{article.content}</ReactMarkdown>
                 </article>
+              </div>
+
+              {/* Media Files */}
+              <div className="mt-6">
+                <Separator className="mb-4 bg-white/5" />
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                  Прикреплённые файлы
+                </h3>
+
+                {/* Viewer — shows existing files */}
+                <MediaViewer
+                  key={mediaKey}
+                  articleId={id}
+                  canDelete={isAdmin}
+                  onDelete={() => setMediaKey((k) => k + 1)}
+                />
+
+                {/* Upload — admin only */}
+                {isAdmin && (
+                  <div className="mt-4">
+                    <MediaUpload
+                      entityType="article"
+                      entityId={id}
+                      onUploadComplete={() => setMediaKey((k) => k + 1)}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Back Link */}

@@ -44,6 +44,8 @@
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret |
 | `VERCEL_TOOLBAR_DISABLED` | Отключение Vercel Toolbar |
 | `NEXT_PUBLIC_VERCEL_*` | Клиентские флаги для тулбара |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob Storage (авто-устанавливается при создании Blob Store) |
+| `STORAGE_PROVIDER` | Провайдер файлового хранилища: "vercel-blob" (default) / "s3" / "minio" |
 
 ---
 
@@ -160,6 +162,7 @@ src/
 | date-fns | ^4.1.0 | Работа с датами (streak, daily) |
 | react-markdown | ^10.1.0 | Рендеринг Markdown в задачах |
 | react-syntax-highlighter | ^15.6.1 | Подсветка кода в задачах |
+| @vercel/blob | ^1.0.0 | Файловое хранилище (Vercel Blob Storage) |
 
 ### Мёртвые зависимости (установлены, не используются в src/)
 
@@ -266,10 +269,10 @@ src/
 - **KnowledgeSpace**: Пространства знаний (AI Разработка, Промпт-инжиниринг, 1С и AI, Инструменты)
 - **Category**: Иерархические категории внутри пространств (Cursor, Claude Code, MCP, OpenAI)
 - **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount
-- **Media**: Видео/документы/изображения, привязанные к статьям (URL, MinIO/S3)
+- **Media**: Видео/документы/изображения, привязанные к статьям (Vercel Blob → StorageProvider)
 - **GlossaryTerm**: Термины с определениями, категориями, связанными терминами
-- **API**: 9 маршрутов (CRUD spaces, categories, articles, glossary, search, seed)
-- **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья)
+- **API**: 12 маршрутов (CRUD spaces, categories, articles, glossary, search, seed, media upload/list/delete)
+- **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья + медиа)
 
 ### 3.14 AI-Глоссарий (`src/components/knowledge/glossary-command.tsx`, `glossary-trigger.tsx`)
 - **Cmd+K / Ctrl+K**: Глобальный поиск по терминам из любого места приложения
@@ -278,6 +281,16 @@ src/
 - **Категории**: AI, Tools, 1C, General — цветные badge
 - **10 предзагруженных терминов**: LLM, Промпт, MCP, RAG, Context Window, Tool Calling, AI Агент, Токен, Fine-tuning, Embedding
 
+### 3.16 Storage & Media (`src/lib/storage/`, `src/lib/media-service.ts`)
+- **StorageProvider**: Интерфейс (upload, delete, getUrl) — абстракция над файловым хранилищем
+- **VercelBlobStorageProvider**: Реализация через @vercel/blob (MVP)
+- **MediaService**: Бизнес-логика загрузки/удаления/привязки файлов, не знает про конкретное хранилище
+- **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
+- **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
+- **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
+- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения)
+- **Переключение хранилища**: env var STORAGE_PROVIDER → vercel-blob (default) / s3 / minio (будущие)
+
 ---
 
 ## 4. Current State
@@ -285,8 +298,8 @@ src/
 ### Метрики проекта
 - **Строк кода**: ~23,000 (src/ только .ts/.tsx)
 - **Страниц**: 17
-- **API маршрутов**: 35
-- **Компонентов**: 86
+- **API маршрутов**: 38
+- **Компонентов**: 88
 - **Хуков**: 5
 - **Моделей Prisma**: 16 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm)
 - **Размер GitHub repo**: 6,752 KB
@@ -312,6 +325,9 @@ src/
 - **Knowledge Hub** — База знаний (4 пространства, 6 категорий, статьи, медиа)
 - **AI-Глоссарий** — ⌘K глобальный поиск по терминам (10 предзагруженных терминов)
 - **Умный поиск** — /api/knowledge/search — поиск по статьям, глоссарию, задачам
+- **Файловое хранилище** — Vercel Blob Storage через StorageProvider абстракцию (видео, PDF, PPTX, DOCX, изображения)
+- **MediaUpload** — Drag&drop загрузка файлов с прогрессом, привязка к статьям
+- **MediaViewer** — Видеоплеер, документы, изображения в статье
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
@@ -326,8 +342,9 @@ src/
 - **Тесты** (0 тестовых файлов, playwright установлен)
 - **Error boundaries** (любой рантайм краш = белый экран)
 - **Rate limiting** (API без защиты от спама)
-- **Загрузка файлов** (MinIO/S3 — Sprint 2)
-- **Видео HLS-трансляция** (FFMPEG — Sprint 2)
+- **Загрузка файлов** (MinIO/S3 — Sprint 2, реализовано через Vercel Blob)
+- **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
+- **Превью видео** (thumbnailUrl — отложено до FFmpeg)
 - **AI-анализ материалов** (авто-извлечение терминов — Sprint 3)
 - **Learning Path** (дорожные карты онбординга)
 
@@ -485,13 +502,21 @@ src/
 - [x] AI-Глоссарий: ⌘K overlay + floating ? button
 - [x] Sidebar: "База знаний" с BookOpen иконкой
 
-### Sprint 2 — Загрузка файлов (СЛЕДУЮЩИЙ)
-- [ ] MinIO/S3 хранилище: docker-compose + SDK интеграция
-- [ ] Upload API: POST /api/knowledge/media/upload
-- [ ] Поддержка типов: PDF, PPTX, DOCX, видео, изображения
-- [ ] Структура хранения: /company/courses/, /company/knowledge/
-- [ ] HLS-трансляция для видео 500+ МБ (FFMPEG)
-- [ ] Превью: thumbnailUrl для видео/изображений
+### Sprint 2 — Загрузка файлов (В РАБОТЕ 🚧)
+- [x] StorageProvider интерфейс (абстракция: upload, delete, getUrl)
+- [x] VercelBlobStorageProvider реализация (@vercel/blob)
+- [x] MediaService (бизнес-логика, не знает про Blob/S3)
+- [x] Upload API: POST /api/knowledge/media/upload (multipart/form-data)
+- [x] Delete API: DELETE /api/knowledge/media/[id] (admin only)
+- [x] List API: GET /api/knowledge/media?articleId=xxx
+- [x] Поддержка типов: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
+- [x] UI: MediaUpload — drag&drop + выбор файлов, прогресс загрузки
+- [x] UI: MediaViewer — видеоплеер, документы, изображения в статье
+- [x] Интеграция: MediaUpload + MediaViewer в /knowledge/article/[id]
+- [x] Env vars: BLOB_READ_WRITE_TOKEN, STORAGE_PROVIDER
+- [ ] Привязка файлов к урокам (когда появятся lessons)
+- [ ] Превью: thumbnailUrl для видео (FFmpeg — отложено)
+- [ ] HLS-трансляция для видео 500+ МБ (отложено до VPS/Render Worker)
 
 ### Sprint 3 — AI-анализ материалов
 - [ ] Извлечение текста из PDF/PPTX/DOCX
