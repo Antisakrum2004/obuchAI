@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical, BookOpen } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical, BookOpen, CircleDot } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { motion } from "framer-motion";
 import { KnowledgeAdmin } from "@/components/knowledge/knowledge-admin";
@@ -73,9 +75,9 @@ interface UserAdmin {
 // --- Empty form defaults ---
 const emptyChallenge = {
   title: "", description: "", difficulty: "easy", type: "multiple_choice",
-  category: "prompting", xpReward: 25, content: '{"text":"Вопрос"}',
-  options: '["Вариант 1","Вариант 2","Вариант 3"]',
-  correctAnswer: '"0"', explanation: "", hints: "[]", validationType: "static",
+  category: "prompting", xpReward: 25, questionText: "",
+  optionList: ["", "", ""],
+  correctIndex: 0, explanation: "", hints: "[]", validationType: "static",
   isActive: true,
 };
 
@@ -282,10 +284,37 @@ export default function AdminPage() {
   // --- Challenge CRUD ---
   const createChallenge = async () => {
     try {
+      // Convert human-friendly form to API format
+      const optionsArray = (challengeForm.optionList || []).filter((o: string) => o.trim() !== "");
+      if (optionsArray.length < 2) {
+        showToast("Минимум 2 варианта ответа", "err");
+        return;
+      }
+      if (!challengeForm.questionText?.trim()) {
+        showToast("Введите текст вопроса", "err");
+        return;
+      }
+
+      const payload = {
+        title: challengeForm.title,
+        description: challengeForm.description,
+        difficulty: challengeForm.difficulty,
+        type: challengeForm.type,
+        category: challengeForm.category,
+        xpReward: challengeForm.xpReward,
+        content: JSON.stringify({ text: challengeForm.questionText }),
+        options: JSON.stringify(optionsArray),
+        correctAnswer: JSON.stringify(challengeForm.correctIndex),
+        explanation: challengeForm.explanation || null,
+        hints: challengeForm.hints || "[]",
+        validationType: challengeForm.validationType || "static",
+        isActive: challengeForm.isActive,
+      };
+
       const res = await fetch("/api/admin/challenges", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(challengeForm),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         showToast("Задача создана");
@@ -690,49 +719,120 @@ export default function AdminPage() {
                 <Plus className="h-4 w-4 text-emerald-400" />
                 Новая задача
               </h3>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input placeholder="Название" value={challengeForm.title} onChange={(e) => setChallengeForm({ ...challengeForm, title: e.target.value })} className="bg-white/5 border-white/10" />
-                <div className="flex gap-2">
-                  <Select value={challengeForm.difficulty} onValueChange={(v) => setChallengeForm({ ...challengeForm, difficulty: v })}>
-                    <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-[#111118] border-white/10">
-                      <SelectItem value="easy">Легко</SelectItem>
-                      <SelectItem value="medium">Средне</SelectItem>
-                      <SelectItem value="hard">Сложно</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={challengeForm.type} onValueChange={(v) => setChallengeForm({ ...challengeForm, type: v })}>
-                    <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-[#111118] border-white/10">
-                      <SelectItem value="multiple_choice">Выбор</SelectItem>
-                      <SelectItem value="ordering">Порядок</SelectItem>
-                      <SelectItem value="workflow_build">Workflow</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="space-y-4">
+                {/* Row 1: Title + difficulty + type */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input placeholder="Название задачи" value={challengeForm.title} onChange={(e) => setChallengeForm({ ...challengeForm, title: e.target.value })} className="bg-white/5 border-white/10" />
+                  <div className="flex gap-2">
+                    <Select value={challengeForm.difficulty} onValueChange={(v) => setChallengeForm({ ...challengeForm, difficulty: v })}>
+                      <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-[#111118] border-white/10">
+                        <SelectItem value="easy">Легко</SelectItem>
+                        <SelectItem value="medium">Средне</SelectItem>
+                        <SelectItem value="hard">Сложно</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={challengeForm.type} onValueChange={(v) => setChallengeForm({ ...challengeForm, type: v })}>
+                      <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-[#111118] border-white/10">
+                        <SelectItem value="multiple_choice">Выбор</SelectItem>
+                        <SelectItem value="ordering">Порядок</SelectItem>
+                        <SelectItem value="workflow_build">Workflow</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <Input placeholder="Описание" value={challengeForm.description} onChange={(e) => setChallengeForm({ ...challengeForm, description: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2" />
-                <Textarea placeholder='Содержимое JSON: {"text":"Вопрос","code":"..."}' value={challengeForm.content} onChange={(e) => setChallengeForm({ ...challengeForm, content: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2 min-h-[60px] text-xs font-mono" />
-                <Textarea placeholder='Варианты JSON: ["Вариант 1","Вариант 2"]' value={challengeForm.options} onChange={(e) => setChallengeForm({ ...challengeForm, options: e.target.value })} className="bg-white/5 border-white/10 min-h-[60px] text-xs font-mono" />
-                <div className="space-y-2">
-                  <Input placeholder='Ответ JSON: "0" или [0,1,2]' value={challengeForm.correctAnswer} onChange={(e) => setChallengeForm({ ...challengeForm, correctAnswer: e.target.value })} className="bg-white/5 border-white/10 text-xs font-mono" />
-                  <Input placeholder="Пояснение" value={challengeForm.explanation} onChange={(e) => setChallengeForm({ ...challengeForm, explanation: e.target.value })} className="bg-white/5 border-white/10" />
+
+                {/* Row 2: Description */}
+                <Input placeholder="Краткое описание" value={challengeForm.description} onChange={(e) => setChallengeForm({ ...challengeForm, description: e.target.value })} className="bg-white/5 border-white/10" />
+
+                {/* Row 3: Question text */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Текст вопроса</label>
+                  <Textarea
+                    placeholder="Какой промпт лучше всего подходит для генерации кода?"
+                    value={challengeForm.questionText || ""}
+                    onChange={(e) => setChallengeForm({ ...challengeForm, questionText: e.target.value })}
+                    className="bg-white/5 border-white/10 min-h-[60px]"
+                  />
                 </div>
-                <div className="flex gap-2 items-end flex-wrap">
-                  <Select value={challengeForm.category} onValueChange={(v) => setChallengeForm({ ...challengeForm, category: v })}>
-                    <SelectTrigger className="bg-white/5 border-white/10 w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-[#111118] border-white/10">
-                      <SelectItem value="prompting">Промптинг</SelectItem>
-                      <SelectItem value="agents">Агенты</SelectItem>
-                      <SelectItem value="debugging">Дебаг</SelectItem>
-                      <SelectItem value="workflow">Workflow</SelectItem>
-                      <SelectItem value="1c">1С</SelectItem>
-                      <SelectItem value="review">Ревью</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="XP" value={challengeForm.xpReward} onChange={(e) => setChallengeForm({ ...challengeForm, xpReward: Number(e.target.value) })} className="bg-white/5 border-white/10 w-20" />
-                  <Button onClick={createChallenge} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
-                    <Save className="h-4 w-4 mr-1" /> Создать
+
+                {/* Row 4: Options with correct answer selector */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-2 block">Варианты ответа (отметьте правильный)</label>
+                  <RadioGroup
+                    value={String(challengeForm.correctIndex ?? 0)}
+                    onValueChange={(v) => setChallengeForm({ ...challengeForm, correctIndex: parseInt(v) })}
+                    className="space-y-2"
+                  >
+                    {(challengeForm.optionList || ["", "", ""]).map((opt: string, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <RadioGroupItem value={String(idx)} id={`opt-correct-${idx}`} className="shrink-0 border-emerald-500/50 text-emerald-400" />
+                        <Label htmlFor={`opt-correct-${idx}`} className="text-[10px] text-muted-foreground shrink-0 w-4">
+                          {idx + (challengeForm.correctIndex === idx ? "✓" : "")}
+                        </Label>
+                        <Input
+                          placeholder={`Вариант ${idx + 1}`}
+                          value={opt}
+                          onChange={(e) => {
+                            const newList = [...(challengeForm.optionList || ["", "", ""])];
+                            newList[idx] = e.target.value;
+                            setChallengeForm({ ...challengeForm, optionList: newList });
+                          }}
+                          className={cn(
+                            "bg-white/5 border-white/10 flex-1",
+                            challengeForm.correctIndex === idx && "border-emerald-500/30 bg-emerald-500/5"
+                          )}
+                        />
+                        {(challengeForm.optionList || []).length > 2 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const newList = (challengeForm.optionList || []).filter((_: string, i: number) => i !== idx);
+                              const newCorrect = challengeForm.correctIndex >= idx
+                                ? Math.max(0, challengeForm.correctIndex - 1)
+                                : challengeForm.correctIndex;
+                              setChallengeForm({ ...challengeForm, optionList: newList, correctIndex: newCorrect });
+                            }}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-400 shrink-0"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </RadioGroup>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setChallengeForm({ ...challengeForm, optionList: [...(challengeForm.optionList || []), ""] })}
+                    className="mt-2 text-xs text-muted-foreground hover:text-emerald-400"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Добавить вариант
                   </Button>
+                </div>
+
+                {/* Row 5: Explanation + category + XP + Create */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input placeholder="Пояснение (после ответа)" value={challengeForm.explanation} onChange={(e) => setChallengeForm({ ...challengeForm, explanation: e.target.value })} className="bg-white/5 border-white/10" />
+                  <div className="flex gap-2 items-end flex-wrap">
+                    <Select value={challengeForm.category} onValueChange={(v) => setChallengeForm({ ...challengeForm, category: v })}>
+                      <SelectTrigger className="bg-white/5 border-white/10 w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-[#111118] border-white/10">
+                        <SelectItem value="prompting">Промптинг</SelectItem>
+                        <SelectItem value="agents">Агенты</SelectItem>
+                        <SelectItem value="debugging">Дебаг</SelectItem>
+                        <SelectItem value="workflow">Workflow</SelectItem>
+                        <SelectItem value="1c">1С</SelectItem>
+                        <SelectItem value="review">Ревью</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" placeholder="XP" value={challengeForm.xpReward} onChange={(e) => setChallengeForm({ ...challengeForm, xpReward: Number(e.target.value) })} className="bg-white/5 border-white/10 w-20" />
+                    <Button onClick={createChallenge} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
+                      <Save className="h-4 w-4 mr-1" /> Создать
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
