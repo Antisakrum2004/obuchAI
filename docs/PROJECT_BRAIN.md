@@ -1,6 +1,8 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-08. Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-08 (обновлено). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+>
+> **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
 ---
 
@@ -86,7 +88,7 @@
 src/
 ├── app/                          # Next.js App Router
 │   ├── page.tsx                  # Landing page
-│   ├── layout.tsx                # Root layout (ThemeProvider, Particles, Toaster)
+│   ├── layout.tsx                # Root layout (ThemeProvider, SessionProvider/Providers, Particles, Toaster)
 │   ├── globals.css               # CSS variables, glass, dark/light themes
 │   ├── login/page.tsx            # Страница входа
 │   ├── dashboard/page.tsx        # Дашборд пользователя
@@ -245,7 +247,8 @@ src/
 - **Avatar frames**: CSS box-shadow glow по tier, dragon frame для admin
 
 ### 3.9 Layout & Navigation (`src/components/layout/`)
-- **AppLayout**: Обёртка для всех страниц (sidebar + header + content)
+- **AppLayout**: Обёртка для страниц (sidebar + header + content). **БЕЗ SessionProvider** — он теперь в корневом layout через `Providers` (см. ниже)
+- **Providers** (`src/components/providers.tsx`): `"use client"` обёртка для `SessionProvider` из next-auth. Находится в корневом `layout.tsx`, чтобы `useSession()` работал на всех страницах без крашей
 - **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, knowledge, achievements, leaderboard, about, admin). Навыки и Песочница скрыты.
 - **Header**: XP bar, streak counter, hearts display, avatar с frame, theme toggle
 - **Mobile tab bar**: Нижняя навигация на мобильных
@@ -441,6 +444,25 @@ src/
 - **Что делали**: Исправили UserState (добавили completedChallenges, rank), streak-calendar typing, Framer Motion easing cast, auth.ts unsafe casts, db.ts Pool/PoolConfig
 - **Результат**: 0 ошибок в src/, 4 некритичных в prisma/seed (не влияют на runtime)
 
+### SessionProvider вне корневого layout → useSession() crash
+- **Проблема**: `Cannot destructure property 'data' of useSession() as it is undefined` — весь сайт крашился с белым экраном
+- **Причина**: `SessionProvider` был внутри `AppLayout` (клиентский компонент), а не в корневом `layout.tsx`. Next.js 16 + next-auth v4 несовместимость: при SSR/hydration `useSession()` возвращал `undefined` вместо `{data: null, status: "unauthenticated"}`
+- **Почему опасно**: `const { data: session } = useSession()` — деструктуризация `undefined` крашит React. Это ломало ВСЁ: сайдбар, хедер, страницу статьи, кнопку "Прикрепить файлы", админ-логин
+- **Что НЕ сработало**: Прямой импорт SessionProvider в корневой layout — крашит билд (`React Context is unavailable in Server Components`)
+- **Что сработало**: Создан `src/components/providers.tsx` — `"use client"` обёртка → `SessionProvider` → используется в корневом layout. Плюс defensive destructuring: `const sessionResult = useSession(); const session = sessionResult?.data ?? null;`
+- **Урок**: **SessionProvider ВСЕГДА в корневом layout** через клиентский wrapper. Никогда не прятать в дочерние layout-ы. Всегда проверять `useSession()` на `undefined` через optional chaining.
+
+### Текстовые иконки в квадратиках → overflow
+- **Проблема**: Текстовые иконки пространств знаний (Prompting, tools, agents) не помещались в зелёные квадратики 40×40px и ломали вёрстку
+- **Что НЕ сработало**: Уменьшение шрифта, text-overflow, word-break — всё равно некрасиво
+- **Что сработало**: Детект emoji vs текст. Emoji показываем как есть. Текст → аббревиатура (1-2 символа) в квадратике, полный текст — мелким шрифтом рядом со статистикой
+- **Урок**: Не пытаться впихнуть длинный текст в фиксированный контейнер — лучше переструктурировать layout
+
+### Ctrl+K не работает на русской раскладке
+- **Проблема**: Клавиша "K" на русской раскладке = "Л", событие keydown приходит с `e.key === "л"`, а не `"k"`
+- **Что сработало**: Добавлен слушатель `e.key === "л"` (строчная русская Л) рядом с `"k"`. Плюс inline поиск на странице Базы знаний как альтернатива
+- **Урок**: Горячие клавиши нужно тестировать на обеих раскладках (en/ru) для русской аудитории
+
 ---
 
 ## 7. Decisions & Reasoning
@@ -507,6 +529,18 @@ src/
 
 ## 9. Next Steps
 
+### Сводка спринтов
+
+| Спринт | Название | Статус | Что сделано |
+|---|---|---|---|
+| **Sprint 1** | Knowledge Hub | ✅ ЗАВЕРШЁН | Модели Prisma, миграции, 9 API маршрутов, UI /knowledge, AI-Глоссарий (⌘K) |
+| **Sprint 2** | Загрузка файлов | ✅ ЗАВЕРШЁН | StorageProvider абстракция, Vercel Blob, MediaUpload/Viewer, drag&drop, типы файлов |
+| **Sprint 3** | AI-анализ материалов | 📋 ОТКРЫТ | Извлечение текста, AI-генерация метаданных, авто-термины, semantic search |
+| **Sprint 4** | Content Management | ✅ ЗАВЕРШЁН | Admin CRUD для знаний, Markdown-редактор, publish/draft, whitelist SQL |
+| **Sprint 5** | UI Polish & Cleanup | ✅ ЗАВЕРШЁН | Редизайн форм задач, фикс "верный ответ неверный", генерация ID, Ctrl+Л |
+| **Sprint 6** | UX Fixes & Auth Stability | ✅ ЗАВЕРШЁН | SessionProvider в корне, текстовые иконки, скрытие Песочницы/Навыков, лайтбокс, видео-модалка |
+| — | Bugfix: Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка "Миграция БД" |
+
 ### Sprint 1 — Knowledge Hub (ЗАВЕРШЁН ✅)
 - [x] Prisma модели: KnowledgeSpace, Category, Article, Media, GlossaryTerm
 - [x] Миграция: CREATE TABLE + FK + индексы + seed данные
@@ -550,7 +584,7 @@ src/
 - [x] Вкладка «Знания» в /admin (BookOpen иконка)
 - [x] Whitelist SQL-полей в categories/articles PUT (без Object.entries)
 
-### Sprint 3 — AI-анализ материалов
+### Sprint 3 — AI-анализ материалов (ОТКРЫТ 📋)
 - [ ] Извлечение текста из PDF/PPTX/DOCX
 - [ ] AI-генерация summary, tags, keyTopics при загрузке
 - [ ] Авто-извлечение глоссарий-терминов из материала
@@ -587,6 +621,19 @@ src/
 - [x] **Resume видео** — позиция запоминается при закрытии, продолжение при повторном открытии (пока страница жива)
 - [x] Исправлено определение прав админа на странице статьи — тройная проверка (Zustand + NextAuth session + API fallback)
 - [x] Создан media-lightbox.tsx — переиспользуемые Lightbox и VideoModal компоненты
+
+### Sprint 6 — UX Fixes & Auth Stability (2026-06-08, ЗАВЕРШЁН ✅)
+- [x] **Критический фикс: SessionProvider в корневом layout** — создан `src/components/providers.tsx` (клиентский wrapper), перемещён из `AppLayout` в корневой `layout.tsx`. Исправляет краш `Cannot destructure property 'data' of useSession() as it is undefined`, ломавший весь сайт
+- [x] **Defensive destructuring** — все 3 вызова `useSession()` теперь безопасны: `const sessionResult = useSession(); const session = sessionResult?.data ?? null;` (app-sidebar, header, article page)
+- [x] **Текстовые иконки пространств** — текст типа "Prompting"/"tools"/"agents" больше не ломает зелёные квадратики: emoji показывается как есть, текст → аббревиатура (1-2 символа), полный текст рядом со статистикой
+- [x] **Ctrl+Л поддержка** — поиск по глоссарию работает на русской раскладке (e.key === "л")
+- [x] **Inline поиск по глоссарию** — строка поиска прямо на странице Базы знаний с выпадающими результатами
+- [x] **Песочница скрыта** — убрана из сайдбара и страницы «О проекте» (страница доступна по прямой ссылке /playground)
+- [x] **Навыки удалены из UI** — убраны: сайдбар, вкладка в админке, виджет на дашборде, секция в профиле, карточка на «О проекте». API маршруты оставлены для обратной совместимости
+- [x] **Лайтбокс для изображений** — клик по картинке (прикреплённой или в Markdown) → полноэкранный просмотр, закрытие Esc/крестик/клик по фону
+- [x] **Видео-модалка** — видео открывается поверх страницы, закрытие Esc/крестик/клик по фону
+- [x] **Resume видео** — позиция запоминается при закрытии, продолжение при повторном открытии (пока страница жива)
+- [x] **Кнопка "Прикрепить файлы"** — работала, но была невидима из-за краша useSession() — теперь починена
 
 ### Безопасность (P0)
 - [ ] Вынести admin credentials в env vars
@@ -661,6 +708,8 @@ src/
 - НЕ отправлять correctAnswer на клиент в новых режимах
 - НЕ использовать localStorage для критичных данных (только кэш/таймер)
 - НЕ делать серверные компоненты интерактивными (всегда `"use client"` если есть хуки)
+- **НЕ прятать SessionProvider в дочерние layout-ы** — всегда в корневом layout через `"use client"` wrapper (провалили однажды, крашило весь сайт)
+- **ВСЕГДА defensive destructuring для useSession()**: `const r = useSession(); const session = r?.data ?? null;` — никогда `const { data } = useSession()`
 - Новые колонки БД → сначала ALTER TABLE в migrate route, потом обновить Prisma schema
 - Новые API → проверка admin через `getServerSession()`, не через middleware
 
