@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical, BookOpen } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { motion } from "framer-motion";
+import { KnowledgeAdmin } from "@/components/knowledge/knowledge-admin";
 
 // --- Types ---
 interface ChallengeAdmin {
@@ -637,6 +638,9 @@ export default function AdminPage() {
             <TabsTrigger value="effects" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
               <Sparkles className="h-3.5 w-3.5 mr-1" /> Эффекты
             </TabsTrigger>
+            <TabsTrigger value="knowledge" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+              <BookOpen className="h-3.5 w-3.5 mr-1" /> Знания
+            </TabsTrigger>
           </TabsList>
 
           {/* ===== CHALLENGES TAB ===== */}
@@ -1188,6 +1192,11 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          {/* ===== KNOWLEDGE TAB ===== */}
+          <TabsContent value="knowledge" className="space-y-4">
+            <KnowledgeAdmin />
           </TabsContent>
         </Tabs>
       </div>

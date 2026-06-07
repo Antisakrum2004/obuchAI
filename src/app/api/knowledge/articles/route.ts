@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -6,6 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
     const categoryId = searchParams.get("categoryId");
+    const all = searchParams.get("all"); // admin: include unpublished
 
     if (!spaceId && !categoryId) {
       return NextResponse.json(
@@ -18,16 +21,16 @@ export async function GET(request: NextRequest) {
     let params: unknown[];
 
     if (categoryId) {
-      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "createdAt"
+      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "isPublished", "createdAt"
                FROM articles
-               WHERE "isPublished" = true AND "categoryId" = $1
+               ${all !== "true" ? 'WHERE "isPublished" = true AND' : "WHERE"} "categoryId" = $1
                ORDER BY "createdAt" DESC`;
       params = [categoryId];
     } else {
-      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."createdAt"
+      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt"
                FROM articles a
                JOIN categories c ON a."categoryId" = c.id
-               WHERE a."isPublished" = true AND c."spaceId" = $1
+               ${all !== "true" ? 'WHERE a."isPublished" = true AND' : "WHERE"} c."spaceId" = $1
                ORDER BY a."createdAt" DESC`;
       params = [spaceId];
     }
@@ -42,6 +45,7 @@ export async function GET(request: NextRequest) {
       tags: article.tags,
       viewCount: article.viewCount,
       categoryId: article.categoryId,
+      isPublished: article.isPublished,
       createdAt: new Date(article.createdAt).toISOString(),
     }));
 
@@ -50,6 +54,74 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching articles:", error);
     return NextResponse.json(
       { error: "Ошибка загрузки статей" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/knowledge/articles — Create article (admin only)
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const {
+      title,
+      slug,
+      content,
+      summary,
+      tags,
+      keyTopics,
+      categoryId,
+      isPublished,
+    } = body;
+
+    if (!title || !slug || !categoryId) {
+      return NextResponse.json(
+        { error: "title, slug и categoryId обязательны" },
+        { status: 400 }
+      );
+    }
+
+    // Check slug uniqueness
+    const existing = await pool.query(
+      `SELECT id FROM articles WHERE slug = $1`,
+      [slug]
+    );
+    if (existing.rows.length > 0) {
+      return NextResponse.json(
+        { error: "Статья с таким slug уже существует" },
+        { status: 409 }
+      );
+    }
+
+    const authorId = (session.user as Record<string, unknown>).id as string;
+
+    const result = await pool.query(
+      `INSERT INTO articles (title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, NOW(), NOW())
+       RETURNING *`,
+      [
+        title,
+        slug,
+        content || "",
+        summary || null,
+        tags ? JSON.stringify(tags) : null,
+        keyTopics ? JSON.stringify(keyTopics) : null,
+        categoryId,
+        authorId,
+        isPublished !== undefined ? isPublished : true,
+      ]
+    );
+
+    return NextResponse.json(result.rows[0], { status: 201 });
+  } catch (error) {
+    console.error("Error creating article:", error);
+    return NextResponse.json(
+      { error: "Ошибка создания статьи" },
       { status: 500 }
     );
   }

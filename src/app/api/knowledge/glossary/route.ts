@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
 export async function GET() {
@@ -14,6 +16,61 @@ export async function GET() {
     console.error("Error fetching glossary:", error);
     return NextResponse.json(
       { error: "Ошибка загрузки глоссария" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/knowledge/glossary — Create glossary term (admin only)
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { term, definition, shortDefinition, category, relatedTerms, sourceArticleId, order } = body;
+
+    if (!term || !definition) {
+      return NextResponse.json(
+        { error: "term и definition обязательны" },
+        { status: 400 }
+      );
+    }
+
+    // Check term uniqueness
+    const existing = await pool.query(
+      `SELECT id FROM glossary_terms WHERE term = $1`,
+      [term]
+    );
+    if (existing.rows.length > 0) {
+      return NextResponse.json(
+        { error: "Термин с таким названием уже существует" },
+        { status: 409 }
+      );
+    }
+
+    const result = await pool.query(
+      `INSERT INTO glossary_terms (term, definition, "shortDefinition", category, "relatedTerms", "sourceArticleId", "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+       RETURNING *`,
+      [
+        term,
+        definition,
+        shortDefinition || null,
+        category || null,
+        relatedTerms ? JSON.stringify(relatedTerms) : null,
+        sourceArticleId || null,
+        order || 0,
+      ]
+    );
+
+    return NextResponse.json(result.rows[0], { status: 201 });
+  } catch (error) {
+    console.error("Error creating glossary term:", error);
+    return NextResponse.json(
+      { error: "Ошибка создания термина" },
       { status: 500 }
     );
   }
