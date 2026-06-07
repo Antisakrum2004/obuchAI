@@ -111,6 +111,7 @@ export default function AdminPage() {
   // Toast state
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
   const [effectSettings, setEffectSettings] = useState<Record<string, string>>({});
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -201,10 +202,34 @@ export default function AdminPage() {
     }
   };
 
+  // --- Run migration ---
+  const handleMigrate = async () => {
+    if (!confirm("Создать/обновить таблицы базы данных? Это безопасная операция.")) return;
+    setIsMigrating(true);
+    try {
+      const res = await fetch("/api/admin/migrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: "seed-v1.5.0" }),
+      });
+      if (res.ok) {
+        showToast("Миграция выполнена успешно");
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || "Ошибка миграции", "err");
+      }
+    } catch {
+      showToast("Ошибка сети", "err");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   // --- Data fetching ---
   const fetchData = useCallback(() => {
     if (!isAdmin) return;
-    fetch("/api/challenges").then(r => r.json()).then(d => Array.isArray(d) && setChallenges(d)).catch(() => {});
+    fetch("/api/challenges").then(r => r.json()).then(d => { const arr = Array.isArray(d) ? d : (d.challenges && Array.isArray(d.challenges) ? d.challenges : []); setChallenges(arr); }).catch(() => {});
     fetch("/api/skills").then(r => r.json()).then(d => Array.isArray(d) && setSkills(d)).catch(() => {});
     fetch("/api/achievements").then(r => r.json()).then(d => Array.isArray(d) && setAchievements(d)).catch(() => {});
     fetch("/api/admin/users").then(r => r.json()).then(d => Array.isArray(d) && setUsers(d)).catch(() => {});
@@ -581,18 +606,32 @@ export default function AdminPage() {
               <Settings className="h-6 w-6 text-emerald-400" />
               <h1 className="text-2xl font-bold">Управление</h1>
             </div>
-            <Button
-              onClick={handleSeed}
-              disabled={isSeeding}
-              className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 h-9"
-            >
-              {isSeeding ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent mr-2" />
-              ) : (
-                <Database className="h-4 w-4 mr-1" />
-              )}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleMigrate}
+                disabled={isMigrating}
+                className="bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 h-9"
+              >
+                {isMigrating ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent mr-2" />
+                ) : (
+                  <Database className="h-4 w-4 mr-1" />
+                )}
+                Миграция БД
+              </Button>
+              <Button
+                onClick={handleSeed}
+                disabled={isSeeding}
+                className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 h-9"
+              >
+                {isSeeding ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent mr-2" />
+                ) : (
+                  <Database className="h-4 w-4 mr-1" />
+                )}
 Сидировать задачи
-            </Button>
+              </Button>
+            </div>
           </div>
           <p className="text-muted-foreground">Панель администратора</p>
           <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">

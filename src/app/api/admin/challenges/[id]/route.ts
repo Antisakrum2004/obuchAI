@@ -72,7 +72,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Delete attempts first (foreign key)
-    await pool.query(`DELETE FROM attempts WHERE "challengeId" = $1`, [id]);
+    await pool.query(`DELETE FROM challenge_attempts WHERE "challengeId" = $1`, [id]);
     const result = await pool.query(`DELETE FROM challenges WHERE id = $1 RETURNING id`, [id]);
 
     if (result.rows.length === 0) {
