@@ -39,7 +39,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
   const isAdmin = (session?.user as Record<string, unknown>)?.role === "admin";
   const navItems = allNavItems.filter(item => !item.adminOnly || isAdmin);
 

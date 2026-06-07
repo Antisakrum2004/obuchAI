@@ -75,7 +75,8 @@ export default function ArticlePage({
   const [loading, setLoading] = useState(true);
   const [mediaKey, setMediaKey] = useState(0);
   const { role: storeRole } = useUserStore();
-  const { data: session } = useSession();
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
   const sessionRole = (session?.user as Record<string, unknown>)?.role;
   const [apiAdmin, setApiAdmin] = useState(false);
   const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;

@@ -17,7 +17,8 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuToggle }: HeaderProps) {
-  const { data: session } = useSession();
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
   const { xp, level, streak, name, image, role, id: userId } = useUserStore();
   const [hovered, setHovered] = useState(false);
 
