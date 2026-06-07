@@ -711,7 +711,7 @@ export default function AdminPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ===== CHALLENGES TAB ===== */}
+          {/* ===== CHALLENGES TAB (v2) ===== */}
           <TabsContent value="challenges" className="space-y-4">
             {/* Create form */}
             <div className="glass rounded-xl p-5">
