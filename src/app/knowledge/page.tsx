@@ -195,8 +195,14 @@ export default function KnowledgePage() {
                     <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
                       <CardContent className="p-5">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-lg shrink-0 group-hover:bg-emerald-500/20 transition-colors">
-                            {space.icon || "📚"}
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 shrink-0 group-hover:bg-emerald-500/20 transition-colors">
+                            {space.icon && isEmoji(space.icon) ? (
+                              <span className="text-lg">{space.icon}</span>
+                            ) : space.icon ? (
+                              <span className="text-xs font-bold text-emerald-400">{getAbbreviation(space.icon)}</span>
+                            ) : (
+                              <span className="text-lg">📚</span>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-foreground group-hover:text-emerald-400 transition-colors">
@@ -210,14 +216,17 @@ export default function KnowledgePage() {
                           </div>
                           <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0 mt-1" />
                         </div>
-                        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
+                        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5 flex-wrap">
+                          {space.icon && !isEmoji(space.icon) && (
+                            <span className="text-[10px] text-muted-foreground/70 font-medium">{space.icon}</span>
+                          )}
                           <Badge
                             variant="secondary"
                             className="text-[10px] gap-1 bg-secondary/50"
                           >
                             <FolderOpen className="h-3 w-3" />
                             {space.categoryCount}{" "}
-                            {pluralize(space.categoryCount, "категория", "категории", "категорий")}
+                            {pluralize(space.categoryCount, "кат.", "кат.", "кат.")}
                           </Badge>
                           <Badge
                             variant="secondary"
@@ -225,7 +234,7 @@ export default function KnowledgePage() {
                           >
                             <FileText className="h-3 w-3" />
                             {space.articleCount}{" "}
-                            {pluralize(space.articleCount, "статья", "статьи", "статей")}
+                            {pluralize(space.articleCount, "ст.", "ст.", "ст.")}
                           </Badge>
                         </div>
                       </CardContent>
@@ -263,4 +272,21 @@ function pluralize(n: number, one: string, few: string, many: string): string {
   if (last > 1 && last < 5) return few;
   if (last === 1) return one;
   return many;
+}
+
+/** Check if a string is an emoji (short unicode glyph) vs text label */
+function isEmoji(str: string): boolean {
+  // Emoji are typically 1-2 JS chars; text labels like "Prompting" are longer
+  // Also check: if spreading gives 1 or 2 graphemes, it's likely emoji/symbol
+  const graphemes = [...str];
+  return graphemes.length <= 2 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(str);
+}
+
+/** Get short abbreviation for a text label (1-2 uppercase letters) */
+function getAbbreviation(label: string): string {
+  const words = label.trim().split(/\s+/);
+  if (words.length >= 2) {
+    return words.slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  }
+  return label.slice(0, 2).toUpperCase();
 }

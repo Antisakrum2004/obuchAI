@@ -200,8 +200,14 @@ export default function KnowledgeSpacePage({
               className="glass rounded-xl p-6 border-white/5"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-lg">
-                  {space.icon || "📚"}
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 shrink-0">
+                  {space.icon && isEmojiIcon(space.icon) ? (
+                    <span className="text-lg">{space.icon}</span>
+                  ) : space.icon ? (
+                    <span className="text-xs font-bold text-emerald-400">{getAbbrev(space.icon)}</span>
+                  ) : (
+                    <span className="text-lg">📚</span>
+                  )}
                 </div>
                 <div>
                   <h1 className="text-xl font-bold md:text-2xl">
@@ -344,6 +350,19 @@ function parseTags(tagsJson: string): string[] {
   } catch {
     return [];
   }
+}
+
+function isEmojiIcon(str: string): boolean {
+  const graphemes = [...str];
+  return graphemes.length <= 2 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(str);
+}
+
+function getAbbrev(label: string): string {
+  const words = label.trim().split(/\s+/);
+  if (words.length >= 2) {
+    return words.slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  }
+  return label.slice(0, 2).toUpperCase();
 }
 
 function pluralize(
