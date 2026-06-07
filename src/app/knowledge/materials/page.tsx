@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ZipUpload } from "@/components/knowledge/zip-upload";
+import { BulkUpload } from "@/components/knowledge/bulk-upload";
 import { ProcessingQueue } from "@/components/knowledge/processing-queue";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
@@ -104,6 +105,7 @@ export default function MaterialsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("all");
   const [showZipUpload, setShowZipUpload] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showQueue, setShowQueue] = useState(true); // Show queue by default for admin
 
   const { role: storeRole } = useUserStore();
@@ -192,6 +194,14 @@ export default function MaterialsPage() {
                   )}
                 </Button>
                 <Button
+                  onClick={() => setShowBulkUpload(!showBulkUpload)}
+                  className="bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30"
+                  size="sm"
+                >
+                  <Upload className="h-4 w-4 mr-1" />
+                  Загрузить файлы
+                </Button>
+                <Button
                   onClick={() => setShowZipUpload(!showZipUpload)}
                   className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
                   size="sm"
@@ -212,6 +222,22 @@ export default function MaterialsPage() {
             exit={{ opacity: 0, height: 0 }}
           >
             <ProcessingQueue />
+          </motion.div>
+        )}
+
+        {/* Bulk File Upload */}
+        {isAdmin && showBulkUpload && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <BulkUpload
+              onUploadComplete={() => {
+                fetchArticles();
+                setShowBulkUpload(false);
+              }}
+            />
           </motion.div>
         )}
 
