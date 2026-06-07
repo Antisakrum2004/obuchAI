@@ -288,7 +288,7 @@ export function MediaViewer({
                 onClick={() => setLightboxImage(img)}
                 className="relative group glass rounded-lg overflow-hidden border-white/5 hover:border-emerald-500/20 transition-all text-left w-full"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={img.url}
                   alt={img.fileName}

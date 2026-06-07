@@ -13,6 +13,7 @@ import {
   Flame,
   Award,
   BookOpen,
+  Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -24,6 +25,7 @@ const allNavItems = [
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   // { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false }, // removed
+  { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: false },
   { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
@@ -62,7 +64,11 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+          // For exact-match routes like /knowledge, only highlight on exact match
+          // to avoid both /knowledge and /knowledge/materials being active
+          const isExactMatch = pathname === item.href;
+          const isPrefixMatch = pathname.startsWith(item.href + "/");
+          const isActive = item.href === "/knowledge" ? isExactMatch : (isExactMatch || isPrefixMatch);
           return (
             <Link
               key={item.href}

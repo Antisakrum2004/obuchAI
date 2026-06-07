@@ -64,6 +64,11 @@ interface ArticleData {
   categoryId: string;
   isPublished: boolean;
   createdAt: string;
+  videoUrl?: string | null;
+  pdfUrl?: string | null;
+  pptxUrl?: string | null;
+  sourceUrl?: string | null;
+  sourceType?: string | null;
 }
 
 interface GlossaryData {
@@ -299,7 +304,7 @@ export function KnowledgeAdmin() {
 
   // ── Articles CRUD ────────────────────────────────────────────
 
-  const emptyArtForm = { title: "", slug: "", content: "", summary: "", categoryId: "__none__", isPublished: true, tags: "", keyTopics: "" };
+  const emptyArtForm = { title: "", slug: "", content: "", summary: "", categoryId: "__none__", isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
   const [artForm, setArtForm] = useState(emptyArtForm);
   const [editingArtId, setEditingArtId] = useState<string | null>(null);
   const [editArtForm, setEditArtForm] = useState<Record<string, unknown>>({});
@@ -323,6 +328,10 @@ export function KnowledgeAdmin() {
           isPublished: artForm.isPublished,
           tags,
           keyTopics,
+          videoUrl: artForm.videoUrl || null,
+          pdfUrl: artForm.pdfUrl || null,
+          pptxUrl: artForm.pptxUrl || null,
+          sourceUrl: artForm.sourceUrl || null,
         }),
       });
       if (res.ok) {
@@ -715,6 +724,17 @@ export function KnowledgeAdmin() {
 
               <div className="flex gap-2 items-center flex-wrap">
                 <Input placeholder="Ключевые темы (через запятую)" value={artForm.keyTopics} onChange={(e) => setArtForm({ ...artForm, keyTopics: e.target.value })} className="bg-white/5 border-white/10 flex-1" />
+              </div>
+
+              {/* URL Fields */}
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input placeholder="Ссылка на видео (YouTube, Rutube...)" value={artForm.videoUrl} onChange={(e) => setArtForm({ ...artForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10" />
+                <Input placeholder="Ссылка на PDF" value={artForm.pdfUrl} onChange={(e) => setArtForm({ ...artForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10" />
+                <Input placeholder="Ссылка на презентацию (PPTX)" value={artForm.pptxUrl} onChange={(e) => setArtForm({ ...artForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10" />
+                <Input placeholder="Ссылка на источник" value={artForm.sourceUrl} onChange={(e) => setArtForm({ ...artForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10" />
+              </div>
+
+              <div className="flex gap-2 items-center flex-wrap">
                 <Button onClick={createArticle} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
                   Создать статью
@@ -745,6 +765,12 @@ export function KnowledgeAdmin() {
                       placeholder="Содержимое Markdown"
                     />
                     <Input value={typeof editArtForm.tags === "string" ? editArtForm.tags : (Array.isArray(editArtForm.tags) ? editArtForm.tags.join(", ") : "")} onChange={(e) => setEditArtForm({ ...editArtForm, tags: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Теги (через запятую)" />
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Input value={(editArtForm.videoUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на видео" />
+                      <Input value={(editArtForm.pdfUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на PDF" />
+                      <Input value={(editArtForm.pptxUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на презентацию" />
+                      <Input value={(editArtForm.sourceUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на источник" />
+                    </div>
                     <div className="flex gap-2 items-center">
                       <Button size="sm" onClick={() => updateArticle(art.id)} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8">
                         <Check className="h-3.5 w-3.5 mr-1" /> Сохранить
@@ -780,6 +806,10 @@ export function KnowledgeAdmin() {
                           summary: data.summary || "",
                           content: data.content || "",
                           tags: data.tags ? (typeof data.tags === "string" ? data.tags : JSON.parse(data.tags).join(", ")) : "",
+                          videoUrl: data.videoUrl || "",
+                          pdfUrl: data.pdfUrl || "",
+                          pptxUrl: data.pptxUrl || "",
+                          sourceUrl: data.sourceUrl || "",
                         });
                       }
                     }} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">

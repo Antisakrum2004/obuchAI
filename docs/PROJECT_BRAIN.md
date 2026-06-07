@@ -161,7 +161,7 @@ src/
 | @dnd-kit/core | ^6.3.1 | Drag-and-drop (ordering challenges) |
 | canvas-confetti | ^1.9.4 | Конфетти при правильном ответе |
 | html-to-image | ^1.11.13 | Генерация share-карточки (PNG) |
-| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (не интегрирован, для playground) |
+| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (интегрирован в Sprint 6: metadata/glossary/graph processing) |
 | next-themes | ^0.4.6 | Dark/light переключатель |
 | sonner | ^2.0.6 | Toast уведомления |
 | ws | ^8.20.1 | WebSocket (для Neon pool в dev) |
@@ -249,7 +249,7 @@ src/
 ### 3.9 Layout & Navigation (`src/components/layout/`)
 - **AppLayout**: Обёртка для страниц (sidebar + header + content). **БЕЗ SessionProvider** — он теперь в корневом layout через `Providers` (см. ниже)
 - **Providers** (`src/components/providers.tsx`): `"use client"` обёртка для `SessionProvider` из next-auth. Находится в корневом `layout.tsx`, чтобы `useSession()` работал на всех страницах без крашей
-- **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, knowledge, achievements, leaderboard, about, admin). Навыки и Песочница скрыты.
+- **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, materials, knowledge, achievements, leaderboard, about, admin). Навыки и Песочница скрыты.
 - **Header**: XP bar, streak counter, hearts display, avatar с frame, theme toggle
 - **Mobile tab bar**: Нижняя навигация на мобильных
 - **ParticlesBackground**: Фоновый эффект (6 частиц на мобильных, 18 на десктопе)
@@ -275,10 +275,11 @@ src/
 - **Сущности**: KnowledgeSpace → Category → Article → Media, GlossaryTerm
 - **KnowledgeSpace**: Пространства знаний (AI Разработка, Промпт-инжиниринг, 1С и AI, Инструменты)
 - **Category**: Иерархические категории внутри пространств (Cursor, Claude Code, MCP, OpenAI)
-- **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount
+- **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount + Sprint 6: difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType
 - **Media**: Видео/документы/изображения, привязанные к статьям (Vercel Blob → StorageProvider)
-- **GlossaryTerm**: Термины с определениями, категориями, связанными терминами
-- **API**: 16 маршрутов (CRUD spaces, categories, articles, glossary, search, seed, media upload/list/delete)
+- **GlossaryTerm**: Термины с определениями, категориями, связанными терминами + Sprint 6: aiGenerated
+- **ProcessingQueue**: Очередь AI-обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft) с прогрессом и статусами
+- **API**: 21 маршрут (CRUD spaces, categories, articles, glossary, search, seed, media, ZIP import, AI processing, processing queue)
 - **Admin CRUD**: Вкладка «Знания» в /admin — полный CRUD для пространств, категорий, статей, глоссария
 - **Markdown Editor**: Создание/редактирование статей с превью в admin
 - **Publish/Draft**: Переключатель isPublished для пространств и статей
@@ -308,6 +309,28 @@ src/
 - **Переключение хранилища**: env var STORAGE_PROVIDER → vercel-blob (default) / s3 / minio (будущие)
 - **Blob Store**: store_5OkTkSLciotjEC41 (подключён, верифицирован, region iad1)
 
+### 3.17 AI Content Processing Pipeline — Sprint 6 (`src/app/api/knowledge/`, `src/components/knowledge/`)
+- **Видение**: НЕ строить курсы вручную. Загрузить сырые материалы → AI анализирует → глоссарий → граф знаний → курсы появляются автоматически
+- **Поток**: Materials → AI Analysis → Glossary → Knowledge Graph → Learning Path → Course
+- **Хранилище видео**: Яндекс Диск (75 ГБ бесплатно) — видео НЕ загружается на наш сервер, только ссылки
+- **Article расширения**: 15 новых колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage)
+- **ProcessingQueue**: Новая таблица для асинхронной обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft)
+- **API маршруты** (5 новых):
+  - `/api/knowledge/import` — ZIP-импорт (JSZip extraction, auto-create articles)
+  - `/api/knowledge/process` — Создание задач обработки
+  - `/api/knowledge/process/[id]` — Управление задачей (GET/PUT/DELETE)
+  - `/api/knowledge/queue` — Список очереди обработки
+  - `/api/knowledge/ai` — AI-обработчик (metadata, glossary, graph через z-ai-web-dev-sdk)
+- **UI компоненты** (5 новых):
+  - `VideoEmbed` — Универсальный видео-плеер (YouTube, Rutube, VK, Яндекс Диск, прямая ссылка)
+  - `UrlImportForm` — Форма ввода URL для видео/PDF/PPTX
+  - `ZipUpload` — Загрузка ZIP-архива с drag-and-drop
+  - `ProcessingQueue` — Отображение очереди обработки с прогрессом
+  - Materials Library (`/knowledge/materials`) — Страница библиотеки материалов с фильтрами
+- **VideoEmbed**: Авто-детект источника по URL, адаптивный 16:9 iframe для YouTube/Rutube, ссылка-кнопка для Яндекс Диска, нативный `<video>` для прямых ссылок
+- **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
+- **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах
+
 ---
 
 ## 4. Current State
@@ -318,7 +341,7 @@ src/
 - **API маршрутов**: 42
 - **Компонентов**: 89
 - **Хуков**: 5
-- **Моделей Prisma**: 16 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm)
+- **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
 - **Размер GitHub repo**: 6,752 KB
 
 ### Реализовано и работает стабильно
@@ -362,7 +385,7 @@ src/
 - **Загрузка файлов** (MinIO/S3 — Sprint 2, реализовано через Vercel Blob)
 - **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
 - **Превью видео** (thumbnailUrl — отложено до FFmpeg)
-- **AI-анализ материалов** (авто-извлечение терминов — Sprint 3)
+- ~~**AI-анализ материалов**~~ (реализовано в Sprint 6 — AI metadata/glossary/graph через z-ai-web-dev-sdk)
 - **Learning Path** (дорожные карты онбординга)
 
 ### Синхронизация кодовых баз
@@ -384,7 +407,7 @@ src/
 5. **Schema drift** — Prisma schema не содержит 9+ колонок и 1 таблицу (`app_settings`), добавленных через `ALTER TABLE` в runtime
 6. **Runtime ALTER TABLE** — `ensureColumns()` в `admin/users/[id]/route.ts` выполняет ALTER TABLE при каждом запросе
 7. **Дублирование данных сидирования** — 100 задач определены и в `prisma/seed.ts`, и в `admin/seed/route.ts` — синхронизация вручную
-8. **Дублирование genId()** — Функция копируется в 5+ файлов вместо shared модуля
+8. ~~**Дублирование genId()**~~ — **Исправлено в Sprint 6**: создан `/src/lib/gen-id.ts` (shared модуль)
 9. **Дублирование реферальной логики** — Генерация кода + XP начисление повторяются 3 раза
 10. **Неправильное имя таблицы** — ~~`DELETE FROM attempts` вместо `challenge_attempts`~~ **ИСПРАВЛЕНО** (2026-06-08)
 11. **Type-unsafe касты** — 44+ инстансов `as Record<string, unknown>` вместо расширения NextAuth типов
@@ -523,7 +546,7 @@ src/
 2. Demo-вход без пароля (создаёт демо-юзера автоматически)
 3. `noImplicitAny: false` в tsconfig
 4. Дублирование сид-данных в двух файлах (prisma/seed.ts и admin/seed/route.ts)
-5. genId() вместо UUID — копируется в каждый файл
+5. genId() вместо UUID — ~~копируется в каждый файл~~ **Исправлено в Sprint 6**: создан `/src/lib/gen-id.ts` (shared модуль)
 
 ---
 
@@ -546,8 +569,8 @@ src/
 | **Sprint 4** | UI Polish & Cleanup | ✅ ЗАВЕРШЁН | Редизайн форм задач, Ctrl+Л, inline-поиск, генерация ID |
 | **Sprint 5** | UX Fixes & Auth Stability | ✅ ЗАВЕРШЁН | SessionProvider в корне, лайтбокс, видео-модалка, скрытие Песочницы/Навыков |
 | **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
-| **Sprint 6** | AI Content Processing Pipeline | 📋 СЛЕДУЮЩИЙ | ZIP Import, Auto Topic Creation, AI Metadata, Glossary Extraction, Knowledge Graph |
-| **Sprint 7** | Наполнение контентом | 📋 ПЛАН | Bulk-наполнение 30+ тем, новые категории, расширение глоссария |
+| **Sprint 6** | AI Content Processing Pipeline | ✅ ЗАВЕРШЁН | Расширение Article (15 новых колонок), ProcessingQueue, ZIP Import, AI Metadata/Glossary/Graph, Materials Library, Video Embed, URL Import, Яндекс Диск |
+| **Sprint 7** | Наполнение контентом | 📋 СЛЕДУЮЩИЙ | Bulk-наполнение 30+ тем, новые категории, расширение глоссария |
 | **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
 
 ### Проблемы, с которыми столкнулись, и решения (для предотвращения повторов)

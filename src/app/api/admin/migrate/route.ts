@@ -254,6 +254,25 @@ export async function POST(request: Request) {
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCode" TEXT UNIQUE;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referredBy" TEXT;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCount" INTEGER DEFAULT 0;`,
+
+        // Sprint 6: Article extensions for AI Content Processing Pipeline
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3);`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT;`,
+
+        // Sprint 6: GlossaryTerm extension
+        `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
       ];
 
       for (const alterSql of alterStatements) {
@@ -395,6 +414,24 @@ export async function POST(request: Request) {
         ON CONFLICT (term) DO NOTHING;
       `)
 
+      // Sprint 6: Processing Queue table
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS processing_queue (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          "articleId" TEXT,
+          "inputData" TEXT,
+          result TEXT,
+          error TEXT,
+          progress INTEGER NOT NULL DEFAULT 0,
+          "startedAt" TIMESTAMP(3),
+          "completedAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `)
+
       // Create indexes
       const indexStatements = [
         `CREATE INDEX IF NOT EXISTS accounts_userId_idx ON accounts("userId");`,
@@ -415,6 +452,11 @@ export async function POST(request: Request) {
         `CREATE INDEX IF NOT EXISTS media_articleId_idx ON media("articleId");`,
         `CREATE INDEX IF NOT EXISTS glossary_terms_category_idx ON glossary_terms(category);`,
         `CREATE INDEX IF NOT EXISTS glossary_terms_term_idx ON glossary_terms(term);`,
+        `CREATE INDEX IF NOT EXISTS processing_queue_status_idx ON processing_queue(status);`,
+        `CREATE INDEX IF NOT EXISTS processing_queue_type_idx ON processing_queue(type);`,
+        `CREATE INDEX IF NOT EXISTS processing_queue_articleId_idx ON processing_queue("articleId");`,
+        `CREATE INDEX IF NOT EXISTS articles_status_idx ON articles(status);`,
+        `CREATE INDEX IF NOT EXISTS articles_sourceType_idx ON articles("sourceType");`,
       ]
 
       for (const idxSql of indexStatements) {

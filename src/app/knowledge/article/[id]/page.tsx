@@ -17,17 +17,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Eye,
   Calendar,
   BookOpen,
   Tag,
   List,
   ArrowLeft,
+  FileIcon,
+  Presentation,
+  ExternalLink,
+  Clock,
+  Sparkles,
+  ChevronDown,
+  Zap,
 } from "lucide-react";
 import { X, ZoomIn, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MediaUpload } from "@/components/knowledge/media-upload";
 import { MediaViewer } from "@/components/knowledge/media-viewer";
+import { VideoEmbed } from "@/components/knowledge/video-embed";
+import { UrlImportForm } from "@/components/knowledge/url-import-form";
 import type { UploadedMedia } from "@/components/knowledge/media-upload";
 import { Paperclip } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
@@ -56,6 +70,20 @@ interface ArticleDetail {
     } | null;
   };
   relatedGlossary: GlossaryItem[];
+  difficulty: string | null;
+  prerequisites: string | null;
+  nextTopics: string | null;
+  keyConcepts: string | null;
+  estimatedTime: string | null;
+  status: string;
+  aiGenerated: boolean;
+  videoUrl: string | null;
+  pdfUrl: string | null;
+  pptxUrl: string | null;
+  sourceUrl: string | null;
+  sourceType: string | null;
+  processedAt: string | null;
+  errorMessage: string | null;
 }
 
 interface GlossaryItem {
@@ -64,6 +92,19 @@ interface GlossaryItem {
   shortDefinition: string | null;
   category: string | null;
 }
+
+const statusConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: "Ожидает", color: "border-white/10 text-muted-foreground bg-white/5" },
+  processing: { label: "Обработка", color: "border-amber-500/30 text-amber-400 bg-amber-500/10" },
+  done: { label: "Готово", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
+  error: { label: "Ошибка", color: "border-red-500/30 text-red-400 bg-red-500/10" },
+};
+
+const difficultyConfig: Record<string, { label: string; color: string }> = {
+  easy: { label: "Легко", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
+  medium: { label: "Средне", color: "border-amber-500/30 text-amber-400 bg-amber-500/10" },
+  hard: { label: "Сложно", color: "border-red-500/30 text-red-400 bg-red-500/10" },
+};
 
 export default function ArticlePage({
   params,
@@ -74,6 +115,7 @@ export default function ArticlePage({
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaKey, setMediaKey] = useState(0);
+  const [urlImportOpen, setUrlImportOpen] = useState(false);
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
@@ -124,6 +166,11 @@ export default function ArticlePage({
   // Extract headings for TOC
   const headings = article?.content
     ? extractHeadings(article.content)
+    : [];
+
+  // Parse keyConcepts from JSON
+  const keyConceptsList = article?.keyConcepts
+    ? parseJsonString(article.keyConcepts)
     : [];
 
   return (
@@ -223,9 +270,20 @@ export default function ArticlePage({
             >
               {/* Article Header */}
               <div className="mb-6">
-                <h1 className="text-2xl font-bold md:text-3xl leading-tight">
-                  {article.title}
-                </h1>
+                <div className="flex items-start gap-3">
+                  <h1 className="text-2xl font-bold md:text-3xl leading-tight flex-1">
+                    {article.title}
+                  </h1>
+                  {/* Status Badge (only if not done) */}
+                  {article.status && article.status !== "done" && statusConfig[article.status] && (
+                    <Badge
+                      variant="outline"
+                      className={cn("text-[10px] px-1.5 py-0.5 shrink-0", statusConfig[article.status].color)}
+                    >
+                      {statusConfig[article.status].label}
+                    </Badge>
+                  )}
+                </div>
                 {article.summary && (
                   <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
                     {article.summary}
@@ -261,7 +319,124 @@ export default function ArticlePage({
                     </span>
                   )}
                 </div>
+
+                {/* Extra Meta Badges Row */}
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  {/* Difficulty Badge */}
+                  {article.difficulty && difficultyConfig[article.difficulty] && (
+                    <Badge
+                      variant="outline"
+                      className={cn("text-[10px] px-1.5 py-0", difficultyConfig[article.difficulty].color)}
+                    >
+                      {difficultyConfig[article.difficulty].label}
+                    </Badge>
+                  )}
+
+                  {/* Estimated Time */}
+                  {article.estimatedTime && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 border-white/10 text-muted-foreground"
+                    >
+                      <Clock className="h-2.5 w-2.5 mr-1" />
+                      {article.estimatedTime}
+                    </Badge>
+                  )}
+
+                  {/* AI Generated Badge */}
+                  {article.aiGenerated && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                    >
+                      <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                      AI
+                    </Badge>
+                  )}
+
+                  {/* Key Concepts */}
+                  {keyConceptsList.length > 0 && (
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      <Zap className="h-3 w-3 text-emerald-400" />
+                      {keyConceptsList.slice(0, 5).map((concept) => (
+                        <Badge
+                          key={concept}
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 border-emerald-500/20 text-emerald-400/80 bg-emerald-500/5"
+                        >
+                          {concept}
+                        </Badge>
+                      ))}
+                      {keyConceptsList.length > 5 && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 border-white/10 text-muted-foreground"
+                        >
+                          +{keyConceptsList.length - 5}
+                        </Badge>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {/* ─── Video Embed Section ─── */}
+              {article.videoUrl && (
+                <div className="mb-6">
+                  <VideoEmbed
+                    url={article.videoUrl}
+                    sourceType={article.sourceType || undefined}
+                    title={article.title}
+                  />
+                </div>
+              )}
+
+              {/* ─── Source Links Section ─── */}
+              {(article.pdfUrl || article.pptxUrl || article.sourceUrl) && (
+                <div className="mb-6">
+                  <div className="glass rounded-xl p-5 border-white/5">
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <ExternalLink className="h-4 w-4 text-emerald-400" />
+                      Материалы и ссылки
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {article.pdfUrl && (
+                        <a
+                          href={article.pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-colors text-xs font-medium"
+                        >
+                          <FileIcon className="h-3.5 w-3.5" />
+                          Открыть PDF
+                        </a>
+                      )}
+                      {article.pptxUrl && (
+                        <a
+                          href={article.pptxUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors text-xs font-medium"
+                        >
+                          <Presentation className="h-3.5 w-3.5" />
+                          Открыть презентацию
+                        </a>
+                      )}
+                      {article.sourceUrl && (
+                        <a
+                          href={article.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors text-xs font-medium"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Источник
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Markdown Content */}
               <div className="glass rounded-xl p-6 border-white/5">
@@ -279,7 +454,7 @@ export default function ArticlePage({
                           className="relative group/myimg inline-block cursor-zoom-in w-full my-4"
                           type="button"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          { }
                           <img
                             src={src}
                             alt={alt}
@@ -324,6 +499,45 @@ export default function ArticlePage({
                   </div>
                 )}
               </div>
+
+              {/* URL Import Form — admin only, collapsible */}
+              {isAdmin && (
+                <div className="mt-6">
+                  <Collapsible open={urlImportOpen} onOpenChange={setUrlImportOpen}>
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-emerald-400 transition-colors">
+                        <ExternalLink className="h-4 w-4" />
+                        Медиа-ссылки
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            urlImportOpen && "rotate-180"
+                          )}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-3">
+                      <UrlImportForm
+                        articleId={id}
+                        initialData={{
+                          videoUrl: article.videoUrl || undefined,
+                          pdfUrl: article.pdfUrl || undefined,
+                          pptxUrl: article.pptxUrl || undefined,
+                          sourceUrl: article.sourceUrl || undefined,
+                          sourceType: article.sourceType || undefined,
+                        }}
+                        onSave={() => {
+                          // Re-fetch article to get updated URLs
+                          fetch(`/api/knowledge/articles/${encodeURIComponent(id)}`)
+                            .then((r) => r.json())
+                            .then((data) => setArticle(data))
+                            .catch(() => {});
+                        }}
+                      />
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              )}
 
               {/* Back Link */}
               <div className="mt-6">
@@ -437,7 +651,7 @@ export default function ArticlePage({
               className="relative max-w-[90vw] max-h-[90vh]"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={lightboxSrc}
                 alt={lightboxAlt}
@@ -485,6 +699,15 @@ function extractHeadings(
 function parseTags(tagsJson: string): string[] {
   try {
     return JSON.parse(tagsJson);
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonString(jsonStr: string): string[] {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }

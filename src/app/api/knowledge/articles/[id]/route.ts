@@ -15,6 +15,10 @@ export async function GET(
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.slug, a.content, a.summary, a.tags,
               a."keyTopics", a."viewCount", a."isPublished", a."createdAt", a."updatedAt",
+              a."videoUrl", a."pdfUrl", a."pptxUrl", a."sourceUrl", a."sourceType",
+              a.difficulty, a."estimatedTime", a.status, a."aiGenerated",
+              a."processedAt", a."errorMessage", a."keyConcepts",
+              a.prerequisites, a."nextTopics",
               json_build_object(
                 'id', c.id,
                 'name', c.name,
@@ -115,6 +119,21 @@ export async function GET(
       updatedAt: new Date(article.updatedAt).toISOString(),
       category: article.category,
       relatedGlossary,
+      // Sprint 6: new fields
+      videoUrl: article.videoUrl,
+      pdfUrl: article.pdfUrl,
+      pptxUrl: article.pptxUrl,
+      sourceUrl: article.sourceUrl,
+      sourceType: article.sourceType,
+      difficulty: article.difficulty,
+      estimatedTime: article.estimatedTime,
+      status: article.status,
+      aiGenerated: article.aiGenerated,
+      processedAt: article.processedAt ? new Date(article.processedAt).toISOString() : null,
+      errorMessage: article.errorMessage,
+      keyConcepts: article.keyConcepts,
+      prerequisites: article.prerequisites,
+      nextTopics: article.nextTopics,
     };
 
     return NextResponse.json(result);
@@ -141,13 +160,20 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const allowedFields = ["title", "slug", "content", "summary", "categoryId", "isPublished"];
+    const allowedFields = [
+      "title", "slug", "content", "summary", "categoryId", "isPublished",
+      // Sprint 6: new fields
+      "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType",
+      "difficulty", "estimatedTime", "status", "aiGenerated",
+      "errorMessage",
+    ];
+    const jsonFields = ["tags", "keyTopics", "keyConcepts", "prerequisites", "nextTopics"];
     const fields: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
     for (const [key, value] of Object.entries(body)) {
-      if (key === "tags" || key === "keyTopics") {
+      if (jsonFields.includes(key)) {
         fields.push(`"${key}" = $${idx++}`);
         values.push(value ? JSON.stringify(value) : null);
       } else if (allowedFields.includes(key)) {

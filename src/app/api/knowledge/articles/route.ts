@@ -110,6 +110,16 @@ export async function POST(request: NextRequest) {
       keyTopics,
       categoryId,
       isPublished,
+      // Sprint 6: new fields
+      videoUrl,
+      pdfUrl,
+      pptxUrl,
+      sourceUrl,
+      sourceType,
+      difficulty,
+      estimatedTime,
+      status,
+      aiGenerated,
     } = body;
 
     if (!title || !slug || !categoryId) {
@@ -135,8 +145,12 @@ export async function POST(request: NextRequest) {
     const authorId = (session.user as Record<string, unknown>).id as string;
 
     const result = await pool.query(
-      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, NOW(), NOW())
+      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount",
+         "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType", difficulty, "estimatedTime", status, "aiGenerated",
+         "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0,
+         $11, $12, $13, $14, $15, $16, $17, $18, $19,
+         NOW(), NOW())
        RETURNING *`,
       [
         id,
@@ -149,6 +163,16 @@ export async function POST(request: NextRequest) {
         categoryId,
         authorId,
         isPublished !== undefined ? isPublished : true,
+        // Sprint 6 fields
+        videoUrl || null,
+        pdfUrl || null,
+        pptxUrl || null,
+        sourceUrl || null,
+        sourceType || null,
+        difficulty || null,
+        estimatedTime || null,
+        status || "pending",
+        aiGenerated !== undefined ? aiGenerated : false,
       ]
     );
 

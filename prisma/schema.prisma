@@ -309,6 +309,24 @@ model Article {
   isPublished   Boolean    @default(false)
   viewCount     Int        @default(0)
 
+  // Sprint 6: AI Content Processing Pipeline
+  difficulty    String?    // "easy" | "medium" | "hard" — AI-generated
+  prerequisites String?    // JSON array of article IDs
+  nextTopics    String?    // JSON array of article IDs
+  keyConcepts   String?    // JSON array of key concept strings
+  estimatedTime String?    // "30 min", "2 hours" — AI-estimated
+  status        String     @default("pending") // "pending" | "processing" | "done" | "error"
+  aiGenerated   Boolean    @default(false) // true if metadata was AI-generated
+  processedAt   DateTime?  // When AI processing completed
+  errorMessage  String?    // Error message if processing failed
+
+  // Sprint 6: External media links (Яндекс Диск, YouTube, Rutube, etc.)
+  videoUrl      String?    // Link to video (YouTube, Rutube, VK Video, Yandex Disk)
+  pdfUrl        String?    // Link to PDF on Yandex Disk
+  pptxUrl       String?    // Link to PPTX on Yandex Disk
+  sourceUrl     String?    // General source link
+  sourceType    String?    // "youtube" | "rutube" | "vk" | "yandex_disk" | "direct" | "other"
+
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -342,9 +360,32 @@ model GlossaryTerm {
   relatedTerms    String?  // JSON array of related term slugs
   sourceArticleId String?  // Link back to article if auto-extracted
   order           Int      @default(0)
+  aiGenerated     Boolean  @default(false) // true if auto-extracted by AI
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@map("glossary_terms")
+}
+
+// ============================================
+// PROCESSING QUEUE (Sprint 6)
+// ============================================
+
+model ProcessingQueue {
+  id          String    @id @default(cuid())
+  type        String    // "zip_import" | "ai_metadata" | "glossary_extract" | "graph_build" | "course_draft"
+  status      String    @default("pending") // "pending" | "processing" | "done" | "error"
+  articleId   String?   // Link to article (nullable for zip_import before articles are created)
+  inputData   String?   // JSON with input parameters
+  result      String?   // JSON with results
+  error       String?   // Error message
+  progress    Int       @default(0) // 0-100 percentage
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("processing_queue")
 }
