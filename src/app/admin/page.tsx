@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, TreePine, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical, BookOpen, CircleDot } from "lucide-react";
+import { Settings, Users, Trophy, Target, Plus, Trash2, Edit, Save, BarChart3, Zap, X, Check, ToggleLeft, ToggleRight, Award, Database, AlertTriangle, RefreshCw, Sparkles, Shield, Ban, Heart, RotateCcw, MoreVertical, BookOpen, CircleDot } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { motion } from "framer-motion";
 import { KnowledgeAdmin } from "@/components/knowledge/knowledge-admin";
@@ -31,16 +31,6 @@ interface ChallengeAdmin {
   correctAnswer?: string;
   explanation?: string;
   hints?: string;
-}
-
-interface SkillAdmin {
-  id: string;
-  name: string;
-  slug: string;
-  category: string;
-  requiredXp: number;
-  description?: string;
-  icon?: string;
 }
 
 interface AchievementAdmin {
@@ -82,10 +72,6 @@ const emptyChallenge = {
   isActive: true,
 };
 
-const emptySkill = {
-  name: "", slug: "", category: "prompting", requiredXp: 100, description: "", icon: "🎯",
-};
-
 const emptyAchievement = {
   name: "", slug: "", category: "streak", xpReward: 50, description: "", icon: "🏆", condition: "",
 };
@@ -97,14 +83,12 @@ export default function AdminPage() {
 
   // Data states
   const [challenges, setChallenges] = useState<ChallengeAdmin[]>([]);
-  const [skills, setSkills] = useState<SkillAdmin[]>([]);
   const [achievements, setAchievements] = useState<AchievementAdmin[]>([]);
   const [users, setUsers] = useState<UserAdmin[]>([]);
   const [stats, setStats] = useState<Record<string, unknown> | null>(null);
 
   // Form states
   const [challengeForm, setChallengeForm] = useState(emptyChallenge);
-  const [skillForm, setSkillForm] = useState(emptySkill);
   const [achievementForm, setAchievementForm] = useState(emptyAchievement);
 
   // Edit state
@@ -236,7 +220,6 @@ export default function AdminPage() {
   const fetchData = useCallback(() => {
     if (!isAdmin) return;
     fetch("/api/challenges").then(r => r.json()).then(d => { const arr = Array.isArray(d) ? d : (d.challenges && Array.isArray(d.challenges) ? d.challenges : []); setChallenges(arr); }).catch(() => {});
-    fetch("/api/skills").then(r => r.json()).then(d => Array.isArray(d) && setSkills(d)).catch(() => {});
     fetch("/api/achievements").then(r => r.json()).then(d => Array.isArray(d) && setAchievements(d)).catch(() => {});
     fetch("/api/admin/users").then(r => r.json()).then(d => Array.isArray(d) && setUsers(d)).catch(() => {});
     fetch("/api/admin").then(r => r.json()).then(d => setStats(d)).catch(() => {});
@@ -443,26 +426,6 @@ export default function AdminPage() {
         hints: ch.hints || "",
         isActive: ch.isActive,
       });
-    }
-  };
-
-  // --- Skill CRUD ---
-  const createSkill = async () => {
-    try {
-      const res = await fetch("/api/admin/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(skillForm),
-      });
-      if (res.ok) {
-        showToast("Навык создан");
-        setSkillForm(emptySkill);
-        fetchData();
-      } else {
-        showToast("Ошибка", "err");
-      }
-    } catch {
-      showToast("Ошибка сети", "err");
     }
   };
 
@@ -742,9 +705,6 @@ export default function AdminPage() {
             <TabsTrigger value="challenges" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
               <Target className="h-3.5 w-3.5 mr-1" /> Задачи
             </TabsTrigger>
-            <TabsTrigger value="skills" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
-              <TreePine className="h-3.5 w-3.5 mr-1" /> Навыки
-            </TabsTrigger>
             <TabsTrigger value="achievements" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
               <Award className="h-3.5 w-3.5 mr-1" /> Достижения
             </TabsTrigger>
@@ -1005,56 +965,6 @@ export default function AdminPage() {
                       </Button>
                     </div>
                   )}
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          {/* ===== SKILLS TAB ===== */}
-          <TabsContent value="skills" className="space-y-4">
-            {/* Create form */}
-            <div className="glass rounded-xl p-5">
-              <h3 className="font-semibold mb-4 flex items-center gap-2">
-                <Plus className="h-4 w-4 text-emerald-400" />
-                Новый навык
-              </h3>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Input placeholder="Название" value={skillForm.name} onChange={(e) => setSkillForm({ ...skillForm, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") })} className="bg-white/5 border-white/10" />
-                <Input placeholder="slug (авто)" value={skillForm.slug} onChange={(e) => setSkillForm({ ...skillForm, slug: e.target.value })} className="bg-white/5 border-white/10" />
-                <Select value={skillForm.category} onValueChange={(v) => setSkillForm({ ...skillForm, category: v })}>
-                  <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-[#111118] border-white/10">
-                    <SelectItem value="prompting">Промптинг</SelectItem>
-                    <SelectItem value="agents">Агенты</SelectItem>
-                    <SelectItem value="debugging">Дебаг</SelectItem>
-                    <SelectItem value="workflow">Workflow</SelectItem>
-                    <SelectItem value="1c">1С</SelectItem>
-                    <SelectItem value="review">Ревью</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="flex gap-2">
-                  <Input type="number" placeholder="XP для уровня" value={skillForm.requiredXp} onChange={(e) => setSkillForm({ ...skillForm, requiredXp: Number(e.target.value) })} className="bg-white/5 border-white/10 w-28" />
-                  <Input placeholder="Иконка" value={skillForm.icon} onChange={(e) => setSkillForm({ ...skillForm, icon: e.target.value })} className="bg-white/5 border-white/10 w-20 text-center" />
-                </div>
-                <Input placeholder="Описание" value={skillForm.description} onChange={(e) => setSkillForm({ ...skillForm, description: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2" />
-                <Button onClick={createSkill} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 w-fit">
-                  <Save className="h-4 w-4 mr-1" /> Создать навык
-                </Button>
-              </div>
-            </div>
-
-            {/* Skills list */}
-            <div className="glass rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-white/5">
-                <h3 className="font-semibold text-sm">Все навыки ({skills.length})</h3>
-              </div>
-              {skills.map((skill) => (
-                <div key={skill.id} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5">
-                  <span className="text-lg">{skill.icon}</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{skill.name}</p>
-                    <p className="text-xs text-muted-foreground">{skill.slug} • {catLabel(skill.category)} • {skill.requiredXp} XP</p>
-                  </div>
                 </div>
               ))}
             </div>

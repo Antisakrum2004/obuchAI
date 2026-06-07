@@ -5,7 +5,6 @@ import { useDailyChallenge } from "@/hooks/use-daily-challenge";
 import { DailyChallengeWidget } from "@/components/dashboard/daily-challenge-widget";
 import { StatsGrid } from "@/components/dashboard/stats-grid";
 import { MiniLeaderboard } from "@/components/dashboard/mini-leaderboard";
-import { SkillProgressList } from "@/components/dashboard/skill-progress-list";
 import { RecentAchievements } from "@/components/dashboard/recent-achievements";
 import { WeeklyXpChart } from "@/components/dashboard/weekly-xp-chart";
 import { ReferralCard } from "@/components/profile/referral-card";
@@ -34,15 +33,6 @@ interface LeaderboardEntry {
   isCurrentUser?: boolean;
 }
 
-interface SkillProgressItem {
-  id: string;
-  name: string;
-  category: string;
-  xp: number;
-  requiredXp: number;
-  level: number;
-}
-
 interface AchievementItem {
   name: string;
   icon: string;
@@ -53,7 +43,6 @@ export default function DashboardPage() {
   const { xp, level, streak, name, image, role, completedChallenges, rank } = useUserStore();
   const { data: dailyData, isLoading: dailyLoading } = useDailyChallenge();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [skills, setSkills] = useState<SkillProgressItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [weeklyXp, setWeeklyXp] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
   const [activeDays, setActiveDays] = useState<string[]>([]);
@@ -100,16 +89,6 @@ export default function DashboardPage() {
               rank: i + 1,
             }))
           );
-        }
-      })
-      .catch(() => {});
-
-    // Fetch skills
-    fetch("/api/skills")
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setSkills(data);
         }
       })
       .catch(() => {});
@@ -297,8 +276,8 @@ export default function DashboardPage() {
           </Link>
         </motion.div>
 
-        {/* Bottom Grid: Leaderboard + Skills + Achievements + Referral */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {/* Bottom Grid: Leaderboard + Achievements + Referral */}
+        <div className="grid gap-6 md:grid-cols-2">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -311,15 +290,6 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
-          >
-            <SkillProgressList skills={skills} />
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-            className="md:col-span-2 lg:col-span-1"
           >
             <RecentAchievements achievements={achievements} />
           </motion.div>

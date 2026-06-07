@@ -7,7 +7,8 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye } from "lucide-react";
+import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye, Search } from "lucide-react";
+import { useGlossaryOpen } from "@/components/knowledge/glossary-command";
 
 interface KnowledgeSpaceData {
   id: string;
@@ -51,9 +52,13 @@ const itemVariants = {
 };
 
 export default function KnowledgePage() {
+  const openGlossary = useGlossaryOpen();
   const [spaces, setSpaces] = useState<KnowledgeSpaceData[]>([]);
   const [recentArticles, setRecentArticles] = useState<RecentArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [glossarySearch, setGlossarySearch] = useState("");
+  const [glossaryTerms, setGlossaryTerms] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null}[]>([]);
+  const [glossaryResults, setGlossaryResults] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null}[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -67,6 +72,39 @@ export default function KnowledgePage() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // Load glossary terms on first search focus
+  const [glossaryLoaded, setGlossaryLoaded] = useState(false);
+  const handleGlossaryFocus = () => {
+    if (!glossaryLoaded) {
+      fetch("/api/knowledge/glossary")
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setGlossaryTerms(data);
+            setGlossaryLoaded(true);
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  // Filter glossary on search
+  useEffect(() => {
+    if (!glossarySearch.trim()) {
+      setGlossaryResults([]);
+      return;
+    }
+    const q = glossarySearch.toLowerCase();
+    const results = glossaryTerms
+      .filter((t) =>
+        t.term.toLowerCase().includes(q) ||
+        (t.shortDefinition && t.shortDefinition.toLowerCase().includes(q)) ||
+        (t.category && t.category.toLowerCase().includes(q))
+      )
+      .slice(0, 8);
+    setGlossaryResults(results);
+  }, [glossarySearch, glossaryTerms]);
 
   return (
     <AppLayout>
@@ -88,6 +126,64 @@ export default function KnowledgePage() {
               </p>
             </div>
           </div>
+        </motion.div>
+
+        {/* Glossary Search */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05 }}
+          className="relative"
+        >
+          <div className="glass rounded-xl p-4 border-white/5">
+            <div className="flex items-center gap-2 relative">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                value={glossarySearch}
+                onChange={(e) => setGlossarySearch(e.target.value)}
+                onFocus={handleGlossaryFocus}
+                placeholder="Поиск по глоссарию..."
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 outline-none"
+              />
+              <span className="text-[10px] text-muted-foreground/40 hidden sm:inline">
+                Ctrl+K / Ctrl+Л
+              </span>
+            </div>
+          </div>
+          {/* Search results dropdown */}
+          {glossarySearch.trim() && glossaryResults.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 glass rounded-xl border border-white/5 z-50 max-h-64 overflow-y-auto">
+              {glossaryResults.map((term) => (
+                <button
+                  key={term.id}
+                  onClick={() => {
+                    setGlossarySearch("");
+                    setGlossaryResults([]);
+                    // Open glossary dialog
+                    if (openGlossary) openGlossary();
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-foreground">{term.term}</span>
+                    {term.category && (
+                      <span className="ml-2 text-[9px] text-muted-foreground/60">{term.category}</span>
+                    )}
+                  </div>
+                  {term.shortDefinition && (
+                    <span className="text-xs text-muted-foreground line-clamp-1 max-w-[50%]">{term.shortDefinition}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {glossarySearch.trim() && glossaryLoaded && glossaryResults.length === 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 glass rounded-xl border border-white/5 z-50 p-4 text-center">
+              <p className="text-xs text-muted-foreground">Ничего не найдено</p>
+            </div>
+          )}
         </motion.div>
 
         {/* Recent Articles */}
@@ -256,7 +352,8 @@ export default function KnowledgePage() {
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span className="text-lg">💡</span>
             <span>
-              Нажмите <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+K</kbd> для быстрого поиска по глоссарию
+              Нажмите <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+K</kbd>{" "}
+              или <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+Л</kbd> для поиска по глоссарию
             </span>
           </div>
         </motion.div>

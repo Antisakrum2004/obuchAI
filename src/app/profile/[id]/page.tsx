@@ -11,7 +11,7 @@ import { ShareCardButton } from "@/components/profile/share-card";
 import { ReferralCard } from "@/components/profile/referral-card";
 import { PremiumAchievementCard, type AchievementRarity } from "@/components/gamification/premium-achievement-card";
 import { type AchievementIconName } from "@/components/gamification/achievement-icons";
-import { categoryEmoji, categoryLabel } from "@/lib/gamification";
+import { categoryLabel } from "@/lib/gamification";
 
 // Icon mapping for profile achievements
 const ACHIEVEMENT_ICONS_MAP_PROFILE: Record<string, AchievementIconName> = {
@@ -72,16 +72,6 @@ interface ProfileData {
     category: string;
     xpReward: number;
     earnedAt: string;
-  }[];
-  skills: {
-    id: string;
-    name: string;
-    slug: string;
-    category: string;
-    icon: string | null;
-    requiredXp: number;
-    xp: number;
-    level: number;
   }[];
   stats: {
     completedChallenges: number;
@@ -395,62 +385,16 @@ export default function ProfilePage() {
           </motion.div>
         )}
 
-        {/* Two-column: Skills + Achievements */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Skills section */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <div className="glass rounded-xl p-4">
-              <h3 className="font-semibold mb-4">Навыки</h3>
-              {profile.skills.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  Навыки ещё не прокачаны
-                </p>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {profile.skills.map((skill) => {
-                    const percentage = Math.min(
-                      (skill.xp / skill.requiredXp) * 100,
-                      100
-                    );
-                    return (
-                      <div key={skill.id} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <span>{categoryEmoji(skill.category)}</span>
-                            <span className="font-medium">{skill.name}</span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {skill.xp}/{skill.requiredXp} XP
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-                          <div
-                            className="h-full rounded-full progress-gradient transition-all duration-500"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Achievements section */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <div className="glass rounded-xl p-4">
-              <h3 className="font-semibold mb-4">
-                Достижения ({profile.achievements.length})
-              </h3>
+        {/* Achievements section (full width) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <div className="glass rounded-xl p-4">
+            <h3 className="font-semibold mb-4">
+              Достижения ({profile.achievements.length})
+            </h3>
               {profile.achievements.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
                   Достижений пока нет
@@ -484,7 +428,6 @@ export default function ProfilePage() {
               )}
             </div>
           </motion.div>
-        </div>
 
         {/* Account actions — only on own profile */}
         {isOwnProfile && (

@@ -44,10 +44,10 @@ export function GlossaryCommand() {
     };
   }, []);
 
-  // Global keyboard shortcut: Ctrl+K / Cmd+K
+  // Global keyboard shortcut: Ctrl+K / Cmd+K (also Ctrl+Л for Russian layout)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "л" || e.key === "K" || e.key === "Л")) {
         e.preventDefault();
         setOpen((prev) => {
           const next = !prev;

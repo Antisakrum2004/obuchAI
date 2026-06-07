@@ -6,9 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   Home,
   Target,
-  TreePine,
   Trophy,
-  FlaskConical,
   Settings,
   Zap,
   Info,
@@ -25,11 +23,11 @@ const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
-  { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
+  // { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false }, // removed
   { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
-  { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },
+  // { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false }, // hidden
   { href: "/about", label: "О проекте", icon: Info, adminOnly: false },
   { href: "/admin", label: "Управление", icon: Settings, adminOnly: true },
 ];
