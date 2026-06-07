@@ -253,15 +253,22 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
 
       clearInterval(progressInterval);
 
-      if (res.ok) {
+      const data = await res.json();
+
+      if (res.ok || data.articles?.length > 0) {
+        // Some or all files uploaded successfully
         setUploadProgress(100);
         setCurrentFileIndex(files.length);
-        const data = await res.json();
         setResult(data);
+        if (data.errors?.length > 0) {
+          setError(`${data.errors.length} файл(ов) не загружено: ${data.errors.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ")}`);
+        }
         onUploadComplete?.();
       } else {
-        const errData = await res.json();
-        setError(errData.error || "Ошибка загрузки");
+        // All files failed
+        const errMsg = data.error || "Ошибка загрузки";
+        const details = data.errors?.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ");
+        setError(details ? `${errMsg}. ${details}` : errMsg);
       }
     } catch {
       setError("Ошибка сети при загрузке файлов");

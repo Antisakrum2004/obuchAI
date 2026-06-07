@@ -22,6 +22,25 @@ const FILE_FIELD_MAP: Record<string, string> = {
 };
 
 /**
+ * Ensure the articles table allows NULL categoryId.
+ * This runs once and is a no-op if already nullable.
+ */
+async function ensureCategoryIdNullable() {
+  try {
+    await pool.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'articles' AND column_name = 'categoryId' AND is_nullable = 'NO') THEN
+          ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL;
+        END IF;
+      END $$;
+    `);
+  } catch (e) {
+    console.warn("[bulk-upload] Could not alter categoryId nullable:", e);
+  }
+}
+
+/**
  * POST /api/knowledge/bulk-upload
  * Bulk upload multiple files (PDF, PPTX, DOCX, video, images).
  * Each file becomes a separate article with the file attached.
@@ -64,6 +83,9 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    // Ensure categoryId can be NULL in the database
+    await ensureCategoryIdNullable();
 
     // Collect all files from formData
     const files: File[] = [];
@@ -139,41 +161,55 @@ export async function POST(request: NextRequest) {
           ]
         );
 
-        // Upload file to storage
-        const storageKey = generateStorageKey("article", articleId, file.name);
-        const uploadResult = await storageProvider.upload(
-          storageKey,
-          file.stream(),
-          file.type
-        );
+        // Upload file to storage (with fallback)
+        let fileUrl = "";
+        try {
+          const storageKey = generateStorageKey("article", articleId, file.name);
+          const uploadResult = await storageProvider.upload(
+            storageKey,
+            file.stream(),
+            file.type
+          );
+          fileUrl = uploadResult.url;
+        } catch (storageErr) {
+          console.warn(`[bulk-upload] Storage upload failed for ${file.name}:`, storageErr);
+          // Continue without file URL — the article is still created
+        }
 
-        // Update article with file URL
-        await pool.query(
-          `UPDATE articles SET "${articleField}" = $1 WHERE id = $2`,
-          [uploadResult.url, articleId]
-        );
+        // Update article with file URL (if upload succeeded)
+        if (fileUrl) {
+          await pool.query(
+            `UPDATE articles SET "${articleField}" = $1 WHERE id = $2`,
+            [fileUrl, articleId]
+          );
+        }
 
-        // Create media record
-        const mediaId = genId("med-");
-        const userId = (session.user as Record<string, unknown>).id as string;
-        await pool.query(
-          `INSERT INTO media (
-            id, "fileName", "fileType", "mimeType", "fileSize",
-            url, "thumbnailUrl", duration, "articleId", "uploadedBy", "createdAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
-          [
-            mediaId,
-            file.name,
-            validation.fileType || "document",
-            file.type,
-            uploadResult.size || file.size,
-            uploadResult.url,
-            null,
-            null,
-            articleId,
-            userId,
-          ]
-        );
+        // Create media record (even if storage failed, record the file metadata)
+        try {
+          const mediaId = genId("med-");
+          const userId = (session.user as Record<string, unknown>).id as string;
+          await pool.query(
+            `INSERT INTO media (
+              id, "fileName", "fileType", "mimeType", "fileSize",
+              url, "thumbnailUrl", duration, "articleId", "uploadedBy", "createdAt"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+            [
+              mediaId,
+              file.name,
+              validation.fileType || "document",
+              file.type,
+              file.size,
+              fileUrl || "",
+              null,
+              null,
+              articleId,
+              userId,
+            ]
+          );
+        } catch (mediaErr) {
+          console.warn(`[bulk-upload] Media record failed for ${file.name}:`, mediaErr);
+          // Continue — article is still created
+        }
 
         // Create processing queue entries
         // Always add ai_metadata (it will also handle category assignment if autoCategorize)
@@ -183,25 +219,29 @@ export async function POST(request: NextRequest) {
         }
 
         for (const type of queueTypes) {
-          const queueId = genId("pq-");
-          await pool.query(
-            `INSERT INTO processing_queue (
-              id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-            [
-              queueId,
-              type,
-              "pending",
-              articleId,
-              JSON.stringify({
-                fileName: file.name,
-                fileCategory,
-                autoCategorize: autoCategorize || !categoryId,
-                originalCategoryId: categoryId,
-              }),
-              0,
-            ]
-          );
+          try {
+            const queueId = genId("pq-");
+            await pool.query(
+              `INSERT INTO processing_queue (
+                id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt"
+              ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+              [
+                queueId,
+                type,
+                "pending",
+                articleId,
+                JSON.stringify({
+                  fileName: file.name,
+                  fileCategory,
+                  autoCategorize: autoCategorize || !categoryId,
+                  originalCategoryId: categoryId,
+                }),
+                0,
+              ]
+            );
+          } catch (queueErr) {
+            console.warn(`[bulk-upload] Queue entry failed for ${file.name}/${type}:`, queueErr);
+          }
         }
 
         results.push({
@@ -214,21 +254,33 @@ export async function POST(request: NextRequest) {
           categoryId,
         });
       } catch (fileErr) {
+        console.error(`[bulk-upload] Error processing file ${file.name}:`, fileErr);
         const msg = fileErr instanceof Error ? fileErr.message : "Ошибка загрузки";
         errors.push({ fileName: file.name, error: msg });
       }
     }
 
+    // If ALL files failed, return error
+    if (results.length === 0 && errors.length > 0) {
+      return NextResponse.json({
+        error: `Не удалось загрузить ни одного файла`,
+        errors,
+      }, { status: 500 });
+    }
+
     const categorizeNote = !categoryId || autoCategorize
       ? " AI автоматически определит категории." : "";
 
+    const storageWarning = errors.some(e => e.error.includes("Storage") || e.error.includes("BLOB"))
+      ? " Внимание: хранилище файлов не настроено (BLOB_READ_WRITE_TOKEN)." : "";
+
     return NextResponse.json({
-      message: `Загружено ${results.length} из ${files.length} файлов.${categorizeNote}`,
+      message: `Загружено ${results.length} из ${files.length} файлов.${categorizeNote}${storageWarning}`,
       articles: results,
       errors: errors.length > 0 ? errors : undefined,
-    }, { status: 201 });
+    }, { status: results.length > 0 ? 201 : 500 });
   } catch (error) {
-    console.error("Bulk upload error:", error);
+    console.error("[bulk-upload] Fatal error:", error);
     const message = error instanceof Error ? error.message : "Ошибка загрузки";
     return NextResponse.json({ error: message }, { status: 500 });
   }

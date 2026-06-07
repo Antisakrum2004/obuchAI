@@ -301,7 +301,7 @@ export async function POST(request: Request) {
           summary TEXT,
           tags TEXT,
           "keyTopics" TEXT,
-          "categoryId" TEXT NOT NULL,
+          "categoryId" TEXT,
           "authorId" TEXT,
           "isPublished" BOOLEAN NOT NULL DEFAULT false,
           "viewCount" INTEGER NOT NULL DEFAULT 0,
@@ -357,6 +357,14 @@ export async function POST(request: Request) {
 
         // GlossaryTerm extension
         `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
+
+        // Sprint 6.1: Allow categoryId to be NULL (AI auto-categorization)
+        // PostgreSQL doesn't support ALTER COLUMN in IF NOT EXISTS, so we use a DO block
+        `DO $$ BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'articles' AND column_name = 'categoryId' AND is_nullable = 'NO') THEN
+            ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL;
+          END IF;
+        END $$;`,
       ];
 
       for (const alterSql of alterStatementsPhase2) {
