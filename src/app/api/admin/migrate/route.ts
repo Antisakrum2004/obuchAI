@@ -367,27 +367,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // Knowledge Hub foreign keys
-      const knowledgeFkStatements = [
-        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_spaceId_fkey;
-         ALTER TABLE categories ADD CONSTRAINT categories_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_parentId_fkey;
-         ALTER TABLE categories ADD CONSTRAINT categories_parentId_fkey FOREIGN KEY ("parentId") REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE;`,
-        `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_categoryId_fkey;
-         ALTER TABLE articles ADD CONSTRAINT articles_categoryId_fkey FOREIGN KEY ("categoryId") REFERENCES categories(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-        `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey;
-         ALTER TABLE media ADD CONSTRAINT media_articleId_fkey FOREIGN KEY ("articleId") REFERENCES articles(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-      ]
-
-      for (const fkSql of knowledgeFkStatements) {
-        try {
-          await client.query(fkSql)
-        } catch (fkErr) {
-          console.warn('Knowledge FK warning (may already exist):', fkErr)
-        }
-      }
-
-      // Seed default knowledge spaces
+      // Seed default knowledge spaces FIRST (before FK constraints so referential data exists)
       await client.query(`
         INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES
           ('ks_ai_dev', 'AI Разработка', 'ai-development', 'Инструменты и концепции AI-разработки', '🤖', 1, true),
@@ -424,6 +404,26 @@ export async function POST(request: Request) {
           ('gt_embedding', 'Embedding', 'Embedding (векторное представление) — числовой вектор, кодирующий смысл текста. Используется для поиска, кластеризации и RAG.', 'Векторное представление текста', 'AI', '["rag", "vector-database"]', 10)
         ON CONFLICT (term) DO NOTHING;
       `)
+
+      // Knowledge Hub foreign keys (AFTER seed data so referential integrity is valid)
+      const knowledgeFkStatements = [
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_spaceId_fkey;
+         ALTER TABLE categories ADD CONSTRAINT categories_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_parentId_fkey;
+         ALTER TABLE categories ADD CONSTRAINT categories_parentId_fkey FOREIGN KEY ("parentId") REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE;`,
+        `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_categoryId_fkey;
+         ALTER TABLE articles ADD CONSTRAINT articles_categoryId_fkey FOREIGN KEY ("categoryId") REFERENCES categories(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+        `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey;
+         ALTER TABLE media ADD CONSTRAINT media_articleId_fkey FOREIGN KEY ("articleId") REFERENCES articles(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+      ]
+
+      for (const fkSql of knowledgeFkStatements) {
+        try {
+          await client.query(fkSql)
+        } catch (fkErr) {
+          console.warn('Knowledge FK warning (may already exist):', fkErr)
+        }
+      }
 
       // Sprint 6: Processing Queue table
       await client.query(`
