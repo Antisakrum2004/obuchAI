@@ -235,7 +235,12 @@ export default function MaterialsPage() {
             <BulkUpload
               onUploadComplete={() => {
                 fetchArticles();
-                setShowBulkUpload(false);
+                // Keep queue visible, don't close upload panel immediately
+                // so user can see the toast notification and result
+                setShowQueue(true);
+                setTimeout(() => {
+                  setShowBulkUpload(false);
+                }, 2000);
               }}
             />
           </motion.div>

@@ -28,6 +28,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface BulkUploadProps {
   onUploadComplete?: () => void;
@@ -260,8 +261,21 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
         setUploadProgress(100);
         setCurrentFileIndex(files.length);
         setResult(data);
-        if (data.errors?.length > 0) {
-          setError(`${data.errors.length} файл(ов) не загружено: ${data.errors.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ")}`);
+
+        const successCount = data.articles?.length || 0;
+        const failCount = data.errors?.length || 0;
+
+        if (failCount === 0) {
+          toast.success(`Загружено ${successCount} ${successCount === 1 ? "файл" : successCount < 5 ? "файла" : "файлов"}`, {
+            description: "Файлы добавлены в очередь обработки",
+            duration: 5000,
+          });
+        } else {
+          toast.warning(`Загружено ${successCount} из ${successCount + failCount} файлов`, {
+            description: `${failCount} ${failCount === 1 ? "файл" : failCount < 5 ? "файла" : "файлов"} не удалось загрузить`,
+            duration: 7000,
+          });
+          setError(`${failCount} файл(ов) не загружено: ${data.errors.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ")}`);
         }
         onUploadComplete?.();
       } else {

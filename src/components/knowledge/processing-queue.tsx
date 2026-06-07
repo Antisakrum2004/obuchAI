@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/select";
 import {
   Cpu,
-  Play,
   X,
   Clock,
   CheckCircle2,
@@ -23,11 +22,14 @@ import {
   BookOpen,
   GitBranch,
   Zap,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface ProcessingQueueProps {
   className?: string;
+  onQueueChange?: () => void;
 }
 
 interface QueueItem {
@@ -44,6 +46,14 @@ interface QueueItem {
   createdAt: string;
   updatedAt: string;
   articleTitle: string | null;
+}
+
+/** Grouped view: one card per article, with processing types inside */
+interface ArticleGroup {
+  articleId: string;
+  articleTitle: string;
+  items: QueueItem[];
+  overallStatus: "pending" | "processing" | "done" | "error" | "mixed";
 }
 
 const statusConfig: Record<
@@ -76,11 +86,11 @@ const statusConfig: Record<
   },
 };
 
-const typeLabels: Record<string, string> = {
-  zip_import: "ZIP импорт",
-  ai_metadata: "AI метаданные",
-  glossary_extract: "Извлечение глоссария",
-  graph_build: "Построение графа",
+const typeLabels: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  zip_import: { label: "ZIP импорт", icon: Cpu, color: "text-muted-foreground" },
+  ai_metadata: { label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
+  glossary_extract: { label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
+  graph_build: { label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
 };
 
 // AI processing types with icons
@@ -90,11 +100,22 @@ const aiTypes = [
   { type: "graph", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
 ] as const;
 
-export function ProcessingQueue({ className }: ProcessingQueueProps) {
+function computeOverallStatus(items: QueueItem[]): ArticleGroup["overallStatus"] {
+  const statuses = new Set(items.map((i) => i.status));
+  if (statuses.size === 1) return statuses.values().next().value as ArticleGroup["overallStatus"];
+  if (statuses.has("error") && !statuses.has("processing") && !statuses.has("pending"))
+    return "error";
+  if (statuses.has("processing")) return "processing";
+  if (statuses.has("pending")) return "mixed";
+  return "done";
+}
+
+export function ProcessingQueue({ className, onQueueChange }: ProcessingQueueProps) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [processing, setProcessing] = useState<string | null>(null);
+  const [processingAll, setProcessingAll] = useState(false);
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -124,13 +145,37 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
 
     const interval = setInterval(() => {
       fetchQueue();
+      onQueueChange?.();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [items, fetchQueue]);
+  }, [items, fetchQueue, onQueueChange]);
+
+  // Group items by articleId
+  const groups: ArticleGroup[] = [];
+  const groupMap = new Map<string, ArticleGroup>();
+  for (const item of items) {
+    const existing = groupMap.get(item.articleId);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      const group: ArticleGroup = {
+        articleId: item.articleId,
+        articleTitle: item.articleTitle || item.articleId.slice(0, 12),
+        items: [item],
+        overallStatus: "pending",
+      };
+      groupMap.set(item.articleId, group);
+      groups.push(group);
+    }
+  }
+  // Compute overall status
+  for (const g of groups) {
+    g.overallStatus = computeOverallStatus(g.items);
+  }
 
   const handleStartProcessing = async (articleId: string, type: string) => {
-    setProcessing(type);
+    setProcessing(`${articleId}-${type}`);
     try {
       await fetch("/api/knowledge/ai", {
         method: "POST",
@@ -138,6 +183,7 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
         body: JSON.stringify({ articleId, type }),
       });
       fetchQueue();
+      onQueueChange?.();
     } catch {
       // silently fail
     } finally {
@@ -145,10 +191,9 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
     }
   };
 
-  const handleStartAll = async (articleId: string) => {
-    setProcessing("all");
+  const handleStartAllForArticle = async (articleId: string) => {
+    setProcessing(`${articleId}-all`);
     try {
-      // Run all three types sequentially: metadata → glossary → graph
       for (const { type } of aiTypes) {
         await fetch("/api/knowledge/ai", {
           method: "POST",
@@ -157,10 +202,50 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
         });
       }
       fetchQueue();
+      onQueueChange?.();
     } catch {
       // silently fail
     } finally {
       setProcessing(null);
+    }
+  };
+
+  /** Process ALL pending articles at once */
+  const handleProcessAllPending = async () => {
+    const pendingArticles = groups.filter(
+      (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
+    );
+    if (pendingArticles.length === 0) return;
+
+    setProcessingAll(true);
+    toast.info(`Начинаем обработку ${pendingArticles.length} статей...`);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const group of pendingArticles) {
+      try {
+        for (const { type } of aiTypes) {
+          await fetch("/api/knowledge/ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ articleId: group.articleId, type }),
+          });
+        }
+        successCount++;
+      } catch {
+        errorCount++;
+      }
+    }
+
+    fetchQueue();
+    onQueueChange?.();
+    setProcessingAll(false);
+
+    if (errorCount === 0) {
+      toast.success(`Обработка запущена для ${successCount} статей`);
+    } else {
+      toast.warning(`Обработано: ${successCount}, ошибок: ${errorCount}`);
     }
   };
 
@@ -170,6 +255,7 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
         method: "DELETE",
       });
       fetchQueue();
+      onQueueChange?.();
     } catch {
       // silently fail
     }
@@ -179,14 +265,39 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
     (item) => item.status === "pending" || item.status === "processing"
   );
 
+  const pendingGroupCount = groups.filter(
+    (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
+  ).length;
+
   return (
     <div className={cn("glass rounded-xl p-5 border-white/5 space-y-4", className)}>
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2">
           <Cpu className="h-4 w-4 text-emerald-400" />
           Очередь обработки
+          {pendingGroupCount > 0 && (
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">
+              {pendingGroupCount}
+            </Badge>
+          )}
         </h3>
         <div className="flex items-center gap-2">
+          {/* Process All button */}
+          {pendingGroupCount > 0 && (
+            <Button
+              size="sm"
+              onClick={handleProcessAllPending}
+              disabled={processingAll || !!processing}
+              className="h-8 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 gap-1.5"
+            >
+              {processingAll ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+              Обработать всё
+            </Button>
+          )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="bg-white/5 border-white/10 h-8 w-[130px] text-xs">
               <SelectValue placeholder="Фильтр" />
@@ -216,116 +327,169 @@ export function ProcessingQueue({ className }: ProcessingQueueProps) {
         </div>
       ) : items.length === 0 ? (
         <div className="text-center py-6 text-sm text-muted-foreground">
-          Очередь пуста
+          Очередь пуста — загрузите файлы для начала обработки
         </div>
       ) : (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
-          {items.map((item) => {
-            const config = statusConfig[item.status] || statusConfig.pending;
+        <div className="space-y-3 max-h-[500px] overflow-y-auto">
+          {groups.map((group) => {
+            const config = statusConfig[group.overallStatus] || statusConfig.pending;
             const Icon = config.icon;
+            const hasPending = group.items.some((i) => i.status === "pending");
+            const isProcessing = group.items.some((i) => i.status === "processing");
+            const avgProgress = Math.round(
+              group.items.reduce((sum, i) => sum + (i.progress || 0), 0) / group.items.length
+            );
 
             return (
               <div
-                key={item.id}
-                className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/5"
+                key={group.articleId}
+                className={cn(
+                  "p-3 rounded-lg border transition-colors",
+                  isProcessing
+                    ? "bg-amber-500/[0.03] border-amber-500/20"
+                    : group.overallStatus === "done"
+                    ? "bg-emerald-500/[0.03] border-emerald-500/10"
+                    : group.overallStatus === "error"
+                    ? "bg-red-500/[0.03] border-red-500/10"
+                    : "bg-white/[0.02] border-white/5"
+                )}
               >
-                <Icon
-                  className={cn(
-                    "h-4 w-4 mt-0.5 shrink-0",
-                    config.color,
-                    item.status === "processing" && "animate-spin"
-                  )}
-                />
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">
-                      {item.articleTitle || item.articleId.slice(0, 12)}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={cn("text-[9px] px-1.5 py-0", config.badgeColor)}
-                    >
-                      {config.label}
-                    </Badge>
-                    {item.type && typeLabels[item.type] && (
-                      <Badge
-                        variant="outline"
-                        className="text-[9px] px-1.5 py-0 border-white/10 text-muted-foreground"
-                      >
-                        {typeLabels[item.type]}
-                      </Badge>
+                {/* Article header */}
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      config.color,
+                      isProcessing && "animate-spin"
                     )}
-                  </div>
+                  />
+                  <span className="text-sm font-medium truncate flex-1">
+                    {group.articleTitle}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={cn("text-[9px] px-1.5 py-0 shrink-0", config.badgeColor)}
+                  >
+                    {isProcessing ? "Обработка" : config.label}
+                  </Badge>
+                </div>
 
-                  {/* Progress bar for processing items */}
-                  {(item.status === "processing" || item.status === "pending") && (
+                {/* Processing types inside the card */}
+                <div className="space-y-1.5 ml-6">
+                  {group.items.map((item) => {
+                    const typeInfo = typeLabels[item.type];
+                    const TypeIcon = typeInfo?.icon || Sparkles;
+                    const itemConfig = statusConfig[item.status] || statusConfig.pending;
+                    const ItemIcon = itemConfig.icon;
+
+                    return (
+                      <div key={item.id} className="flex items-center gap-2 text-xs">
+                        <ItemIcon
+                          className={cn(
+                            "h-3 w-3 shrink-0",
+                            itemConfig.color,
+                            item.status === "processing" && "animate-spin"
+                          )}
+                        />
+                        <TypeIcon className={cn("h-3 w-3 shrink-0", typeInfo?.color || "text-muted-foreground")} />
+                        <span className="text-muted-foreground flex-1">
+                          {typeInfo?.label || item.type}
+                        </span>
+                        {item.status === "processing" && (
+                          <span className="text-amber-400 text-[10px]">{item.progress}%</span>
+                        )}
+                        {item.status === "done" && (
+                          <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                        )}
+                        {item.status === "error" && (
+                          <span className="text-[10px] text-red-400/80 truncate max-w-[120px]" title={item.error || undefined}>
+                            {item.error || "Ошибка"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Progress bar for processing items */}
+                {isProcessing && (
+                  <div className="ml-6 mt-2">
                     <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-emerald-500/50 rounded-full transition-all duration-500"
-                        style={{ width: `${item.progress || 0}%` }}
+                        className="h-full bg-amber-500/50 rounded-full transition-all duration-500"
+                        style={{ width: `${avgProgress}%` }}
                       />
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Error message */}
-                  {item.status === "error" && item.error && (
-                    <p className="text-[11px] text-red-400/80 line-clamp-1">
-                      {item.error}
-                    </p>
-                  )}
+                {/* Timestamp */}
+                <p className="text-[10px] text-muted-foreground/50 ml-6 mt-1.5">
+                  {group.items[0]?.startedAt
+                    ? `Начато: ${new Date(group.items[0].startedAt).toLocaleString("ru-RU")}`
+                    : `Создано: ${new Date(group.items[0]?.createdAt || "").toLocaleString("ru-RU")}`}
+                </p>
 
-                  {/* Timestamps */}
-                  <p className="text-[10px] text-muted-foreground/50">
-                    {item.startedAt
-                      ? `Начато: ${new Date(item.startedAt).toLocaleString("ru-RU")}`
-                      : `Создано: ${new Date(item.createdAt).toLocaleString("ru-RU")}`}
-                    {item.completedAt &&
-                      ` · Завершено: ${new Date(item.completedAt).toLocaleString("ru-RU")}`}
-                  </p>
+                {/* Action buttons for articles with pending items */}
+                {hasPending && (
+                  <div className="flex flex-wrap gap-1 mt-2 ml-6">
+                    {group.items
+                      .filter((i) => i.status === "pending")
+                      .map((item) => {
+                        const typeInfo = typeLabels[item.type];
+                        if (!typeInfo) return null;
+                        const TypeIcon = typeInfo.icon;
+                        const aiType = aiTypes.find(
+                          (t) =>
+                            (item.type === "ai_metadata" && t.type === "metadata") ||
+                            (item.type === "glossary_extract" && t.type === "glossary") ||
+                            (item.type === "graph_build" && t.type === "graph")
+                        );
 
-                  {/* Action buttons for pending items */}
-                  {item.status === "pending" && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {aiTypes.map(({ type, label, icon: TypeIcon, color }) => (
-                        <Button
-                          key={type}
-                          size="sm"
-                          onClick={() => handleStartProcessing(item.articleId, type)}
-                          disabled={!!processing}
-                          className={cn(
-                            "h-6 px-2 text-[10px] gap-1",
-                            "bg-white/5 border border-white/10 hover:bg-white/10",
-                            color
-                          )}
-                          variant="outline"
-                        >
-                          <TypeIcon className="h-2.5 w-2.5" />
-                          {label}
-                        </Button>
-                      ))}
-                      <Button
-                        size="sm"
-                        onClick={() => handleStartAll(item.articleId)}
-                        disabled={!!processing}
-                        className="h-6 px-2 text-[10px] gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-                      >
-                        <Zap className="h-2.5 w-2.5" />
-                        Все
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleCancel(item.id)}
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-red-400"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                        return (
+                          <Button
+                            key={item.id}
+                            size="sm"
+                            onClick={() =>
+                              handleStartProcessing(group.articleId, aiType?.type || "metadata")
+                            }
+                            disabled={!!processing || processingAll}
+                            className={cn(
+                              "h-6 px-2 text-[10px] gap-1",
+                              "bg-white/5 border border-white/10 hover:bg-white/10",
+                              typeInfo.color
+                            )}
+                            variant="outline"
+                          >
+                            <TypeIcon className="h-2.5 w-2.5" />
+                            {typeInfo.label}
+                          </Button>
+                        );
+                      })}
+                    <Button
+                      size="sm"
+                      onClick={() => handleStartAllForArticle(group.articleId)}
+                      disabled={!!processing || processingAll}
+                      className="h-6 px-2 text-[10px] gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                    >
+                      <Zap className="h-2.5 w-2.5" />
+                      Все
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Guidance for pending items */}
+      {pendingGroupCount > 0 && !processingAll && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/10 text-xs text-muted-foreground">
+          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+          <span>
+            Нажмите <strong className="text-emerald-400">Обработать всё</strong> чтобы AI обработал все статьи, или запускайте обработку по отдельности
+          </span>
         </div>
       )}
 
