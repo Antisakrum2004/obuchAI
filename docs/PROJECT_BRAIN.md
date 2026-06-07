@@ -1,10 +1,15 @@
 # PROJECT_BRAIN
 
+> Срез проекта на 2026-06-07. Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+
+---
+
 ## 1. Project Overview
 
-- **Что это**: AI Тренажёр для разработчиков — Duolingo-style геймифицированная платформа обучения навыкам работы с ИИ
+- **Что это**: AI Тренажёр для 1C-разработчиков — Duolingo-style геймифицированная платформа обучения навыкам работы с ИИ
 - **Задача**: Научить 1C-разработчиков промпт-инжинирингу, работе с AI-агентами, дебаггингу через решение задач
 - **Домен**: obuch-ai.vercel.app
+- **Репозиторий**: github.com/Antisakrum2004/obuch-project (публичный, но отстаёт от реального деплоя)
 - **Стек**:
   - Frontend: Next.js 16 (App Router) + React 19 + Tailwind CSS 4 + shadcn/ui
   - Backend: Next.js API Routes (serverless)
@@ -14,6 +19,32 @@
   - Анимации: Framer Motion 12 + canvas-confetti
   - Деплой: Vercel (standalone output)
 
+### Версии окружений
+
+| Окружение | URL | Статус | Что запущено |
+|---|---|---|---|
+| **obuch-ai** (production) | obuch-ai.vercel.app | READY | Полный проект из workspace (без привязки к GitHub) |
+| **obuch-project-rggt** | obuch-project-rggt.vercel.app | READY | Реструктурированная версия из GitHub repo |
+| **GitHub repo** | Antisakrum2004/obuch-project | main | Упрощённая версия (journeys/tasks вместо challenges) |
+| **Старый repo** | Antisakrum2004/obuchAI | main | Неактивен с 2026-05-14 |
+
+> ⚠️ **Важно**: obuch-ai.vercel.app и GitHub repo — **два разных кодовых баз**. Рабочий проект (20,422 строк кода) живёт в workspace и деплоится напрямую. GitHub repo содержит реструктурированную, но незавершённую версию.
+
+### Env vars на Vercel (obuch-ai)
+
+| Переменная | Назначение |
+|---|---|
+| `DATABASE_URL` | Neon PostgreSQL pooled connection |
+| `DATABASE_URL_UNPOOLED` | Прямое подключение (для миграций) |
+| `POSTGRES_*` | Набор переменных Neon (host, user, password, database) |
+| `NEON_PROJECT_ID` | ID проекта Neon |
+| `NEXTAUTH_URL` | URL для NextAuth callbacks |
+| `NEXTAUTH_SECRET` | Секрет для подписи JWT |
+| `GOOGLE_CLIENT_ID` | Google OAuth client |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth secret |
+| `VERCEL_TOOLBAR_DISABLED` | Отключение Vercel Toolbar |
+| `NEXT_PUBLIC_VERCEL_*` | Клиентские флаги для тулбара |
+
 ---
 
 ## 2. Architecture
@@ -21,169 +52,296 @@
 ### Общая схема
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Vercel Edge / Serverless                       │
-│  ┌───────────┐  ┌──────────────┐  ┌──────────┐ │
-│  │ Next.js   │  │ API Routes   │  │ Auth     │ │
-│  │ Pages     │──│ /api/*       │──│ NextAuth │ │
-│  │ (SSR/SSG) │  │              │  │ JWT v4   │ │
-│  └───────────┘  └──────┬───────┘  └──────────┘ │
-│                        │                         │
-│          ┌─────────────┼──────────────┐          │
-│          │  Raw SQL    │  Prisma ORM  │          │
-│          │  (pool.query)│ (db.*.create)│          │
-│          └─────────────┼──────────────┘          │
-│                        │                         │
-│              ┌─────────▼─────────┐               │
-│              │ Neon PostgreSQL   │               │
-│              │ (Serverless Pool) │               │
-│              └───────────────────┘               │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  Vercel Serverless Functions                        │
+│                                                     │
+│  ┌───────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ Next.js   │  │ API Routes   │  │ Auth         │ │
+│  │ Pages     │──│ /api/*       │──│ NextAuth v4  │ │
+│  │ (SSR/CSR) │  │ (26 routes)  │  │ JWT + OAuth  │ │
+│  └───────────┘  └──────┬───────┘  └──────────────┘ │
+│                        │                             │
+│          ┌─────────────┼───────────────┐             │
+│          │  Raw SQL    │  Prisma ORM   │             │
+│          │  (85% reqs) │  (15% reqs)   │             │
+│          │  pool.query │  db.*.create  │             │
+│          └─────────────┼───────────────┘             │
+│                        │                             │
+│              ┌─────────▼─────────┐                   │
+│              │ Neon PostgreSQL   │                   │
+│              │ (Serverless Pool) │                   │
+│              └───────────────────┘                   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Структура файлов (workspace)
+
+```
+src/
+├── app/                          # Next.js App Router
+│   ├── page.tsx                  # Landing page
+│   ├── layout.tsx                # Root layout (ThemeProvider, Particles, Toaster)
+│   ├── globals.css               # CSS variables, glass, dark/light themes
+│   ├── login/page.tsx            # Страница входа
+│   ├── dashboard/page.tsx        # Дашборд пользователя
+│   ├── challenges/               # Задачи (список + [id])
+│   ├── marathon/page.tsx         # Марафон (15 задач подряд)
+│   ├── achievements/page.tsx     # Страница ачивок
+│   ├── skills/page.tsx           # Дерево навыков
+│   ├── leaderboard/page.tsx      # Таблица лидеров
+│   ├── profile/[id]/page.tsx     # Публичный профиль
+│   ├── about/page.tsx            # О проекте
+│   ├── playground/page.tsx       # AI Playground (заглушка)
+│   ├── admin/                    # Админ-панель
+│   │   ├── page.tsx              # Dashboard админа
+│   │   └── login/page.tsx        # Логин для админа
+│   └── api/                      # 26 API маршрутов
+│       ├── auth/[...nextauth]/   # NextAuth endpoints
+│       ├── challenges/           # GET list, GET [id], POST submit
+│       ├── marathon/             # GET start, POST complete
+│       ├── achievements/         # GET achievements + user progress
+│       ├── skills/               # GET skill tree
+│       ├── daily/                # GET daily challenge
+│       ├── leaderboard/          # GET rankings
+│       ├── referral/             # GET/POST referral codes
+│       ├── settings/             # GET public feature flags
+│       ├── user/                 # GET stats, activity, profile
+│       ├── dashboard/            # GET dashboard data
+│       └── admin/                # CRUD challenges, skills, achievements, users, seed, settings, migrate
+├── components/                   # 84 компонента
+│   ├── challenges/               # Challenge card, result, multiple-choice, ordering
+│   ├── dashboard/                # Stats grid, weekly chart, daily widget, mini leaderboard
+│   ├── gamification/             # XP bar, streak, hearts, achievements, avatar frame, level badge
+│   ├── layout/                   # AppLayout, sidebar, header, mobile tab bar
+│   ├── effects/                  # Particles background
+│   ├── profile/                  # Share card, referral card
+│   ├── skills/                   # Skill tree
+│   ├── theme-provider.tsx        # next-themes wrapper
+│   ├── theme-toggle.tsx          # Dark/light switch
+│   ├── vercel-toolbar-hider.tsx  # Хак для скрытия Vercel Toolbar
+│   └── ui/                       # 44 shadcn/ui компонента
+├── hooks/                        # 5 хуков
+│   ├── use-app-settings.tsx      # Feature flags context (from /api/settings)
+│   ├── use-daily-challenge.ts    # Daily challenge logic
+│   ├── use-mobile.ts             # Mobile detection
+│   ├── use-user-stats.ts         # User stats fetching
+│   └── use-toast.ts              # Toast notifications
+├── lib/                          # 5 модулей
+│   ├── auth.ts                   # NextAuth config (Google + demo + admin)
+│   ├── db.ts                     # Dual DB access: pool (raw SQL) + db (Prisma)
+│   ├── gamification.ts           # XP/level math, multipliers, labels
+│   ├── challenge-cache.ts        # Client-side challenge caching
+│   └── utils.ts                  # cn() helper
+├── store/
+│   └── user-store.ts             # Zustand store (id, name, xp, level, streak, rank, completedChallenges)
+└── middleware.ts                  # Auth guard for /admin, Vercel Toolbar cookie
 ```
 
 ### Ключевые зависимости
 
 | Зависимость | Версия | Роль |
 |---|---|---|
-| next | ^16.1.1 | Фреймворк |
-| react | ^19.0.0 | UI |
-| next-auth | ^4.24.11 | Аутентификация |
-| @prisma/client | ^7.8.0 | ORM (частично) |
-| @neondatabase/serverless | ^1.1.0 | Драйвер БД |
+| next | ^16.1.1 | Фреймворк (App Router) |
+| react | ^19.0.0 | UI библиотека |
+| next-auth | ^4.24.11 | Аутентификация (JWT strategy) |
+| @prisma/client | ^7.8.0 | ORM (частичное использование) |
+| @prisma/adapter-neon | ^7.8.0 | Prisma adapter для Neon |
+| @neondatabase/serverless | ^1.1.0 | Драйвер БД (WebSocket + HTTP) |
 | zustand | ^5.0.6 | Клиентский стейт |
-| framer-motion | ^12.23.2 | Анимации |
-| recharts | ^2.15.4 | Графики |
-| @dnd-kit/core | ^6.3.1 | Drag-and-drop |
-| canvas-confetti | ^1.9.4 | Конфетти |
-| html-to-image | ^1.11.13 | Генерация share-карточки |
-| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (playground) |
+| framer-motion | ^12.23.2 | Анимации (page transitions, modals) |
+| recharts | ^2.15.4 | Графики (weekly XP chart, leaderboard) |
+| @dnd-kit/core | ^6.3.1 | Drag-and-drop (ordering challenges) |
+| canvas-confetti | ^1.9.4 | Конфетти при правильном ответе |
+| html-to-image | ^1.11.13 | Генерация share-карточки (PNG) |
+| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (не интегрирован, для playground) |
+| next-themes | ^0.4.6 | Dark/light переключатель |
+| sonner | ^2.0.6 | Toast уведомления |
+| ws | ^8.20.1 | WebSocket (для Neon pool в dev) |
+| date-fns | ^4.1.0 | Работа с датами (streak, daily) |
+| react-markdown | ^10.1.0 | Рендеринг Markdown в задачах |
+| react-syntax-highlighter | ^15.6.1 | Подсветка кода в задачах |
+
+### Мёртвые зависимости (установлены, не используются в src/)
+
+| Зависимость | Вес | Почему |
+|---|---|---|
+| next-intl | ^4.3.4 | Планировалась i18n, не реализована |
+| @mdxeditor/editor | ^3.39.1 | Планировался rich text editor, не нужен |
+| sharp | ^0.34.3 | Обработка изображений, не используется |
+| playwright | ^1.60.0 | E2E тесты, 0 тестовых файлов |
 
 ### Как идут данные
 
-1. Пользователь → страница (SSG/CSR) → Zustand store (профиль, XP, streak)
-2. Действие (ответ на задачу) → POST `/api/challenges/[id]/submit` → валидация → UPDATE БД → XP/streak/achievements → ответ клиенту
-3. Каждый запрос → JWT декодируется → данные юзера обновляются из БД (jwt callback)
-4. Feature flags: `/api/settings` (revalidate 30s) → `useAppSettings` context
+1. **Вход**: Пользователь → `/login` → Google OAuth / Demo / Admin → NextAuth JWT → редирект на `/dashboard`
+2. **Профиль**: Страница загружается → Zustand store (клиент) → `/api/me` или `/api/dashboard` → raw SQL → Neon
+3. **Решение задачи**: POST `/api/challenges/[id]/submit` → валидация ответа → UPDATE users (xp, streak, level) → INSERT challenge_attempt → проверка achievements → ответ клиенту → Zustand update → confetti/animation
+4. **JWT refresh**: Каждый запрос → jwt callback → `SELECT role, xp, level, streak FROM users WHERE id=$1` → JWT обновляется свежими данными
+5. **Feature flags**: `/api/settings` (revalidate 30s) → `useAppSettings` React context → все компоненты читают флаги
+6. **Реферал**: Cookie `ref` → при регистрации → XP бонус обоим → `xp_logs` запись
 
 ---
 
 ## 3. Core Modules
 
-### 3.1 Auth (`src/lib/auth.ts`)
-- **Путь**: `src/lib/auth.ts`
-- **Ответственность**: Google OAuth + demo-вход + admin-вход, JWT сессии, колбеки (signIn, jwt, session, redirect)
-- **Связи**: Все `/api/*` маршруты проверяют `session` через `getServerSession()`
+### 3.1 Auth (`src/lib/auth.ts` — 419 строк)
+- **Провайдеры**: Google OAuth (условный — включается если GOOGLE_CLIENT_ID настроен), Demo login (email), Admin login (username/password)
+- **Стратегия**: JWT, maxAge 30 дней, httpOnly cookies
+- **Колбеки**: `signIn` (find-or-create user + referral processing), `jwt` (refresh from DB on every request), `session` (inject custom fields), `redirect` (prevent loops)
+- **Проблема**: Admin credentials захардкожены (`admin/admin123`), 8 `as unknown as Record` кастов
 
-### 3.2 Database (`src/lib/db.ts`)
-- **Путь**: `src/lib/db.ts`
-- **Ответственность**: Dual-access — `pool` (raw SQL, 85% запросов) + `db` (PrismaClient, admin routes)
-- **Связи**: Все API routes импортируют `pool` или `db`
+### 3.2 Database (`src/lib/db.ts` — 69 строк)
+- **Dual access**: `pool` (raw SQL через `@neondatabase/serverless`, 85% запросов) + `db` (PrismaClient через `PrismaNeon` adapter, admin/auth routes)
+- **Hot-reload protection**: Глобальные синглтоны через `globalThis` (не пересоздаётся при HMR)
+- **WebSocket fallback**: `ws` пакет для локальной разработки (Neon требует WebSocket в Node.js)
+- **Проблема**: Pool/PrismaNeon type incompatibility — `as unknown as PoolConfig` каст
 
-### 3.3 Gamification (`src/lib/gamification.ts`)
-- **Путь**: `src/lib/gamification.ts`
-- **Ответственность**: XP/level математика, множители времени/сердец, streak-бонусы, лейблы сложности
-- **Связи**: `/api/challenges/[id]/submit`, `/api/marathon/complete`, `xp-bar.tsx`
+### 3.3 Gamification (`src/lib/gamification.ts` — 147 строк)
+- **XP формулы**: `xpForLevel(n) = 100 * n^1.5` (экспоненциальный рост)
+- **Множители**: Time-based (100% → 10% за 30с блоки), No-hearts penalty (50% XP)
+- **Streak бонусы**: 7 дней → +200 XP, 30 дней → +1000 XP
+- **48h правило**: Streak ломается если нет активности >48 часов
+- **Категории**: prompting, agents, tools, automation, 1c, debugging, workflow, review
+- **Сложности**: easy (25 XP), medium (50 XP), hard (100 XP)
 
-### 3.4 User Store (`src/store/user-store.ts`)
-- **Путь**: `src/store/user-store.ts`
-- **Ответственность**: Zustand-стор: id, name, xp, level, streak, rank, completedChallenges
-- **Связи**: Dashboard, header, profile, все компоненты с данными юзера
+### 3.4 User Store (`src/store/user-store.ts` — 50 строк)
+- **Zustand 5**: id, name, email, image, role, xp, level, streak, maxStreak, completedChallenges, rank, isLoading
+- **Методы**: setUser, addXp, setLevel, setStreak, setLoading, reset
+- **Связи**: Dashboard, header (XP bar), profile, challenge result — все читают из стора
 
 ### 3.5 Challenge System
-- **Путь**: `src/app/challenges/`, `src/app/api/challenges/`
-- **Ответственность**: Список задач, фильтрация, решение, валидация, cooldown
-- **Связи**: Gamification, streak, hearts, achievements
+- **Страницы**: `/challenges` (список с фильтрацией), `/challenges/[id]` (решение)
+- **API**: GET список, GET по ID, POST submit
+- **Типы задач**: multiple_choice, ordering, workflow_build
+- **Валидация**: Статическая (сравнение с correctAnswer), нет AI-оценки свободных ответов
+- **Cooldown**: Задержка повторного решения одной задачи
+- **Контент**: 100 задач в 7 категориях, описание + опции + объяснение + подсказки (JSON)
 
-### 3.6 Marathon Mode
-- **Путь**: `src/app/mathon/`, `src/app/api/marathon/`
-- **Ответственность**: 15 последовательных задач, локальная валидация, множитель streak
-- **Связи**: Challenge system, gamification
+### 3.6 Marathon Mode (`src/app/marathon/`, `src/app/api/marathon/`)
+- **Механика**: 15 последовательных задач без перерыва, streak множитель
+- **Валидация**: На клиенте (correctAnswer приходит в response) — работает, но уязвимо к читерству
+- **Завершение**: POST `/api/marathon/complete` → итоговый XP расчёт
 
-### 3.7 Admin Panel
-- **Путь**: `src/app/admin/`, `src/app/api/admin/`
-- **Ответственность**: CRUD задач/навыков/ачивок, управление юзерами (role/ban/XP/hearts/streak), сидирование, фича-флаги
-- **Связи**: Все API admin routes, middleware guard
+### 3.7 Admin Panel (`src/app/admin/`, `src/app/api/admin/`)
+- **Защита**: Middleware проверяет JWT role="admin" для всех `/admin/*` кроме `/admin/login`
+- **CRUD**: Challenges (создание/редактирование/удаление), Skills, Achievements, Users
+- **Управление юзерами**: Изменение role, XP, hearts, streak; бан/разбан
+- **Сидирование**: `/api/admin/seed` — загрузка 100 задач + 7 навыков + 16+ ачивок
+- **Фича-флаги**: `/api/admin/settings` — вкл/выкл particles, confetti, effects
+- **Миграции**: `/api/admin/migrate` — runtime ALTER TABLE через ensureColumns()
+- **Проблема**: Нет Zod-валидации на входных данных, SQL injection в challenges PUT
 
-### 3.8 Achievement System
-- **Путь**: `src/components/gamification/achievement-*.tsx`, `src/app/achievements/`
-- **Ответственность**: 20 SVG-иконок, 16+ ачивок, автопроверка при правильном ответе, модал разблокировки
-- **Связи**: Challenge submit, dashboard, profile
+### 3.8 Achievement System (`src/components/gamification/achievement-*.tsx`, `src/app/achievements/`)
+- **20 SVG-иконок**: Кастомные silhouette-иконки (не эмоджи)
+- **16+ ачивок**: Категории — streak, challenges, skills, special
+- **Rarity tiers**: Common, Uncommon, Rare, Epic, Legendary
+- **Автопроверка**: При правильном ответе → проверка всех условий → модал разблокировки
+- **Avatar frames**: CSS box-shadow glow по tier, dragon frame для admin
 
-### 3.9 Layout & Navigation
-- **Путь**: `src/components/layout/`
-- **Ответственность**: Sidebar (desktop), header (XP/streak/avatar), mobile tab bar, AppLayout wrapper
-- **Связи**: Все страницы оборачиваются в `<AppLayout>`
+### 3.9 Layout & Navigation (`src/components/layout/`)
+- **AppLayout**: Обёртка для всех страниц (sidebar + header + content)
+- **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, skills, achievements, leaderboard, admin)
+- **Header**: XP bar, streak counter, hearts display, avatar с frame, theme toggle
+- **Mobile tab bar**: Нижняя навигация на мобильных
+- **ParticlesBackground**: Фоновый эффект (6 частиц на мобильных, 18 на десктопе)
 
 ### 3.10 Effects & Themes
-- **Путь**: `src/components/effects/`, `src/hooks/use-app-settings.tsx`, `src/app/globals.css`
-- **Ответственность**: Particles background, confetti, тёмная/светлая тема, фича-флаги эффектов
-- **Связи**: `useAppSettings` context, `/api/admin/settings`
+- **ThemeProvider**: next-themes, dark-first дизайн
+- **Particles**: Canvas-based, адаптивные (6 мобильных / 18 десктоп)
+- **Confetti**: canvas-confetti при правильном ответе, ленивый импорт
+- **Feature flags**: particles, confetti, effects — управляются из admin → `/api/settings`
 
-### 3.11 Profile & Social
-- **Путь**: `src/app/profile/[id]/`, `src/components/profile/`
-- **Ответственность**: Публичный профиль, share-карточка, реферальная система
-- **Связи**: User store, achievements, skills
+### 3.11 Profile & Social (`src/app/profile/[id]/`, `src/components/profile/`)
+- **Публичный профиль**: Данные юзера + achievements + skills + stats
+- **Share-карточка**: html-to-image → PNG, скачивание/поделиться
+- **Реферальная система**: Уникальный код → XP бонус +50 обоим (демо/Google)
+- **Реферальная логика**: Дублируется 3 раза (demo auth, Google auth, referral API)
+
+### 3.12 Middleware (`src/middleware.ts`)
+- **Admin guard**: Проверка `token.role === "admin"` для `/admin/*`
+- **Vercel Toolbar killer**: Cookie `vercel-toolbar=0` + `vercel-toolbar-hide=1` на все маршруты
+- **Matcher**: admin routes + все страницы (кроме API/static)
 
 ---
 
 ## 4. Current State
 
+### Метрики проекта
+- **Строк кода**: 20,422 (src/ только .ts/.tsx)
+- **Страниц**: 14
+- **API маршрутов**: 26
+- **Компонентов**: 84
+- **Хуков**: 5
+- **Моделей Prisma**: 11 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement)
+- **Размер GitHub repo**: 6,752 KB
+
 ### Реализовано и работает стабильно
-- Аутентификация (Google OAuth + demo + admin)
-- 100 задач в 7 категориях (промптинг, агенты, дебаг, workflow, 1С, ревью, tools)
+- Аутентификация (Google OAuth + demo вход + admin вход)
+- 100 задач в 7 категориях (prompting, agents, debugging, workflow, 1c, review, tools)
 - 3 типа задач: multiple_choice, ordering, workflow_build
-- Геймификация: XP, уровни (1-∞), streak, hearts, cooldown
-- Marathon mode (15 задач, множитель streak)
-- Achievement system (16+ ачивок, SVG иконки, rarity tiers)
-- Skill tree (7 категорий, иерархия)
-- Leaderboard (alltime/weekly/monthly)
-- Daily challenge
-- Admin panel (CRUD, пользователи, сидирование, эффекты)
-- Реферальная система
-- Адаптивный дизайн (mobile + desktop)
+- Геймификация: XP (экспоненциальная формула), уровни (1-бесконечность), streak (48h правило), hearts, cooldown
+- Marathon mode (15 задач подряд, множитель streak)
+- Achievement system (16+ ачивок, 20 SVG иконок, rarity tiers, unlock modal)
+- Skill tree (7 категорий, иерархия навыков)
+- Leaderboard (alltime / weekly / monthly)
+- Daily challenge (ежедневная задача)
+- Admin panel (CRUD задач/навыков/ачивок, управление юзерами, сидирование, фича-флаги)
+- Реферальная система (коды + XP бонусы)
+- Адаптивный дизайн (mobile sidebar/tab bar + desktop)
 - Avatar frames (CSS glow по tier, dragon frame для admin)
-- Тёмная/светлая тема
-- Particle effects + confetti (отключаемые через фича-флаги)
-- Profile page с share-карточкой
+- Тёмная/светлая тема (dark-first)
+- Particle effects + confetti (отключаемые через feature flags)
+- Profile page с share-карточкой (PNG генерация)
+- Vercel деплой — READY, работает на production
 
 ### Работает частично
-- Activity chart: верхняя граница может перекрывать числа при высоких значениях
-- Адаптивная сложность: механизм есть, но нет UI-индикации для юзера
-- Marathon: валидация на клиенте (correctAnswer отправляется в response) — работает, но нечестно
+- **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
+- **Адаптивная сложность**: Механизм есть, но нет UI-индикации для юзера
+- **Marathon**: Валидация на клиенте (correctAnswer в response) — работает, но нечестно
+- **Google OAuth**: Условно включён — если env vars не настроены, провайдер не добавляется
 
 ### Не реализовано
-- Интеграция с z-ai-web-dev-sdk (playground страница есть, но без функционала)
-- Уведомления (push/email)
-- Глобальный поиск
-- Мультиязычность (только русский)
-- Тесты (0 тестовых файлов)
+- **Playground** (`/playground`): Страница есть, но z-ai-web-dev-sdk не интегрирован
+- **Уведомления** (push/email)
+- **Глобальный поиск**
+- **Мультиязычность** (только русский, next-intl установлен но не используется)
+- **Тесты** (0 тестовых файлов, playwright установлен)
+- **Error boundaries** (любой рантайм краш = белый экран)
+- **Rate limiting** (API без защиты от спама)
+
+### Рассинхронизация кодовых баз
+- **Workspace → Vercel (obuch-ai)**: Деплоится напрямую, содержит весь функционал
+- **GitHub repo (obuch-project)**: Реструктурированная версия (journeys/tasks, rbac, events, journey-engine), создана 2026-06-07, не завершена
+- **Старый repo (obuchAI)**: Неактивен с 2026-05-14
+- **Проблема**: Код в workspace не синхронизирован с GitHub; push в GitHub = потеря существующего функционала
 
 ---
 
 ## 5. Known Issues & Problems
 
-### Критические
+### Критические (P0)
 1. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
 2. **SQL injection** — admin challenges PUT использует `Object.entries(body)` для формирования SQL-колонок без whitelist
 3. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
-4. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma
+4. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
 
-### Значимые
+### Значимые (P1)
 5. **Schema drift** — Prisma schema не содержит 9+ колонок и 1 таблицу (`app_settings`), добавленных через `ALTER TABLE` в runtime
 6. **Runtime ALTER TABLE** — `ensureColumns()` в `admin/users/[id]/route.ts` выполняет ALTER TABLE при каждом запросе
-7. **Дублирование данных сидирования** — 100 задач определены и в `prisma/seed.ts`, и в `admin/seed/route.ts` — нужно синхронизировать вручную
-8. **Дублирование genId()** — функция копируется в 5+ файлов
-9. **Дублирование реферальной логики** — генерация кода + XP начисление повторяются 3 раза
+7. **Дублирование данных сидирования** — 100 задач определены и в `prisma/seed.ts`, и в `admin/seed/route.ts` — синхронизация вручную
+8. **Дублирование genId()** — Функция копируется в 5+ файлов вместо shared модуля
+9. **Дублирование реферальной логики** — Генерация кода + XP начисление повторяются 3 раза
 10. **Неправильное имя таблицы** — `DELETE FROM attempts` вместо `challenge_attempts` в `admin/challenges/[id]/route.ts:75`
 11. **Type-unsafe касты** — 44+ инстансов `as Record<string, unknown>` вместо расширения NextAuth типов
 12. **`ignoreBuildErrors: true`** в next.config.ts — TypeScript ошибки не ломают билд
-13. **`reactStrictMode: false`** — отключён строгий режим React
+13. **`reactStrictMode: false`** — Отключён строгий режим React
+14. **GitHub не синхронизирован** — Рабочий код в workspace, GitHub содержит другую структуру
 
-### Минорные
-14. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.4.0`
-15. **Stale .env.example** — содержит GITHUB_ID/EMAIL_SERVER, которые не используются
-16. **Мёртвые зависимости** — next-intl, @mdxeditor/editor, sharp, playwright не используются в src/
-17. **Vercel Toolbar hack** — скрипт+куки для убийства тулбара вместо нормального отключения
+### Минорные (P2)
+15. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.4.0`
+16. **Stale .env.example** — Содержит GITHUB_ID/EMAIL_SERVER, которые не используются
+17. **Мёртвые зависимости** — next-intl, @mdxeditor/editor, sharp, playwright не используются в src/
+18. **Vercel Toolbar hack** — Скрипт+куки для убийства тулбара вместо нормального отключения
+19. **Мёртвый компонент** — `src/components/ui/achievement-card.tsx` (старая версия)
 
 ---
 
@@ -220,6 +378,16 @@
 - **Что сработало**: `ALTER TABLE IF NOT EXISTS` в runtime через API endpoint
 - **Почему**: Neon serverless + Prisma adapter имеет ограничения; runtime DDL — временный костыль, ставший постоянным
 
+### GitHub реструктуризация
+- **Проблема**: Попытка переписать архитектуру (journeys/tasks/rbac/events)
+- **Что случилось**: Новый repo создан 2026-06-07, но не завершён — упрощённая версия без большей части функционала
+- **Результат**: Две расходящиеся кодовые базы; рабочий код в workspace, незавершённый в GitHub
+
+### TypeScript ошибки
+- **Проблема**: 31 ошибка в src/, билд падал
+- **Что делали**: Исправили UserState (добавили completedChallenges, rank), streak-calendar typing, Framer Motion easing cast, auth.ts unsafe casts, db.ts Pool/PoolConfig
+- **Результат**: 0 ошибок в src/, 4 некритичных в prisma/seed (не влияют на runtime)
+
 ---
 
 ## 7. Decisions & Reasoning
@@ -230,23 +398,28 @@
 
 ### JWT вместо DB-сессий
 - **Причина**: Serverless-окружение Vercel — нет постоянных соединений
-- **Компромисс**: JWT обновляется из БД на каждый запрос (дополнительный SELECT)
+- **Компромисс**: JWT обновляется из БД на каждый запрос (дополнительный SELECT при каждом запросе)
 
 ### Feature flags в БД
 - **Причина**: Включать/выключать эффекты без редеплоя
-- **Реализация**: `app_settings` таблица, `/api/settings` с revalidation 30s, `useAppSettings` context
+- **Реализация**: `app_settings` таблица, `/api/settings` с revalidation 30s, `useAppSettings` React context
 
 ### Standalone output
 - **Причина**: Оптимизация размера bundle для Vercel serverless
 - **Компромисс**: Некоторые middleware-паттерны не работают
 
 ### NextAuth v4 вместо v5
-- **Причина**: v5 нестабилен на момент старта; v4 документирован
-- **Компромисс**: Устаревший API, нет Auth.js 5 фич
+- **Причина**: v5 нестабилен на момент старта; v4 документирован и стабилен
+- **Компромисс**: Устаревший API, нет Auth.js 5 фич, 44+ type-unsafe кастов
 
 ### Русский язык UI
 - **Причина**: Целевая аудитория — 1C-разработчики в РФ
-- **Компромисс**: Нет i18n, хардкод строк
+- **Компромисс**: Нет i18n, хардкод строк на русском
+
+### Vercel Toolbar hack
+- **Причина**: Vercel Toolbar появлялся на production и ломал UI
+- **Реализация**: Script в layout.tsx + cookies в middleware + CSS rules в globals.css
+- **Компромисс**: Три слоя хаков вместо одной настройки проекта
 
 ---
 
@@ -254,25 +427,28 @@
 
 ### Костыли
 1. **Runtime ALTER TABLE** — `ensureColumns()` выполняется при каждом admin-запросе к юзерам
-2. **Vercel Toolbar killer** — скрипт в layout.tsx + cookie в middleware вместо настройки проекта
+2. **Vercel Toolbar killer** — Скрипт в layout.tsx + cookie в middleware + CSS вместо настройки проекта
 3. **Hardcoded admin credentials** — `admin/admin123` в исходном коде
 4. **Marathon читерство** — correctAnswer на клиенте
 5. **`ignoreBuildErrors: true`** — TypeScript ошибки не блокируют деплой
+6. **GitHub не синхронизирован** — Рабочий код деплоится не из GitHub
 
 ### Ограничения архитектуры
 1. **Нет миграций** — Prisma schema не синхронизирована с реальной БД
 2. **Нет валидации входных данных** — admin routes без Zod-схем
 3. **Нет тестов** — 0 тестовых файлов
-4. **Нет error boundaries** — любой рантайм краш рендерит белый экран
-5. **Мёртвый код** — `src/components/ui/achievement-card.tsx` (старый), неиспользуемые зависимости
+4. **Нет error boundaries** — Любой рантайм краш рендерит белый экран
+5. **Мёртвый код** — Старый achievement-card.tsx, неиспользуемые зависимости
 6. **Нет rate limiting** — API endpoints без защиты от спама
-7. **Нет CSRF защиты** — кроме NextAuth built-in
+7. **Нет CSRF защиты** — Кроме NextAuth built-in
+8. **Нет логирования** — console.log/warn/error без structured logging
 
 ### Временные решения
 1. Feature flags через БД вместо env vars
-2. Demo-вход без пароля (создаёт демо-юзера)
+2. Demo-вход без пароля (создаёт демо-юзера автоматически)
 3. `noImplicitAny: false` в tsconfig
-4. Дублирование сид-данных в двух файлах
+4. Дублирование сид-данных в двух файлах (prisma/seed.ts и admin/seed/route.ts)
+5. genId() вместо UUID — копируется в каждый файл
 
 ---
 
@@ -284,21 +460,27 @@
 - [ ] Whitelist SQL-колонок в challenges PUT
 - [ ] Серверная валидация marathon (не отправлять correctAnswer)
 
+### Синхронизация (P0)
+- [ ] Решить: синхронизировать GitHub repo с workspace или наоборот
+- [ ] Если GitHub = source of truth → пушнуть текущий workspace код
+- [ ] Если workspace = source of truth → обновить GitHub repo
+
 ### Архитектура (P1)
 - [ ] Синхронизировать Prisma schema с реальной БД
 - [ ] Создать нормальные миграции (заменить runtime ALTER TABLE)
 - [ ] Расширить NextAuth типы (убрать `as Record<string, unknown>`)
 - [ ] Вынести genId() и реферальную логику в shared модули
 - [ ] Исправить `DELETE FROM attempts` → `challenge_attempts`
-- [ ] Консолидировать сид-данные (один источник)
+- [ ] Консолидировать сид-данные (один источник правды)
 
 ### Качество (P2)
 - [ ] Убрать `ignoreBuildErrors: true`
 - [ ] Добавить React error boundaries
 - [ ] Удалить мёртвые зависимости (next-intl, @mdxeditor/editor, sharp)
 - [ ] Синхронизировать версию (0.3.0 → актуальная)
-- [ ] Обновить .env.example
+- [ ] Обновить .env.example (убрать GITHUB_ID, EMAIL_SERVER; добавить GOOGLE_*, NEON_*)
 - [ ] Добавить хотя бы smoke-тесты
+- [ ] Включить `reactStrictMode`
 
 ### Фичи (P3)
 - [ ] Activity chart: исправить верхнюю границу
@@ -306,6 +488,8 @@
 - [ ] Интеграция z-ai-web-dev-sdk в playground
 - [ ] Уведомления о новом daily challenge
 - [ ] Больше задач (200+)
+- [ ] Rate limiting на API
+- [ ] Error boundaries на всех страницах
 
 ---
 
@@ -318,7 +502,7 @@
 3. **UI-компоненты**: shadcn/ui из `src/components/ui/` — не писать свои кнопки/инпуты
 4. **API**: Next.js App Router API routes в `src/app/api/`
 5. **БД**: Raw SQL через `pool.query()` из `src/lib/db.ts` для новых запросов; Prisma `db.*` только для простых CRUD
-6. **ID**: `genId()` → `cuid()` — НЕ использовать UUID, всегда cuid
+6. **ID**: `genId()` → `cuid()` — НЕ использовать UUID, всегда cuid-подобный ID
 7. **Стейт**: Zustand (`useUserStore`) для глобального; `useState` для локального
 8. **Анимации**: Framer Motion для page transitions; CSS animations для микро-анимаций (не Framer!)
 9. **Мобильные**: Использовать `useIsMobile()` из `src/hooks/use-mobile.ts`; ≤6 анимированных элементов на мобильных
@@ -345,3 +529,9 @@
 - НЕ делать серверные компоненты интерактивными (всегда `"use client"` если есть хуки)
 - Новые колонки БД → сначала ALTER TABLE в migrate route, потом обновить Prisma schema
 - Новые API → проверка admin через `getServerSession()`, не через middleware
+
+### Деплой
+- Код из workspace деплоится на Vercel (obuch-ai) напрямую, НЕ через GitHub
+- Для редеплоя: `vercel --prod` или push в GitHub (если настроен auto-deploy)
+- БД: Neon PostgreSQL — соединения pooled (DATABASE_URL) и unpooled (DATABASE_URL_UNPOOLED)
+- После изменений в Prisma schema: `prisma generate` + `prisma db push`
