@@ -104,7 +104,7 @@ export default function MaterialsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("all");
   const [showZipUpload, setShowZipUpload] = useState(false);
-  const [showQueue, setShowQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(true); // Show queue by default for admin
 
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
@@ -204,7 +204,7 @@ export default function MaterialsPage() {
           </div>
         </motion.div>
 
-        {/* Processing Queue */}
+        {/* Processing Queue — always visible for admin when there are pending items */}
         {isAdmin && showQueue && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
