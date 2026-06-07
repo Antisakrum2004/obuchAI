@@ -8,7 +8,43 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
     const categoryId = searchParams.get("categoryId");
+    const recent = searchParams.get("recent");
     const all = searchParams.get("all"); // admin: include unpublished
+
+    // Recent articles across all spaces (for knowledge main page)
+    if (recent) {
+      const limit = parseInt(recent) || 10;
+      const { rows } = await pool.query(
+        `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt",
+                c.name as "categoryName", c."spaceId", ks.name as "spaceName", ks.slug as "spaceSlug", ks.icon as "spaceIcon"
+         FROM articles a
+         JOIN categories c ON a."categoryId" = c.id
+         JOIN knowledge_spaces ks ON c."spaceId" = ks.id
+         ${all !== "true" ? 'WHERE a."isPublished" = true' : ""}
+         ORDER BY a."createdAt" DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      const result = rows.map((article) => ({
+        id: article.id,
+        title: article.title,
+        slug: article.slug,
+        summary: article.summary,
+        tags: article.tags,
+        viewCount: article.viewCount,
+        categoryId: article.categoryId,
+        isPublished: article.isPublished,
+        createdAt: new Date(article.createdAt).toISOString(),
+        categoryName: article.categoryName,
+        spaceId: article.spaceId,
+        spaceName: article.spaceName,
+        spaceSlug: article.spaceSlug,
+        spaceIcon: article.spaceIcon,
+      }));
+
+      return NextResponse.json(result);
+    }
 
     if (!spaceId && !categoryId) {
       return NextResponse.json(

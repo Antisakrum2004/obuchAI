@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, FolderOpen, FileText, ArrowRight } from "lucide-react";
+import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye } from "lucide-react";
 
 interface KnowledgeSpaceData {
   id: string;
@@ -20,17 +20,22 @@ interface KnowledgeSpaceData {
   articleCount: number;
 }
 
-const spaceIcons: Record<string, string> = {
-  prompting: "🤖",
-  agents: "🧠",
-  tools: "🔧",
-  automation: "⚡",
-  "1c": "💼",
-  general: "📚",
-  debugging: "🐛",
-  review: "👀",
-  workflow: "🔄",
-};
+interface RecentArticle {
+  id: string;
+  title: string;
+  slug: string;
+  summary: string | null;
+  tags: string | null;
+  viewCount: number;
+  categoryId: string;
+  isPublished: boolean;
+  createdAt: string;
+  categoryName: string;
+  spaceId: string;
+  spaceName: string;
+  spaceSlug: string;
+  spaceIcon: string | null;
+}
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -47,13 +52,17 @@ const itemVariants = {
 
 export default function KnowledgePage() {
   const [spaces, setSpaces] = useState<KnowledgeSpaceData[]>([]);
+  const [recentArticles, setRecentArticles] = useState<RecentArticle[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/knowledge/spaces")
-      .then((r) => r.json())
-      .then((data) => {
-        setSpaces(data);
+    Promise.all([
+      fetch("/api/knowledge/spaces").then((r) => r.json()),
+      fetch("/api/knowledge/articles?recent=6").then((r) => r.json()),
+    ])
+      .then(([spacesData, articlesData]) => {
+        setSpaces(Array.isArray(spacesData) ? spacesData : []);
+        setRecentArticles(Array.isArray(articlesData) ? articlesData : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -80,6 +89,60 @@ export default function KnowledgePage() {
             </div>
           </div>
         </motion.div>
+
+        {/* Recent Articles */}
+        {!loading && recentArticles.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-emerald-400" />
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Последние статьи
+              </h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {recentArticles.map((article) => (
+                <motion.div key={article.id} variants={itemVariants}>
+                  <Link href={`/knowledge/article/${article.id}`} className="block group">
+                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5 h-full">
+                      <CardContent className="p-4 flex flex-col h-full">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm">{article.spaceIcon || "📚"}</span>
+                          <Badge variant="secondary" className="text-[9px] bg-secondary/50">
+                            {article.categoryName}
+                          </Badge>
+                        </div>
+                        <h3 className="font-medium text-sm text-foreground group-hover:text-emerald-400 transition-colors line-clamp-2 mb-1.5">
+                          {article.title}
+                        </h3>
+                        {article.summary && (
+                          <p className="text-xs text-muted-foreground line-clamp-2 mb-2 flex-1">
+                            {article.summary}
+                          </p>
+                        )}
+                        <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
+                          <span className="text-[10px] text-muted-foreground/60">
+                            {article.spaceName}
+                          </span>
+                          {article.viewCount > 0 && (
+                            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground/60">
+                              <Eye className="h-3 w-3" />
+                              {article.viewCount}
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Spaces Grid */}
         {loading ? (
@@ -115,59 +178,63 @@ export default function KnowledgePage() {
             </p>
           </motion.div>
         ) : (
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="show"
-            className="grid gap-4 sm:grid-cols-2"
-          >
-            {spaces.map((space) => (
-              <motion.div key={space.id} variants={itemVariants}>
-                <Link href={`/knowledge/${space.slug}`} className="block group">
-                  <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
-                    <CardContent className="p-5">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-lg shrink-0 group-hover:bg-emerald-500/20 transition-colors">
-                          {space.icon
-                            ? spaceIcons[space.icon] || space.icon
-                            : "📚"}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-emerald-400" />
+              Разделы
+            </h2>
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+              className="grid gap-4 sm:grid-cols-2"
+            >
+              {spaces.map((space) => (
+                <motion.div key={space.id} variants={itemVariants}>
+                  <Link href={`/knowledge/${space.slug}`} className="block group">
+                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
+                      <CardContent className="p-5">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-lg shrink-0 group-hover:bg-emerald-500/20 transition-colors">
+                            {space.icon || "📚"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-foreground group-hover:text-emerald-400 transition-colors">
+                              {space.name}
+                            </h3>
+                            {space.description && (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                                {space.description}
+                              </p>
+                            )}
+                          </div>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0 mt-1" />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-foreground group-hover:text-emerald-400 transition-colors">
-                            {space.name}
-                          </h3>
-                          {space.description && (
-                            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                              {space.description}
-                            </p>
-                          )}
+                        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] gap-1 bg-secondary/50"
+                          >
+                            <FolderOpen className="h-3 w-3" />
+                            {space.categoryCount}{" "}
+                            {pluralize(space.categoryCount, "категория", "категории", "категорий")}
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] gap-1 bg-secondary/50"
+                          >
+                            <FileText className="h-3 w-3" />
+                            {space.articleCount}{" "}
+                            {pluralize(space.articleCount, "статья", "статьи", "статей")}
+                          </Badge>
                         </div>
-                        <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0 mt-1" />
-                      </div>
-                      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/5">
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] gap-1 bg-secondary/50"
-                        >
-                          <FolderOpen className="h-3 w-3" />
-                          {space.categoryCount}{" "}
-                          {pluralize(space.categoryCount, "категория", "категории", "категорий")}
-                        </Badge>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] gap-1 bg-secondary/50"
-                        >
-                          <FileText className="h-3 w-3" />
-                          {space.articleCount}{" "}
-                          {pluralize(space.articleCount, "статья", "статьи", "статей")}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </motion.div>
-            ))}
-          </motion.div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
         )}
 
         {/* Quick Tip */}
