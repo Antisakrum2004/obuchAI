@@ -13,7 +13,7 @@ import {
   Music2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatFileSize, getFileIcon } from "@/lib/media-service";
+import { formatFileSize, getFileIcon } from "@/lib/media-utils";
 import { cn } from "@/lib/utils";
 
 interface MediaItem {

@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   Loader2,
 } from "lucide-react";
-import { formatFileSize, validateFile } from "@/lib/media-service";
+import { formatFileSize, validateFile } from "@/lib/media-utils";
 
 interface MediaUploadProps {
   /** Тип сущности, к которой крепится файл */
