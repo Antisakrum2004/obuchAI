@@ -527,19 +527,40 @@ src/
 
 ---
 
+
+---
+
 ## 9. Next Steps
 
-### Сводка спринтов
+### Сводка спринтов (актуализировано 2026-06-08)
 
-| Спринт | Название | Статус | Что сделано |
+> **Важно**: Нумерация спринтов обновлена. Ранее Sprint 3 был «AI-анализ» и стоял после Sprint 2,
+> но фактически мы прошли Content Management, UI Polish и UX Fixes раньше.
+> Теперь нумерация отражает реальный порядок выполнения.
+
+| Спринт | Название | Статус | Ключевые результаты |
 |---|---|---|---|
-| **Sprint 1** | Knowledge Hub | ✅ ЗАВЕРШЁН | Модели Prisma, миграции, 9 API маршрутов, UI /knowledge, AI-Глоссарий (⌘K) |
-| **Sprint 2** | Загрузка файлов | ✅ ЗАВЕРШЁН | StorageProvider абстракция, Vercel Blob, MediaUpload/Viewer, drag&drop, типы файлов |
-| **Sprint 3** | AI-анализ материалов | 📋 ОТКРЫТ | Извлечение текста, AI-генерация метаданных, авто-термины, semantic search |
-| **Sprint 4** | Content Management | ✅ ЗАВЕРШЁН | Admin CRUD для знаний, Markdown-редактор, publish/draft, whitelist SQL |
-| **Sprint 5** | UI Polish & Cleanup | ✅ ЗАВЕРШЁН | Редизайн форм задач, фикс "верный ответ неверный", генерация ID, Ctrl+Л |
-| **Sprint 6** | UX Fixes & Auth Stability | ✅ ЗАВЕРШЁН | SessionProvider в корне, текстовые иконки, скрытие Песочницы/Навыков, лайтбокс, видео-модалка |
-| — | Bugfix: Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка "Миграция БД" |
+| **Sprint 1** | Knowledge Hub | ✅ ЗАВЕРШЁН | Модели, миграции, 9+ API, UI /knowledge, AI-Глоссарий (⌘K) |
+| **Sprint 2** | Загрузка файлов | ✅ ЗАВЕРШЁН | StorageProvider, Vercel Blob, MediaUpload/Viewer, drag&drop |
+| **Sprint 3** | Content Management | ✅ ЗАВЕРШЁН | Admin CRUD для знаний, Markdown-редактор, publish/draft, whitelist SQL |
+| **Sprint 4** | UI Polish & Cleanup | ✅ ЗАВЕРШЁН | Редизайн форм задач, Ctrl+Л, inline-поиск, генерация ID |
+| **Sprint 5** | UX Fixes & Auth Stability | ✅ ЗАВЕРШЁН | SessionProvider в корне, лайтбокс, видео-модалка, скрытие Песочницы/Навыков |
+| **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
+| **Sprint 6** | AI-анализ материалов | 📋 СЛЕДУЮЩИЙ | Извлечение текста, AI-генерация метаданных, авто-термины, semantic search |
+| **Sprint 7** | Наполнение контентом | 📋 ПЛАН | Bulk-наполнение 20-30 статей, новые категории, превью перед публикацией |
+| **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
+
+### Проблемы, с которыми столкнулись, и решения (для предотвращения повторов)
+
+| Проблема | Симптом | Решение | Урок |
+|---|---|---|---|
+| SessionProvider в дочернем layout | `Cannot destructure property 'data' of useSession()` — весь сайт крашился | Создан `providers.tsx` (клиентский wrapper), SessionProvider перемещён в корневой layout | **Никогда не прятать SessionProvider в дочерние layout-ы. Всегда defensive destructuring: `r?.data ?? null`** |
+| Текстовые иконки overflow | "Prompting" ломал зелёные квадратики 40×40px | Детект emoji vs текст → аббревиатура в квадратике, полный текст рядом | Не впихивать длинный текст в фиксированный контейнер — переструктурировать layout |
+| Ctrl+K не работает на русской раскладке | Клавиша "K" на русской = "Л", `e.key === "л"` | Добавлен слушатель `e.key === "л"` рядом с `"k"` + inline поиск | Тестировать хоткеи на обеих раскладках (en/ru) |
+| Prisma migrate ломается на Neon | Миграции не применяются на serverless PostgreSQL | Runtime `ALTER TABLE IF NOT EXISTS` через API endpoint | Neon serverless + Prisma adapter имеет ограничения; runtime DDL — временный костыль |
+| Мобильная производительность | 25+ анимаций тормозили на мобильных | Снижение частиц до 6, CSS-only анимации вместо Framer Motion | ≤10 одновременных анимаций на мобильных; CSS дешевле Framer |
+| API 500 на admin routes | Prisma `create()` ломался на серверных API | Конвертация на raw SQL (pool.query) | Raw SQL надёжнее при schema drift, Prisma только для auth |
+| z-ai-web-dev-sdk не используется | Установлен, но нигде не импортирован | Отложено до Sprint 6 (AI-анализ) | Не устанавливать зависимости «на будущее» без интеграции |
 
 ### Sprint 1 — Knowledge Hub (ЗАВЕРШЁН ✅)
 - [x] Prisma модели: KnowledgeSpace, Category, Article, Media, GlossaryTerm
@@ -553,22 +574,21 @@ src/
 - [x] StorageProvider интерфейс (абстракция: upload, delete, getUrl)
 - [x] VercelBlobStorageProvider реализация (@vercel/blob)
 - [x] MediaService (бизнес-логика, не знает про Blob/S3)
-- [x] Upload API: POST /api/knowledge/media/upload (multipart/form-data)
+- [x] Upload API: POST /api/knowledge/media/upload (multipart/form-data, admin only)
 - [x] Delete API: DELETE /api/knowledge/media/[id] (admin only)
 - [x] List API: GET /api/knowledge/media?articleId=xxx
 - [x] Поддержка типов: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
 - [x] UI: MediaUpload — drag&drop + выбор файлов, прогресс загрузки
 - [x] UI: MediaViewer — видеоплеер, документы, изображения в статье
 - [x] Интеграция: MediaUpload + MediaViewer в /knowledge/article/[id]
-- [x] Env vars: BLOB_READ_WRITE_TOKEN, STORAGE_PROVIDER
 - [x] Blob Store подключён и верифицирован (store_5OkTkSLciotjEC41, region iad1)
 - [x] BLOB_READ_WRITE_TOKEN не нужен — Vercel internal auth работает
-- [x] media-utils.ts — клиентские утилиты отделены от серверного media-service.ts (фикс client-side DATABASE_URL error)
+- [x] media-utils.ts — клиентские утилиты отделены от серверного media-service.ts
 - [ ] Привязка файлов к урокам (когда появятся lessons)
 - [ ] Превью: thumbnailUrl для видео (FFmpeg — отложено)
 - [ ] HLS-трансляция для видео 500+ МБ (отложено до VPS/Render Worker)
 
-### Sprint 4 — Content Management (ЗАВЕРШЁН ✅)
+### Sprint 3 — Content Management (ЗАВЕРШЁН ✅)
 - [x] Исправлен SQL баг в articles/[id] (JOIN spaces → knowledge_spaces)
 - [x] Создан POST /api/knowledge/media/upload (multipart/form-data, admin only)
 - [x] POST /api/knowledge/spaces — создание пространств
@@ -584,56 +604,70 @@ src/
 - [x] Вкладка «Знания» в /admin (BookOpen иконка)
 - [x] Whitelist SQL-полей в categories/articles PUT (без Object.entries)
 
-### Sprint 3 — AI-анализ материалов (ОТКРЫТ 📋)
-- [ ] Извлечение текста из PDF/PPTX/DOCX
-- [ ] AI-генерация summary, tags, keyTopics при загрузке
-- [ ] Авто-извлечение глоссарий-терминов из материала
-- [ ] Предложение добавить термины в глоссарий
-- [ ] Semantic search (embeddings)
-
-### Bugfix — Admin API 500 errors (2026-06-08)
-- [x] Конвертация admin/challenges POST с Prisma на raw SQL (db.challenge.create → pool.query INSERT)
-- [x] Конвертация admin/achievements POST с Prisma на raw SQL
-- [x] Конвертация admin/skills POST с Prisma на raw SQL
-- [x] Конвертация admin stats GET с Prisma на raw SQL (с fallback-ами на каждый запрос)
+### Bugfix — Admin API 500 errors (2026-06-08, ЗАВЕРШЁН ✅)
+- [x] Конвертация admin/challenges POST с Prisma на raw SQL
+- [x] Конвертация admin/achievements POST и admin/skills POST на raw SQL
+- [x] Конвертация admin stats GET на raw SQL (с fallback-ами)
 - [x] Исправлен баг DELETE FROM attempts → challenge_attempts
-- [x] Исправлен формат ответа /api/challenges в admin page (поддержка {challenges:[]})
-- [x] Добавлена кнопка «Миграция БД» в admin page (/api/admin/migrate)
+- [x] Исправлен формат ответа /api/challenges в admin page
+- [x] Добавлена кнопка «Миграция БД» в admin page
 - [x] Улучшены сообщения об ошибках (detail в 500 ответах)
 
-### Sprint 5 — UI Polish & Cleanup (2026-06-08, ЗАВЕРШЁН ✅)
-- [x] Исправлен баг `cn is not defined` в admin/page.tsx — добавлен import
-- [x] Редизайн формы создания/редактирования задач (индивидуальные поля опций + radio-кнопки вместо JSON)
+### Sprint 4 — UI Polish & Cleanup (2026-06-08, ЗАВЕРШЁН ✅)
+- [x] Исправлен баг `cn is not defined` в admin/page.tsx
+- [x] Редизайн формы создания/редактирования задач (индивидуальные поля опций + radio-кнопки)
 - [x] Версия обновлена до v2.5.0 в сайдбаре
-- [x] Исправлен баг «верный ответ всегда неверный» — String() конвертация при сравнении
-- [x] Форма редактирования задач загружает полные данные через /api/challenges/[id]
-- [x] Добавлена генерация ID (UUID с префиксами) для knowledge POST routes (spaces, categories, articles, glossary)
+- [x] Исправлен баг «верный ответ всегда неверный» — String() конвертация
+- [x] Форма редактирования задач загружает данные через /api/challenges/[id]
+- [x] Добавлена генерация ID (UUID с префиксами) для knowledge POST routes
 - [x] Select «uncontrolled to controlled» — пустые строки → __none__ placeholder
-- [x] GET endpoints для knowledge стали устойчивы к отсутствию таблиц (возвращают [] вместо 500)
-- [x] Карточки разделов Базы знаний: текстовые иконки не ломают вёрстку — аббревиатуры в квадратиках, полный текст рядом со статистикой
-- [x] Бейджи статистики компактнее: «кат.» / «ст.» вместо полных слов
+- [x] GET endpoints для knowledge устойчивы к отсутствию таблиц ([] вместо 500)
 - [x] **Ctrl+Л** — поиск по глоссарию работает на русской раскладке
-- [x] **Inline поиск по глоссарию** — строка поиска прямо на странице База знаний с выпадающими результатами
-- [x] **Песочница скрыта** — убрана из сайдбара и страницы «О проекте» (страница доступна по прямой ссылке)
-- [x] **Навыки удалены из UI** — убраны: сайдбар, вкладка в админке, виджет на дашборде, секция в профиле, карточка на странице «О проекте»
-- [x] **Лайтбокс для изображений** — клик по картинке (прикреплённой или в Markdown) → полноэкранный просмотр, закрытие Esc/крестик/клик по фону
-- [x] **Видео-модалка** — видео открывается поверх страницы, закрытие Esc/крестик/клик по фону
-- [x] **Resume видео** — позиция запоминается при закрытии, продолжение при повторном открытии (пока страница жива)
-- [x] Исправлено определение прав админа на странице статьи — тройная проверка (Zustand + NextAuth session + API fallback)
-- [x] Создан media-lightbox.tsx — переиспользуемые Lightbox и VideoModal компоненты
+- [x] **Inline поиск по глоссарию** — строка поиска прямо на странице База знаний
 
-### Sprint 6 — UX Fixes & Auth Stability (2026-06-08, ЗАВЕРШЁН ✅)
-- [x] **Критический фикс: SessionProvider в корневом layout** — создан `src/components/providers.tsx` (клиентский wrapper), перемещён из `AppLayout` в корневой `layout.tsx`. Исправляет краш `Cannot destructure property 'data' of useSession() as it is undefined`, ломавший весь сайт
-- [x] **Defensive destructuring** — все 3 вызова `useSession()` теперь безопасны: `const sessionResult = useSession(); const session = sessionResult?.data ?? null;` (app-sidebar, header, article page)
-- [x] **Текстовые иконки пространств** — текст типа "Prompting"/"tools"/"agents" больше не ломает зелёные квадратики: emoji показывается как есть, текст → аббревиатура (1-2 символа), полный текст рядом со статистикой
-- [x] **Ctrl+Л поддержка** — поиск по глоссарию работает на русской раскладке (e.key === "л")
-- [x] **Inline поиск по глоссарию** — строка поиска прямо на странице Базы знаний с выпадающими результатами
-- [x] **Песочница скрыта** — убрана из сайдбара и страницы «О проекте» (страница доступна по прямой ссылке /playground)
-- [x] **Навыки удалены из UI** — убраны: сайдбар, вкладка в админке, виджет на дашборде, секция в профиле, карточка на «О проекте». API маршруты оставлены для обратной совместимости
-- [x] **Лайтбокс для изображений** — клик по картинке (прикреплённой или в Markdown) → полноэкранный просмотр, закрытие Esc/крестик/клик по фону
-- [x] **Видео-модалка** — видео открывается поверх страницы, закрытие Esc/крестик/клик по фону
-- [x] **Resume видео** — позиция запоминается при закрытии, продолжение при повторном открытии (пока страница жива)
-- [x] **Кнопка "Прикрепить файлы"** — работала, но была невидима из-за краша useSession() — теперь починена
+### Sprint 5 — UX Fixes & Auth Stability (2026-06-08, ЗАВЕРШЁН ✅)
+- [x] **Критический фикс: SessionProvider в корневом layout** — создан `src/components/providers.tsx` (клиентский wrapper), перемещён из `AppLayout` в корневой `layout.tsx`
+- [x] **Defensive destructuring** — все 3 вызова `useSession()` безопасны: `const r = useSession(); const session = r?.data ?? null;`
+- [x] **Текстовые иконки пространств** — emoji как есть, текст → аббревиатура (1-2 символа)
+- [x] **Песочница скрыта** — убрана из сайдбара и «О проекте» (доступна по /playground)
+- [x] **Навыки удалены из UI** — сайдбар, вкладка в админке, дашборд, профиль, «О проекте»
+- [x] **Лайтбокс для изображений** — клик → полноэкранный просмотр, Esc/крестик/клик по фону
+- [x] **Видео-модалка** — видео поверх страницы, Esc/крестик/клик по фону
+- [x] **Resume видео** — позиция запоминается, продолжение при повторном открытии
+- [x] **Кнопка "Прикрепить файлы"** — починена (краш useSession() был корневой причиной)
+- [x] Создан media-lightbox.tsx — переиспользуемые Lightbox и VideoModal компоненты
+- [x] Исправлено определение прав админа — тройная проверка (Zustand + session + API)
+
+### Sprint 6 — AI-анализ материалов (СЛЕДУЮЩИЙ 📋)
+- [ ] Извлечение текста из PDF/PPTX/DOCX при загрузке файла
+- [ ] AI-генерация summary, tags, keyTopics через LLM (z-ai-web-dev-sdk)
+- [ ] Авто-извлечение глоссарий-терминов из материала
+- [ ] Предложение добавить термины в глоссарий (UI кнопка «Добавить в глоссарий»)
+- [ ] Semantic search (embeddings через LLM)
+- [ ] Интеграция z-ai-web-dev-sdk в API routes (уже установлен `^0.0.17`, не используется)
+
+### Sprint 7 — Наполнение контентом (ПЛАН 📋)
+> Частично перекрывается с вашим «Sprint 4 — Наполнение + Админ-редактор».
+> Админ-редактор уже готов (Sprint 3), но контент и категории ещё нужно наполнять.
+
+- [ ] Bulk-наполнение: 20-30 реальных статей по темам (AI Разработка, Промпт-инжиниринг, 1С и AI, Инструменты)
+- [ ] Новые категории: MCP серверы, Cursor правила, Copilot, Claude Code, AI Agents
+- [ ] Расширение глоссария: 30-50 терминов вместо текущих 10
+- [ ] Превью статьи перед публикацией (preview mode для admin)
+- [ ] Статьи-гайды: «Как начать с AI», «Промпт-инжиниринг для 1С», «MCP серверы с нуля»
+- [ ] Сид-скрипт для массовой загрузки контента через API
+
+### Sprint 8 — Умный поиск (ПЛАН 📋)
+> Базовый API поиска уже есть (/api/knowledge/search — ILIKE по статьям, глоссарию, задачам).
+> Но UI и расширенные функции поиска ещё не реализованы.
+
+- [ ] UI поиска по всем материалам (отдельная страница или overlay)
+- [ ] Расширить ⌘K: поиск не только по глоссарию, но и по статьям + задачам
+- [ ] Фильтрация по категориям/тегам в результатах поиска
+- [ ] Рекомендации «Похожие статьи» на странице статьи
+- [ ] Подсветка совпадений в результатах поиска
+- [ ] История поиска (localStorage)
+- [ ] Интеграция с semantic search из Sprint 6 (когда будет)
 
 ### Безопасность (P0)
 - [ ] Вынести admin credentials в env vars
@@ -651,7 +685,6 @@ src/
 - [ ] Создать нормальные миграции (заменить runtime ALTER TABLE)
 - [ ] Расширить NextAuth типы (убрать `as Record<string, unknown>`)
 - [ ] Вынести genId() и реферальную логику в shared модули
-- [x] ~~Исправить `DELETE FROM attempts` → `challenge_attempts`~~ (исправлено 2026-06-08)
 - [ ] Консолидировать сид-данные (один источник правды)
 
 ### Качество (P2)
@@ -671,8 +704,6 @@ src/
 - [ ] Больше задач (200+)
 - [ ] Rate limiting на API
 - [ ] Error boundaries на всех страницах
-
----
 
 ## 10. Quick Context for AI
 
