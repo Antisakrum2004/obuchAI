@@ -24,6 +24,7 @@ import {
   List,
   ArrowLeft,
 } from "lucide-react";
+import { X, ZoomIn, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MediaUpload } from "@/components/knowledge/media-upload";
 import { MediaViewer } from "@/components/knowledge/media-viewer";
@@ -74,6 +75,8 @@ export default function ArticlePage({
   const [mediaKey, setMediaKey] = useState(0);
   const { role } = useUserStore();
   const isAdmin = role === "admin";
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt] = useState("");
 
   useEffect(() => {
     params.then((p) => setId(p.id));
@@ -90,6 +93,17 @@ export default function ArticlePage({
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && lightboxSrc) {
+        setLightboxSrc(null);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxSrc]);
 
   // Extract headings for TOC
   const headings = article?.content
@@ -236,7 +250,34 @@ export default function ArticlePage({
               {/* Markdown Content */}
               <div className="glass rounded-xl p-6 border-white/5">
                 <article className="prose-custom">
-                  <ReactMarkdown>{article.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      img: ({ src, alt }) => (
+                        <button
+                          onClick={() => {
+                            if (src) {
+                              setLightboxSrc(src);
+                              setLightboxAlt(alt || "");
+                            }
+                          }}
+                          className="relative group/myimg inline-block cursor-zoom-in w-full my-4"
+                          type="button"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={src}
+                            alt={alt}
+                            className="w-full rounded-lg border border-white/10"
+                          />
+                          <span className="absolute top-2 right-2 opacity-0 group-hover/myimg:opacity-100 transition-opacity bg-black/50 rounded-full p-1.5">
+                            <ZoomIn className="h-4 w-4 text-white/80" />
+                          </span>
+                        </button>
+                      ),
+                    }}
+                  >
+                    {article.content}
+                  </ReactMarkdown>
                 </article>
               </div>
 
@@ -360,6 +401,45 @@ export default function ArticlePage({
                 </div>
               </motion.aside>
             )}
+          </div>
+        )}
+
+        {/* ═══════ IMAGE LIGHTBOX (for markdown images) ═══════ */}
+        {lightboxSrc && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <button
+              onClick={() => setLightboxSrc(null)}
+              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              title="Закрыть (Esc)"
+            >
+              <X className="h-5 w-5 text-white" />
+            </button>
+            <div
+              className="relative max-w-[90vw] max-h-[90vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxSrc}
+                alt={lightboxAlt}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              />
+              <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent rounded-b-lg flex items-center justify-between">
+                <p className="text-xs text-white/80 truncate flex-1">{lightboxAlt}</p>
+                <a
+                  href={lightboxSrc}
+                  download={lightboxAlt}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-md hover:bg-white/10 transition-colors ml-2"
+                  title="Скачать"
+                >
+                  <Download className="h-3.5 w-3.5 text-white/70" />
+                </a>
+              </div>
+            </div>
           </div>
         )}
       </div>

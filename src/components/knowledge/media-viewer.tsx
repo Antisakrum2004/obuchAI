@@ -1,20 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Play,
   FileText,
-  FileSpreadsheet,
   Image as ImageIcon,
   Download,
   ExternalLink,
   Trash2,
   Loader2,
-  Music2,
+  ZoomIn,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatFileSize, getFileIcon } from "@/lib/media-utils";
 import { cn } from "@/lib/utils";
+import {
+  Lightbox,
+  VideoModal,
+  hasVideoPosition,
+} from "@/components/knowledge/media-lightbox";
+
+// Keep videoPositions in sync with the lightbox module
+const videoPositionsLocal = new Map<string, number>();
 
 interface MediaItem {
   id: string;
@@ -44,8 +51,12 @@ export function MediaViewer({
 }: MediaViewerProps) {
   const [mediaList, setMediaList] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Modal state
+  const [lightboxImage, setLightboxImage] = useState<MediaItem | null>(null);
+  const [modalVideo, setModalVideo] = useState<MediaItem | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!articleId) return;
@@ -61,6 +72,24 @@ export function MediaViewer({
       .finally(() => setLoading(false));
   }, [articleId]);
 
+  // Save video position when closing
+  const closeVideoModal = useCallback(() => {
+    if (videoRef.current && modalVideo) {
+      videoPositionsLocal.set(modalVideo.id, videoRef.current.currentTime);
+    }
+    setModalVideo(null);
+  }, [modalVideo]);
+
+  // Restore video position on open
+  useEffect(() => {
+    if (modalVideo && videoRef.current) {
+      const saved = videoPositionsLocal.get(modalVideo.id);
+      if (saved && saved > 0) {
+        videoRef.current.currentTime = saved;
+      }
+    }
+  }, [modalVideo]);
+
   const handleDelete = async (mediaId: string) => {
     if (!confirm("Удалить этот файл?")) return;
 
@@ -75,7 +104,7 @@ export function MediaViewer({
         onDelete?.(mediaId);
       }
     } catch {
-      // Ошибка молча игнорируется
+      // silent
     } finally {
       setDeleting(null);
     }
@@ -98,7 +127,6 @@ export function MediaViewer({
     return null;
   }
 
-  // Разделяем на видео и остальные
   const videos = mediaList.filter((m) => m.fileType === "video");
   const documents = mediaList.filter((m) => m.fileType === "document");
   const images = mediaList.filter((m) => m.fileType === "image");
@@ -113,98 +141,55 @@ export function MediaViewer({
             Видео ({videos.length})
           </h4>
 
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {videos.map((video) => (
-              <div key={video.id} className="space-y-2">
-                {/* Video Player */}
-                {activeVideo === video.id ? (
-                  <div className="rounded-xl overflow-hidden border border-white/5 bg-black">
-                    <video
-                      src={video.url}
-                      controls
-                      className="w-full max-h-[480px]"
-                      autoPlay
-                    />
+              <button
+                key={video.id}
+                onClick={() => setModalVideo(video)}
+                className="relative w-full glass rounded-xl p-4 border-white/5 hover:border-blue-500/20 transition-all text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors shrink-0">
+                    <Play className="h-4 w-4 text-blue-400" />
                   </div>
-                ) : (
-                  <button
-                    onClick={() => setActiveVideo(video.id)}
-                    className="w-full glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all text-left group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors shrink-0">
-                        <Play className="h-4 w-4 text-blue-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate group-hover:text-emerald-400 transition-colors">
-                          {video.fileName}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-muted-foreground">
-                            {formatFileSize(video.fileSize)}
-                          </span>
-                          {video.duration && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {formatDuration(video.duration)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                )}
-
-                {/* Delete button */}
-                {canDelete && activeVideo !== video.id && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => handleDelete(video.id)}
-                      disabled={deleting === video.id}
-                      className="text-[10px] text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1"
-                    >
-                      {deleting === video.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3 w-3" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate group-hover:text-blue-400 transition-colors">
+                      {video.fileName}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatFileSize(video.fileSize)}
+                      </span>
+                      {video.duration && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDuration(video.duration)}
+                        </span>
                       )}
-                      Удалить
-                    </button>
+                      {videoPositionsLocal.has(video.id) && (
+                        <span className="text-[10px] text-blue-400/70">
+                          ▶ Продолжить
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
-
-                {activeVideo === video.id && (
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={video.url}
-                      download={video.fileName}
-                      className="text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors flex items-center gap-1"
-                    >
-                      <Download className="h-3 w-3" />
-                      Скачать
-                    </a>
-                    <button
-                      onClick={() => setActiveVideo(null)}
-                      className="text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
-                    >
-                      Свернуть
-                    </button>
-                    {canDelete && (
-                      <button
-                        onClick={() => handleDelete(video.id)}
-                        disabled={deleting === video.id}
-                        className="text-[10px] text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1"
-                      >
-                        {deleting === video.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3 w-3" />
-                        )}
-                        Удалить
-                      </button>
+                </div>
+                {canDelete && (
+                  <span
+                    role="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(video.id);
+                    }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    {deleting === video.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-400" />
                     )}
-                  </div>
+                  </span>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -298,9 +283,10 @@ export function MediaViewer({
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {images.map((img) => (
-              <div
+              <button
                 key={img.id}
-                className="relative group glass rounded-lg overflow-hidden border-white/5 hover:border-emerald-500/20 transition-all"
+                onClick={() => setLightboxImage(img)}
+                className="relative group glass rounded-lg overflow-hidden border-white/5 hover:border-emerald-500/20 transition-all text-left w-full"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -309,33 +295,106 @@ export function MediaViewer({
                   className="w-full h-32 object-cover"
                 />
 
-                {/* Overlay */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <a
-                    href={img.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-                  >
-                    <ExternalLink className="h-4 w-4 text-white" />
-                  </a>
-                  {canDelete && (
-                    <button
-                      onClick={() => handleDelete(img.id)}
-                      className="p-2 rounded-full bg-white/10 hover:bg-red-500/30 transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4 text-white" />
-                    </button>
-                  )}
+                {/* Zoom overlay */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <ZoomIn className="h-6 w-6 text-white/80" />
                 </div>
 
-                <div className="p-2">
-                  <p className="text-[10px] text-muted-foreground truncate">
+                <div className="p-2 flex items-center justify-between">
+                  <p className="text-[10px] text-muted-foreground truncate flex-1">
                     {img.fileName}
                   </p>
+                  {canDelete && (
+                    <span
+                      role="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(img.id);
+                      }}
+                      className="ml-1 shrink-0"
+                    >
+                      {deleting === img.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-400" />
+                      )}
+                    </span>
+                  )}
                 </div>
-              </div>
+              </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════ IMAGE LIGHTBOX ═══════ */}
+      {lightboxImage && (
+        <Lightbox
+          src={lightboxImage.url}
+          alt={lightboxImage.fileName}
+          onClose={() => setLightboxImage(null)}
+          downloadName={lightboxImage.fileName}
+        />
+      )}
+
+      {/* ═══════ VIDEO MODAL ═══════ */}
+      {modalVideo && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={closeVideoModal}
+        >
+          {/* Close button */}
+          <button
+            onClick={closeVideoModal}
+            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            title="Закрыть (Esc)"
+          >
+            <X className="h-5 w-5 text-white" />
+          </button>
+
+          {/* Video */}
+          <div
+            className="relative w-full max-w-4xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="rounded-xl overflow-hidden border border-white/10 bg-black">
+              <video
+                ref={videoRef}
+                src={modalVideo.url}
+                controls
+                autoPlay
+                className="w-full max-h-[80vh]"
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between px-1">
+              <p className="text-sm text-white/80 truncate flex-1">
+                {modalVideo.fileName}
+              </p>
+              <div className="flex items-center gap-3 ml-3">
+                <a
+                  href={modalVideo.url}
+                  download={modalVideo.fileName}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1"
+                >
+                  <Download className="h-3 w-3" />
+                  Скачать
+                </a>
+                {canDelete && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeVideoModal();
+                      handleDelete(modalVideo.id);
+                    }}
+                    className="text-xs text-white/50 hover:text-red-400 transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Удалить
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
