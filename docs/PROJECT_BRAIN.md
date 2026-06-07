@@ -275,7 +275,10 @@ src/
 - **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount
 - **Media**: Видео/документы/изображения, привязанные к статьям (Vercel Blob → StorageProvider)
 - **GlossaryTerm**: Термины с определениями, категориями, связанными терминами
-- **API**: 12 маршрутов (CRUD spaces, categories, articles, glossary, search, seed, media upload/list/delete)
+- **API**: 16 маршрутов (CRUD spaces, categories, articles, glossary, search, seed, media upload/list/delete)
+- **Admin CRUD**: Вкладка «Знания» в /admin — полный CRUD для пространств, категорий, статей, глоссария
+- **Markdown Editor**: Создание/редактирование статей с превью в admin
+- **Publish/Draft**: Переключатель isPublished для пространств и статей
 - **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья + медиа)
 
 ### 3.14 AI-Глоссарий (`src/components/knowledge/glossary-command.tsx`, `glossary-trigger.tsx`)
@@ -304,8 +307,8 @@ src/
 ### Метрики проекта
 - **Строк кода**: ~23,000 (src/ только .ts/.tsx)
 - **Страниц**: 17
-- **API маршрутов**: 38
-- **Компонентов**: 88
+- **API маршрутов**: 42
+- **Компонентов**: 89
 - **Хуков**: 5
 - **Моделей Prisma**: 16 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm)
 - **Размер GitHub repo**: 6,752 KB
@@ -320,7 +323,7 @@ src/
 - Skill tree (7 категорий, иерархия навыков)
 - Leaderboard (alltime / weekly / monthly)
 - Daily challenge (ежедневная задача)
-- Admin panel (CRUD задач/навыков/ачивок, управление юзерами, сидирование, фича-флаги)
+- Admin panel (CRUD задач/навыков/ачивок, управление юзерами, сидирование, фича-флаги + вкладка «Знания» для управления БЗ)
 - Реферальная система (коды + XP бонусы)
 - Адаптивный дизайн (mobile sidebar/tab bar + desktop)
 - Avatar frames (CSS glow по tier, dragon frame для admin)
@@ -365,7 +368,7 @@ src/
 
 ### Критические (P0)
 1. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
-2. **SQL injection** — admin challenges PUT использует `Object.entries(body)` для формирования SQL-колонок без whitelist
+2. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
 3. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
 4. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
 
@@ -525,6 +528,22 @@ src/
 - [ ] Привязка файлов к урокам (когда появятся lessons)
 - [ ] Превью: thumbnailUrl для видео (FFmpeg — отложено)
 - [ ] HLS-трансляция для видео 500+ МБ (отложено до VPS/Render Worker)
+
+### Sprint 4 — Content Management (ЗАВЕРШЁН ✅)
+- [x] Исправлен SQL баг в articles/[id] (JOIN spaces → knowledge_spaces)
+- [x] Создан POST /api/knowledge/media/upload (multipart/form-data, admin only)
+- [x] POST /api/knowledge/spaces — создание пространств
+- [x] POST /api/knowledge/categories — создание категорий
+- [x] PUT/DELETE /api/knowledge/categories/[id] — обновление/удаление категорий
+- [x] POST /api/knowledge/articles — создание статей
+- [x] PUT/DELETE /api/knowledge/articles/[id] — обновление/удаление статей
+- [x] POST /api/knowledge/glossary — создание терминов
+- [x] ?all=true параметр для админ-листинга (включая неопубликованные)
+- [x] KnowledgeAdmin компонент — 4 подвкладки (пространства, категории, статьи, глоссарий)
+- [x] Markdown-редактор с превью для статей
+- [x] Переключатель publish/draft для пространств и статей
+- [x] Вкладка «Знания» в /admin (BookOpen иконка)
+- [x] Whitelist SQL-полей в categories/articles PUT (без Object.entries)
 
 ### Sprint 3 — AI-анализ материалов
 - [ ] Извлечение текста из PDF/PPTX/DOCX
