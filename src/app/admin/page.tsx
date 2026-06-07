@@ -110,6 +110,9 @@ export default function AdminPage() {
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<ChallengeAdmin>>({});
+  const [editQuestionText, setEditQuestionText] = useState("");
+  const [editOptionList, setEditOptionList] = useState<string[]>(["", "", ""]);
+  const [editCorrectIndex, setEditCorrectIndex] = useState(0);
 
   // Toast state
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
@@ -332,15 +335,33 @@ export default function AdminPage() {
 
   const updateChallenge = async (id: string) => {
     try {
+      const optionsArray = editOptionList.filter((o: string) => o.trim() !== "");
+      if (optionsArray.length < 2) {
+        showToast("Минимум 2 варианта ответа", "err");
+        return;
+      }
+      if (!editQuestionText.trim()) {
+        showToast("Введите текст вопроса", "err");
+        return;
+      }
+      const payload = {
+        ...editForm,
+        content: JSON.stringify({ text: editQuestionText }),
+        options: JSON.stringify(optionsArray),
+        correctAnswer: JSON.stringify(editCorrectIndex),
+      };
       const res = await fetch(`/api/admin/challenges/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         showToast("Задача обновлена");
         setEditingId(null);
         setEditForm({});
+        setEditQuestionText("");
+        setEditOptionList(["", "", ""]);
+        setEditCorrectIndex(0);
         fetchData();
       } else {
         showToast("Ошибка обновления", "err");
@@ -383,6 +404,16 @@ export default function AdminPage() {
 
   const startEdit = (ch: ChallengeAdmin) => {
     setEditingId(ch.id);
+    // Parse JSON fields into user-friendly format
+    let qText = "";
+    try { qText = JSON.parse(ch.content || "{}").text || ""; } catch { qText = ch.content || ""; }
+    let opts: string[] = ["", "", ""];
+    try { const parsed = JSON.parse(ch.options || "[]"); if (Array.isArray(parsed)) opts = parsed; } catch { /* keep defaults */ }
+    let cIdx = 0;
+    try { cIdx = parseInt(JSON.parse(ch.correctAnswer || "0"), 10); if (isNaN(cIdx)) cIdx = 0; } catch { try { cIdx = parseInt(ch.correctAnswer || "0", 10); } catch { cIdx = 0; } }
+    setEditQuestionText(qText);
+    setEditOptionList(opts);
+    setEditCorrectIndex(cIdx);
     setEditForm({
       title: ch.title,
       description: ch.description,
@@ -390,9 +421,6 @@ export default function AdminPage() {
       type: ch.type,
       category: ch.category,
       xpReward: ch.xpReward,
-      content: ch.content || "",
-      options: ch.options || "",
-      correctAnswer: ch.correctAnswer || "",
       explanation: ch.explanation || "",
       hints: ch.hints || "",
       isActive: ch.isActive,
@@ -846,34 +874,91 @@ export default function AdminPage() {
               {challenges.map((ch) => (
                 <div key={ch.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
                   {editingId === ch.id ? (
-                    /* Edit mode */
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <Input value={editForm.title || ""} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Название" />
-                      <div className="flex gap-2">
-                        <Select value={editForm.difficulty} onValueChange={(v) => setEditForm({ ...editForm, difficulty: v })}>
-                          <SelectTrigger className="bg-white/5 border-white/10 h-9 text-sm"><SelectValue /></SelectTrigger>
-                          <SelectContent className="bg-[#111118] border-white/10">
-                            <SelectItem value="easy">Легко</SelectItem>
-                            <SelectItem value="medium">Средне</SelectItem>
-                            <SelectItem value="hard">Сложно</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Select value={editForm.type} onValueChange={(v) => setEditForm({ ...editForm, type: v })}>
-                          <SelectTrigger className="bg-white/5 border-white/10 h-9 text-sm"><SelectValue /></SelectTrigger>
-                          <SelectContent className="bg-[#111118] border-white/10">
-                            <SelectItem value="multiple_choice">Выбор</SelectItem>
-                            <SelectItem value="ordering">Порядок</SelectItem>
-                            <SelectItem value="workflow_build">Workflow</SelectItem>
-                          </SelectContent>
-                        </Select>
+                    /* Edit mode — same user-friendly UI as create form */
+                    <div className="space-y-3">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <Input value={editForm.title || ""} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Название" />
+                        <div className="flex gap-2">
+                          <Select value={editForm.difficulty} onValueChange={(v) => setEditForm({ ...editForm, difficulty: v })}>
+                            <SelectTrigger className="bg-white/5 border-white/10 h-9 text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-[#111118] border-white/10">
+                              <SelectItem value="easy">Легко</SelectItem>
+                              <SelectItem value="medium">Средне</SelectItem>
+                              <SelectItem value="hard">Сложно</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={editForm.type} onValueChange={(v) => setEditForm({ ...editForm, type: v })}>
+                            <SelectTrigger className="bg-white/5 border-white/10 h-9 text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-[#111118] border-white/10">
+                              <SelectItem value="multiple_choice">Выбор</SelectItem>
+                              <SelectItem value="ordering">Порядок</SelectItem>
+                              <SelectItem value="workflow_build">Workflow</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                       <Input value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Описание" />
-                      <Input value={editForm.correctAnswer || ""} onChange={(e) => setEditForm({ ...editForm, correctAnswer: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm font-mono" placeholder='Ответ JSON' />
-                      <div className="flex gap-2 items-center md:col-span-2">
+                      {/* Question text */}
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-1 block">Текст вопроса</label>
+                        <Textarea value={editQuestionText} onChange={(e) => setEditQuestionText(e.target.value)} className="bg-white/5 border-white/10 min-h-[50px] text-sm" placeholder="Вопрос..." />
+                      </div>
+                      {/* Options with radio for correct */}
+                      <div>
+                        <label className="text-xs text-muted-foreground mb-2 block">Варианты ответа (отметьте правильный)</label>
+                        <RadioGroup value={String(editCorrectIndex)} onValueChange={(v) => setEditCorrectIndex(parseInt(v))} className="space-y-2">
+                          {editOptionList.map((opt, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <RadioGroupItem value={String(idx)} id={`edit-opt-${idx}`} className="shrink-0 border-emerald-500/50 text-emerald-400" />
+                              <Label htmlFor={`edit-opt-${idx}`} className="text-[10px] text-muted-foreground shrink-0 w-4">
+                                {idx + 1}{editCorrectIndex === idx ? "\u2713" : ""}
+                              </Label>
+                              <Input
+                                value={opt}
+                                onChange={(e) => { const nl = [...editOptionList]; nl[idx] = e.target.value; setEditOptionList(nl); }}
+                                className={cn("bg-white/5 border-white/10 flex-1 h-9 text-sm", editCorrectIndex === idx && "border-emerald-500/30 bg-emerald-500/5")}
+                                placeholder={`Вариант ${idx + 1}`}
+                              />
+                              {editOptionList.length > 2 && (
+                                <Button size="sm" variant="ghost" onClick={() => {
+                                  const nl = editOptionList.filter((_, i) => i !== idx);
+                                  const nc = editCorrectIndex >= idx ? Math.max(0, editCorrectIndex - 1) : editCorrectIndex;
+                                  setEditOptionList(nl);
+                                  setEditCorrectIndex(nc);
+                                }} className="h-8 w-8 p-0 text-muted-foreground hover:text-red-400 shrink-0">
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </RadioGroup>
+                        <Button size="sm" variant="ghost" onClick={() => setEditOptionList([...editOptionList, ""])} className="mt-2 text-xs text-muted-foreground hover:text-emerald-400">
+                          <Plus className="h-3 w-3 mr-1" /> Добавить вариант
+                        </Button>
+                      </div>
+                      {/* Explanation + category + XP */}
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <Input value={editForm.explanation || ""} onChange={(e) => setEditForm({ ...editForm, explanation: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Пояснение" />
+                        <div className="flex gap-2 items-end flex-wrap">
+                          <Select value={editForm.category} onValueChange={(v) => setEditForm({ ...editForm, category: v })}>
+                            <SelectTrigger className="bg-white/5 border-white/10 w-32 h-9 text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent className="bg-[#111118] border-white/10">
+                              <SelectItem value="prompting">Промптинг</SelectItem>
+                              <SelectItem value="agents">Агенты</SelectItem>
+                              <SelectItem value="debugging">Дебаг</SelectItem>
+                              <SelectItem value="workflow">Workflow</SelectItem>
+                              <SelectItem value="1c">1С</SelectItem>
+                              <SelectItem value="review">Ревью</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input type="number" value={editForm.xpReward || 25} onChange={(e) => setEditForm({ ...editForm, xpReward: Number(e.target.value) })} className="bg-white/5 border-white/10 w-20 h-9 text-sm" />
+                        </div>
+                      </div>
+                      <div className="flex gap-2 items-center">
                         <Button size="sm" onClick={() => updateChallenge(ch.id)} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8">
                           <Check className="h-3.5 w-3.5 mr-1" /> Сохранить
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => { setEditingId(null); setEditForm({}); }} className="h-8 text-muted-foreground">
+                        <Button size="sm" variant="ghost" onClick={() => { setEditingId(null); setEditForm({}); setEditQuestionText(""); setEditOptionList(["", "", ""]); setEditCorrectIndex(0); }} className="h-8 text-muted-foreground">
                           <X className="h-3.5 w-3.5 mr-1" /> Отмена
                         </Button>
                       </div>
