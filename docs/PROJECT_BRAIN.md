@@ -378,7 +378,7 @@ src/
 7. **Дублирование данных сидирования** — 100 задач определены и в `prisma/seed.ts`, и в `admin/seed/route.ts` — синхронизация вручную
 8. **Дублирование genId()** — Функция копируется в 5+ файлов вместо shared модуля
 9. **Дублирование реферальной логики** — Генерация кода + XP начисление повторяются 3 раза
-10. **Неправильное имя таблицы** — `DELETE FROM attempts` вместо `challenge_attempts` в `admin/challenges/[id]/route.ts:75`
+10. **Неправильное имя таблицы** — ~~`DELETE FROM attempts` вместо `challenge_attempts`~~ **ИСПРАВЛЕНО** (2026-06-08)
 11. **Type-unsafe касты** — 44+ инстансов `as Record<string, unknown>` вместо расширения NextAuth типов
 12. **`ignoreBuildErrors: true`** в next.config.ts — TypeScript ошибки не ломают билд
 13. **`reactStrictMode: false`** — Отключён строгий режим React
@@ -552,6 +552,16 @@ src/
 - [ ] Предложение добавить термины в глоссарий
 - [ ] Semantic search (embeddings)
 
+### Bugfix — Admin API 500 errors (2026-06-08)
+- [x] Конвертация admin/challenges POST с Prisma на raw SQL (db.challenge.create → pool.query INSERT)
+- [x] Конвертация admin/achievements POST с Prisma на raw SQL
+- [x] Конвертация admin/skills POST с Prisma на raw SQL
+- [x] Конвертация admin stats GET с Prisma на raw SQL (с fallback-ами на каждый запрос)
+- [x] Исправлен баг DELETE FROM attempts → challenge_attempts
+- [x] Исправлен формат ответа /api/challenges в admin page (поддержка {challenges:[]})
+- [x] Добавлена кнопка «Миграция БД» в admin page (/api/admin/migrate)
+- [x] Улучшены сообщения об ошибках (detail в 500 ответах)
+
 ### Безопасность (P0)
 - [ ] Вынести admin credentials в env vars
 - [ ] Добавить Zod-валидацию на admin routes
@@ -568,7 +578,7 @@ src/
 - [ ] Создать нормальные миграции (заменить runtime ALTER TABLE)
 - [ ] Расширить NextAuth типы (убрать `as Record<string, unknown>`)
 - [ ] Вынести genId() и реферальную логику в shared модули
-- [ ] Исправить `DELETE FROM attempts` → `challenge_attempts`
+- [x] ~~Исправить `DELETE FROM attempts` → `challenge_attempts`~~ (исправлено 2026-06-08)
 - [ ] Консолидировать сид-данные (один источник правды)
 
 ### Качество (P2)
@@ -599,7 +609,7 @@ src/
 2. **Стили**: Tailwind CSS 4 + `cn()` из `src/lib/utils.ts` для условных классов
 3. **UI-компоненты**: shadcn/ui из `src/components/ui/` — не писать свои кнопки/инпуты
 4. **API**: Next.js App Router API routes в `src/app/api/`
-5. **БД**: Raw SQL через `pool.query()` из `src/lib/db.ts` для новых запросов; Prisma `db.*` только для простых CRUD
+5. **БД**: Raw SQL через `pool.query()` из `src/lib/db.ts` для новых запросов; Prisma `db.*` только для auth adapter. **НЕ использовать Prisma для новых API routes** — raw SQL надёжнее и не ломается при schema drift.
 6. **ID**: `genId()` → `cuid()` — НЕ использовать UUID, всегда cuid-подобный ID
 7. **Стейт**: Zustand (`useUserStore`) для глобального; `useState` для локального
 8. **Анимации**: Framer Motion для page transitions; CSS animations для микро-анимаций (не Framer!)
