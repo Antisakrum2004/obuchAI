@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-07. Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-08. Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 
 ---
 
@@ -93,11 +93,11 @@ src/
 │   ├── challenges/               # Задачи (список + [id])
 │   ├── marathon/page.tsx         # Марафон (15 задач подряд)
 │   ├── achievements/page.tsx     # Страница ачивок
-│   ├── skills/page.tsx           # Дерево навыков
+│   ├── skills/page.tsx           # Дерево навыков (скрыто из навигации)
 │   ├── leaderboard/page.tsx      # Таблица лидеров
 │   ├── profile/[id]/page.tsx     # Публичный профиль
 │   ├── about/page.tsx            # О проекте
-│   ├── playground/page.tsx       # AI Playground (заглушка)
+│   ├── playground/page.tsx       # AI Playground (скрыто из навигации)
 │   ├── admin/                    # Админ-панель
 │   │   ├── page.tsx              # Dashboard админа
 │   │   └── login/page.tsx        # Логин для админа
@@ -246,7 +246,7 @@ src/
 
 ### 3.9 Layout & Navigation (`src/components/layout/`)
 - **AppLayout**: Обёртка для всех страниц (sidebar + header + content)
-- **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, skills, achievements, leaderboard, admin)
+- **Sidebar**: Десктоп — навигация слева (dashboard, challenges, marathon, knowledge, achievements, leaderboard, about, admin). Навыки и Песочница скрыты.
 - **Header**: XP bar, streak counter, hearts display, avatar с frame, theme toggle
 - **Mobile tab bar**: Нижняя навигация на мобильных
 - **ParticlesBackground**: Фоновый эффект (6 частиц на мобильных, 18 на десктопе)
@@ -282,7 +282,8 @@ src/
 - **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья + медиа)
 
 ### 3.14 AI-Глоссарий (`src/components/knowledge/glossary-command.tsx`, `glossary-trigger.tsx`)
-- **Cmd+K / Ctrl+K**: Глобальный поиск по терминам из любого места приложения
+- **Cmd+K / Ctrl+K / Ctrl+Л**: Глобальный поиск по терминам из любого места приложения (русская раскладка поддерживается)
+- **Inline Search**: Строка поиска по глоссарию прямо на странице База знаний
 - **Floating ? button**: Кнопка в правом нижнем углу (позиционирована над mobile tab bar)
 - **Command Dialog**: Fuzzy-поиск по glossary_terms, кликабельные related terms
 - **Категории**: AI, Tools, 1C, General — цветные badge
@@ -296,7 +297,11 @@ src/
 - **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
-- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения)
+- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения + лайтбокс + видео-модалка)
+- **Lightbox**: Изображения увеличиваются в модалке (клик/Escape/крестик), картинки в Markdown тоже кликабельны
+- **Video Modal**: Видео открываются в модалке поверх страницы, продолжение с того же места после закрытия
+- **Inline Glossary Search**: Строка поиска по глоссарию прямо на странице База знаний
+- **Ctrl+Л**: Русская раскладка поддерживается для глобального поиска (Ctrl+K / Ctrl+Л)
 - **Переключение хранилища**: env var STORAGE_PROVIDER → vercel-blob (default) / s3 / minio (будущие)
 - **Blob Store**: store_5OkTkSLciotjEC41 (подключён, верифицирован, region iad1)
 
@@ -320,7 +325,7 @@ src/
 - Геймификация: XP (экспоненциальная формула), уровни (1-бесконечность), streak (48h правило), hearts, cooldown
 - Marathon mode (15 задач подряд, множитель streak)
 - Achievement system (16+ ачивок, 20 SVG иконок, rarity tiers, unlock modal)
-- Skill tree (7 категорий, иерархия навыков)
+- ~~Skill tree (7 категорий, иерархия навыков)~~ **Удалён из UI** (2026-06-08)
 - Leaderboard (alltime / weekly / monthly)
 - Daily challenge (ежедневная задача)
 - Admin panel (CRUD задач/навыков/ачивок, управление юзерами, сидирование, фича-флаги + вкладка «Знания» для управления БЗ)
@@ -336,7 +341,7 @@ src/
 - **Умный поиск** — /api/knowledge/search — поиск по статьям, глоссарию, задачам
 - **Файловое хранилище** — Vercel Blob Storage через StorageProvider абстракцию (видео, PDF, PPTX, DOCX, изображения)
 - **MediaUpload** — Drag&drop загрузка файлов с прогрессом, привязка к статьям
-- **MediaViewer** — Видеоплеер, документы, изображения в статье
+- **MediaViewer** — Видеоплеер, документы, изображения + лайтбокс + видео-модалка с resume
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
@@ -345,7 +350,7 @@ src/
 - **Google OAuth**: Условно включён — если env vars не настроены, провайдер не добавляется
 
 ### Не реализовано
-- **Playground** (`/playground`): Страница есть, но z-ai-web-dev-sdk не интегрирован
+- **Playground** (`/playground`): Страница скрыта из навигации, доступна по прямой ссылке. z-ai-web-dev-sdk не интегрирован
 - **Уведомления** (push/email)
 - **Мультиязычность** (только русский, next-intl установлен но не используется)
 - **Тесты** (0 тестовых файлов, playwright установлен)
@@ -385,7 +390,7 @@ src/
 14. **GitHub синхронизирован** — Рабочий код в obuchAI repo, Vercel привязан к GitHub
 
 ### Минорные (P2)
-15. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.4.0`
+15. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.5.0`
 16. **Stale .env.example** — Содержит GITHUB_ID/EMAIL_SERVER, которые не используются
 17. **Мёртвые зависимости** — next-intl, @mdxeditor/editor, sharp, playwright не используются в src/
 18. **Vercel Toolbar hack** — Скрипт+куки для убийства тулбара вместо нормального отключения
@@ -561,6 +566,27 @@ src/
 - [x] Исправлен формат ответа /api/challenges в admin page (поддержка {challenges:[]})
 - [x] Добавлена кнопка «Миграция БД» в admin page (/api/admin/migrate)
 - [x] Улучшены сообщения об ошибках (detail в 500 ответах)
+
+### Sprint 5 — UI Polish & Cleanup (2026-06-08, ЗАВЕРШЁН ✅)
+- [x] Исправлен баг `cn is not defined` в admin/page.tsx — добавлен import
+- [x] Редизайн формы создания/редактирования задач (индивидуальные поля опций + radio-кнопки вместо JSON)
+- [x] Версия обновлена до v2.5.0 в сайдбаре
+- [x] Исправлен баг «верный ответ всегда неверный» — String() конвертация при сравнении
+- [x] Форма редактирования задач загружает полные данные через /api/challenges/[id]
+- [x] Добавлена генерация ID (UUID с префиксами) для knowledge POST routes (spaces, categories, articles, glossary)
+- [x] Select «uncontrolled to controlled» — пустые строки → __none__ placeholder
+- [x] GET endpoints для knowledge стали устойчивы к отсутствию таблиц (возвращают [] вместо 500)
+- [x] Карточки разделов Базы знаний: текстовые иконки не ломают вёрстку — аббревиатуры в квадратиках, полный текст рядом со статистикой
+- [x] Бейджи статистики компактнее: «кат.» / «ст.» вместо полных слов
+- [x] **Ctrl+Л** — поиск по глоссарию работает на русской раскладке
+- [x] **Inline поиск по глоссарию** — строка поиска прямо на странице База знаний с выпадающими результатами
+- [x] **Песочница скрыта** — убрана из сайдбара и страницы «О проекте» (страница доступна по прямой ссылке)
+- [x] **Навыки удалены из UI** — убраны: сайдбар, вкладка в админке, виджет на дашборде, секция в профиле, карточка на странице «О проекте»
+- [x] **Лайтбокс для изображений** — клик по картинке (прикреплённой или в Markdown) → полноэкранный просмотр, закрытие Esc/крестик/клик по фону
+- [x] **Видео-модалка** — видео открывается поверх страницы, закрытие Esc/крестик/клик по фону
+- [x] **Resume видео** — позиция запоминается при закрытии, продолжение при повторном открытии (пока страница жива)
+- [x] Исправлено определение прав админа на странице статьи — тройная проверка (Zustand + NextAuth session + API fallback)
+- [x] Создан media-lightbox.tsx — переиспользуемые Lightbox и VideoModal компоненты
 
 ### Безопасность (P0)
 - [ ] Вынести admin credentials в env vars
