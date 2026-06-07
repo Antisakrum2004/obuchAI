@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Upload,
   Files,
@@ -22,6 +23,8 @@ import {
   Video,
   Image,
   AlertCircle,
+  Plus,
+  FolderPlus,
 } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -82,36 +85,109 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch categories and spaces
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const spacesRes = await fetch("/api/knowledge/spaces?all=true");
-        if (spacesRes.ok) {
-          const spacesData = await spacesRes.json();
-          const spacesList = Array.isArray(spacesData) ? spacesData : [];
-          setSpaces(spacesList);
+  // Inline category creation
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatSpaceId, setNewCatSpaceId] = useState("");
+  const [creatingCat, setCreatingCat] = useState(false);
 
-          const allCats: Category[] = [];
-          for (const space of spacesList) {
-            const res = await fetch(
-              `/api/knowledge/categories?spaceId=${space.id}&all=true`
-            );
-            if (res.ok) {
-              const data = await res.json();
-              if (Array.isArray(data)) allCats.push(...data);
-            }
-          }
-          setCategories(allCats);
-        }
-      } catch {
-        // silently fail
+  // Fetch categories and spaces
+  const fetchCategories = useCallback(async () => {
+    setLoadingCategories(true);
+    setCategoryError(null);
+    try {
+      const spacesRes = await fetch("/api/knowledge/spaces?all=true");
+      if (!spacesRes.ok) {
+        setCategoryError("Не удалось загрузить пространства");
+        return;
       }
-    };
-    fetchData();
-  }, []);
+      const spacesData = await spacesRes.json();
+      const spacesList = Array.isArray(spacesData) ? spacesData : [];
+      setSpaces(spacesList);
+
+      if (spacesList.length === 0) {
+        setCategoryError("Нет пространств знаний. Сначала создайте пространство в разделе «Администрирование».");
+        return;
+      }
+
+      // Auto-select first space for new category
+      if (!newCatSpaceId && spacesList.length > 0) {
+        setNewCatSpaceId(spacesList[0].id);
+      }
+
+      const allCats: Category[] = [];
+      for (const space of spacesList) {
+        try {
+          const res = await fetch(
+            `/api/knowledge/categories?spaceId=${space.id}&all=true`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) allCats.push(...data);
+          }
+        } catch {
+          // Skip this space's categories
+        }
+      }
+      setCategories(allCats);
+
+      if (allCats.length === 0) {
+        setCategoryError("Нет категорий. Создайте новую категорию кнопкой ниже или в разделе «Администрирование».");
+      }
+    } catch {
+      setCategoryError("Ошибка загрузки данных. Проверьте подключение.");
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, [newCatSpaceId]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim() || !newCatSpaceId) return;
+    setCreatingCat(true);
+    try {
+      const slug = newCatName
+        .toLowerCase()
+        .replace(/[^a-zа-яё0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .substring(0, 60);
+
+      const res = await fetch("/api/knowledge/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newCatName.trim(),
+          slug: slug || `cat-${Date.now()}`,
+          spaceId: newCatSpaceId,
+          icon: "📁",
+        }),
+      });
+
+      if (res.ok) {
+        const newCat = await res.json();
+        setCategories((prev) => [...prev, newCat]);
+        setCategoryId(newCat.id);
+        setShowNewCategory(false);
+        setNewCatName("");
+        setCategoryError(null);
+      } else {
+        const errData = await res.json();
+        setError(errData.error || "Не удалось создать категорию");
+      }
+    } catch {
+      setError("Ошибка при создании категории");
+    } finally {
+      setCreatingCat(false);
+    }
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -303,29 +379,124 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
       {/* Category Selection + Auto Process */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1 space-y-1.5">
-          <label className="text-xs text-muted-foreground">Категория</label>
-          <Select value={categoryId} onValueChange={setCategoryId}>
-            <SelectTrigger className="bg-white/5 border-white/10">
-              <SelectValue placeholder="Выберите категорию" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#111118] border-white/10">
-              {spaces.map((s) => (
-                <SelectItem
-                  key={s.id}
-                  value={s.id}
-                  disabled
-                  className="font-semibold text-emerald-400"
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-muted-foreground">
+              Категория {!categoryId && <span className="text-amber-400">*</span>}
+            </label>
+            {!showNewCategory && categories.length > 0 && (
+              <button
+                onClick={() => setShowNewCategory(true)}
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Новая категория
+              </button>
+            )}
+          </div>
+          {loadingCategories ? (
+            <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Загрузка категорий...
+            </div>
+          ) : categoryError && categories.length === 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 h-auto min-h-9 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                {categoryError}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewCategory(true)}
+                className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs"
+              >
+                <FolderPlus className="h-3 w-3 mr-1" />
+                Создать категорию
+              </Button>
+            </div>
+          ) : (
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger className="bg-white/5 border-white/10">
+                <SelectValue placeholder="Выберите категорию" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111118] border-white/10">
+                {spaces.map((s) => (
+                  <SelectItem
+                    key={s.id}
+                    value={s.id}
+                    disabled
+                    className="font-semibold text-emerald-400"
+                  >
+                    {s.icon || "📚"} {s.name}
+                  </SelectItem>
+                ))}
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    ├ {c.icon || "📁"} {c.name} ({spaceName(c.spaceId)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Inline New Category Form */}
+          {showNewCategory && (
+            <div className="p-3 rounded-lg bg-white/[0.03] border border-white/10 space-y-2">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <FolderPlus className="h-3 w-3" />
+                Создать новую категорию
+              </p>
+              <Input
+                placeholder="Название категории"
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                className="h-8 text-xs bg-white/5 border-white/10"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateCategory();
+                }}
+              />
+              {spaces.length > 1 && (
+                <Select value={newCatSpaceId} onValueChange={setNewCatSpaceId}>
+                  <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
+                    <SelectValue placeholder="Пространство" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#111118] border-white/10">
+                    {spaces.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.icon || "📚"} {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleCreateCategory}
+                  disabled={!newCatName.trim() || !newCatSpaceId || creatingCat}
+                  className="h-7 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
                 >
-                  {s.icon || "📚"} {s.name}
-                </SelectItem>
-              ))}
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  ├ {c.icon || "📁"} {c.name} ({spaceName(c.spaceId)})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  {creatingCat ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  ) : (
+                    <Check className="h-3 w-3 mr-1" />
+                  )}
+                  Создать
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowNewCategory(false);
+                    setNewCatName("");
+                  }}
+                  className="h-7 text-xs text-muted-foreground"
+                >
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex items-end gap-2 pb-0.5">
           <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
@@ -404,31 +575,39 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
       )}
 
       {/* Upload Button */}
-      <div className="flex gap-2">
-        <Button
-          onClick={handleUpload}
-          disabled={files.length === 0 || !categoryId || uploading}
-          className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-        >
-          {uploading ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-1" />
-          ) : (
-            <Upload className="h-4 w-4 mr-1" />
-          )}
-          {uploading
-            ? "Загрузка..."
-            : `Загрузить ${files.length > 0 ? `${files.length} файл(ов)` : ""}`}
-        </Button>
-        {files.length > 0 && !uploading && (
-          <Button
-            variant="ghost"
-            onClick={clearFiles}
-            className="text-muted-foreground"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Сбросить
-          </Button>
+      <div className="flex flex-col gap-2">
+        {!categoryId && files.length > 0 && !uploading && (
+          <p className="text-xs text-amber-400 flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            Выберите или создайте категорию, чтобы разблокировать кнопку загрузки
+          </p>
         )}
+        <div className="flex gap-2">
+          <Button
+            onClick={handleUpload}
+            disabled={files.length === 0 || !categoryId || uploading}
+            className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Upload className="h-4 w-4 mr-1" />
+            )}
+            {uploading
+              ? "Загрузка..."
+              : `Загрузить ${files.length > 0 ? `${files.length} файл(ов)` : "файлы"}`}
+          </Button>
+          {files.length > 0 && !uploading && (
+            <Button
+              variant="ghost"
+              onClick={clearFiles}
+              className="text-muted-foreground"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Сбросить
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

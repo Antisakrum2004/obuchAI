@@ -7,15 +7,17 @@
 
 export const ALLOWED_FILE_TYPES: Record<
   string,
-  { mimeTypes: string[]; maxSize: number; fileType: string }
+  { mimeTypes: string[]; extensions: string[]; maxSize: number; fileType: string }
 > = {
   video: {
     mimeTypes: ["video/mp4", "video/webm", "video/quicktime"],
+    extensions: [".mp4", ".webm", ".mov"],
     maxSize: 2 * 1024 * 1024 * 1024, // 2 GB
     fileType: "video",
   },
   pdf: {
     mimeTypes: ["application/pdf"],
+    extensions: [".pdf"],
     maxSize: 100 * 1024 * 1024, // 100 MB
     fileType: "document",
   },
@@ -23,6 +25,7 @@ export const ALLOWED_FILE_TYPES: Record<
     mimeTypes: [
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ],
+    extensions: [".pptx", ".ppt"],
     maxSize: 200 * 1024 * 1024, // 200 MB
     fileType: "document",
   },
@@ -30,27 +33,44 @@ export const ALLOWED_FILE_TYPES: Record<
     mimeTypes: [
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ],
+    extensions: [".docx", ".doc"],
     maxSize: 100 * 1024 * 1024, // 100 MB
     fileType: "document",
   },
   image: {
     mimeTypes: ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"],
+    extensions: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"],
     maxSize: 20 * 1024 * 1024, // 20 MB
     fileType: "image",
   },
 };
 
 /**
- * Определить fileType по MIME-типу
+ * Определить fileType по MIME-типу или расширению файла
  */
 export function detectFileType(
-  mimeType: string
+  mimeType: string,
+  fileName?: string
 ): { fileType: string; category: string } | null {
+  // First try MIME type
   for (const [category, config] of Object.entries(ALLOWED_FILE_TYPES)) {
     if (config.mimeTypes.includes(mimeType)) {
       return { fileType: config.fileType, category };
     }
   }
+
+  // Fallback: detect by file extension (important for drag & drop where MIME may be empty)
+  if (fileName) {
+    const ext = "." + fileName.split(".").pop()?.toLowerCase();
+    if (ext) {
+      for (const [category, config] of Object.entries(ALLOWED_FILE_TYPES)) {
+        if (config.extensions.includes(ext)) {
+          return { fileType: config.fileType, category };
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -60,15 +80,15 @@ export function detectFileType(
 export function validateFile(
   file: { type: string; size: number; name: string }
 ): { valid: boolean; error?: string; fileType?: string; category?: string } {
-  const detected = detectFileType(file.type);
+  const detected = detectFileType(file.type, file.name);
 
   if (!detected) {
     const allowed = Object.values(ALLOWED_FILE_TYPES)
-      .flatMap((c) => c.mimeTypes)
+      .flatMap((c) => c.extensions)
       .join(", ");
     return {
       valid: false,
-      error: `Неподдерживаемый тип файла: ${file.type}. Допустимые: ${allowed}`,
+      error: `Неподдерживаемый тип файла: ${file.name.split(".").pop()}. Допустимые: ${allowed}`,
     };
   }
 
