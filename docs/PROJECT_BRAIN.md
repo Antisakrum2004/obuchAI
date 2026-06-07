@@ -285,15 +285,17 @@ src/
 - **Категории**: AI, Tools, 1C, General — цветные badge
 - **10 предзагруженных терминов**: LLM, Промпт, MCP, RAG, Context Window, Tool Calling, AI Агент, Токен, Fine-tuning, Embedding
 
-### 3.16 Storage & Media (`src/lib/storage/`, `src/lib/media-service.ts`)
+### 3.16 Storage & Media (`src/lib/storage/`, `src/lib/media-service.ts`, `src/lib/media-utils.ts`)
 - **StorageProvider**: Интерфейс (upload, delete, getUrl) — абстракция над файловым хранилищем
 - **VercelBlobStorageProvider**: Реализация через @vercel/blob (MVP)
 - **MediaService**: Бизнес-логика загрузки/удаления/привязки файлов, не знает про конкретное хранилище
+- **media-utils.ts**: Клиентские утилиты (formatFileSize, getFileIcon, validateFile, detectFileType, generateStorageKey, ALLOWED_FILE_TYPES) — БЕЗ серверных импортов. Клиентские компоненты импортируют отсюда.
 - **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
 - **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения)
 - **Переключение хранилища**: env var STORAGE_PROVIDER → vercel-blob (default) / s3 / minio (будущие)
+- **Blob Store**: store_5OkTkSLciotjEC41 (подключён, верифицирован, region iad1)
 
 ---
 
@@ -519,6 +521,7 @@ src/
 - [x] Env vars: BLOB_READ_WRITE_TOKEN, STORAGE_PROVIDER
 - [x] Blob Store подключён и верифицирован (store_5OkTkSLciotjEC41, region iad1)
 - [x] BLOB_READ_WRITE_TOKEN не нужен — Vercel internal auth работает
+- [x] media-utils.ts — клиентские утилиты отделены от серверного media-service.ts (фикс client-side DATABASE_URL error)
 - [ ] Привязка файлов к урокам (когда появятся lessons)
 - [ ] Превью: thumbnailUrl для видео (FFmpeg — отложено)
 - [ ] HLS-трансляция для видео 500+ МБ (отложено до VPS/Render Worker)
