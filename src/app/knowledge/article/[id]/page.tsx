@@ -31,6 +31,7 @@ import { MediaViewer } from "@/components/knowledge/media-viewer";
 import type { UploadedMedia } from "@/components/knowledge/media-upload";
 import { Paperclip } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
 interface ArticleDetail {
@@ -73,8 +74,22 @@ export default function ArticlePage({
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaKey, setMediaKey] = useState(0);
-  const { role } = useUserStore();
-  const isAdmin = role === "admin";
+  const { role: storeRole } = useUserStore();
+  const { data: session } = useSession();
+  const sessionRole = (session?.user as Record<string, unknown>)?.role;
+  const [apiAdmin, setApiAdmin] = useState(false);
+  const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;
+
+  // Fallback admin check via API (in case store/session haven't loaded yet)
+  useEffect(() => {
+    if (storeRole === "admin" || sessionRole === "admin") return;
+    fetch("/api/user/stats")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.role === "admin") setApiAdmin(true);
+      })
+      .catch(() => {});
+  }, [storeRole, sessionRole]);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
 
