@@ -367,6 +367,31 @@ export async function POST(request: Request) {
         }
       }
 
+      // Drop existing Knowledge Hub FK constraints first (they may block seed data insertion)
+      const dropKnowledgeFkStatements = [
+        `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey;`,
+        `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_categoryId_fkey;`,
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_spaceId_fkey;`,
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_parentId_fkey;`,
+      ]
+
+      for (const dropSql of dropKnowledgeFkStatements) {
+        try {
+          await client.query(dropSql)
+        } catch (dropErr) {
+          console.warn('Drop FK warning:', dropErr)
+        }
+      }
+
+      // Clean up orphaned categories that reference non-existent knowledge spaces
+      try {
+        await client.query(`
+          DELETE FROM categories WHERE "spaceId" NOT IN (SELECT id FROM knowledge_spaces) AND "spaceId" IS NOT NULL;
+        `)
+      } catch (cleanErr) {
+        console.warn('Cleanup warning:', cleanErr)
+      }
+
       // Seed default knowledge spaces FIRST (before FK constraints so referential data exists)
       await client.query(`
         INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES
