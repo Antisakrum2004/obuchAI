@@ -308,7 +308,7 @@ export default function AdminPage() {
         xpReward: challengeForm.xpReward,
         content: JSON.stringify({ text: challengeForm.questionText }),
         options: JSON.stringify(optionsArray),
-        correctAnswer: JSON.stringify(challengeForm.correctIndex),
+        correctAnswer: JSON.stringify(String(challengeForm.correctIndex)),
         explanation: challengeForm.explanation || null,
         hints: challengeForm.hints || "[]",
         validationType: challengeForm.validationType || "static",
@@ -348,7 +348,7 @@ export default function AdminPage() {
         ...editForm,
         content: JSON.stringify({ text: editQuestionText }),
         options: JSON.stringify(optionsArray),
-        correctAnswer: JSON.stringify(editCorrectIndex),
+        correctAnswer: JSON.stringify(String(editCorrectIndex)),
       };
       const res = await fetch(`/api/admin/challenges/${id}`, {
         method: "PUT",
@@ -402,29 +402,48 @@ export default function AdminPage() {
     }
   };
 
-  const startEdit = (ch: ChallengeAdmin) => {
+  const startEdit = async (ch: ChallengeAdmin) => {
     setEditingId(ch.id);
-    // Parse JSON fields into user-friendly format
-    let qText = "";
-    try { qText = JSON.parse(ch.content || "{}").text || ""; } catch { qText = ch.content || ""; }
-    let opts: string[] = ["", "", ""];
-    try { const parsed = JSON.parse(ch.options || "[]"); if (Array.isArray(parsed)) opts = parsed; } catch { /* keep defaults */ }
-    let cIdx = 0;
-    try { cIdx = parseInt(JSON.parse(ch.correctAnswer || "0"), 10); if (isNaN(cIdx)) cIdx = 0; } catch { try { cIdx = parseInt(ch.correctAnswer || "0", 10); } catch { cIdx = 0; } }
-    setEditQuestionText(qText);
-    setEditOptionList(opts);
-    setEditCorrectIndex(cIdx);
-    setEditForm({
-      title: ch.title,
-      description: ch.description,
-      difficulty: ch.difficulty,
-      type: ch.type,
-      category: ch.category,
-      xpReward: ch.xpReward,
-      explanation: ch.explanation || "",
-      hints: ch.hints || "",
-      isActive: ch.isActive,
-    });
+    // Fetch full challenge data (list API excludes content/options/correctAnswer)
+    try {
+      const res = await fetch(`/api/challenges/${ch.id}`);
+      if (res.ok) {
+        const full = await res.json();
+        let qText = "";
+        try { qText = JSON.parse(full.content || "{}").text || ""; } catch { qText = full.content || ""; }
+        let opts: string[] = ["", "", ""];
+        try { const parsed = JSON.parse(full.options || "[]"); if (Array.isArray(parsed)) opts = parsed; } catch { /* keep defaults */ }
+        let cIdx = 0;
+        try { const parsed = JSON.parse(full.correctAnswer || "0"); cIdx = typeof parsed === "number" ? parsed : parseInt(String(parsed), 10); if (isNaN(cIdx)) cIdx = 0; } catch { try { cIdx = parseInt(full.correctAnswer || "0", 10); } catch { cIdx = 0; } }
+        setEditQuestionText(qText);
+        setEditOptionList(opts);
+        setEditCorrectIndex(cIdx);
+        setEditForm({
+          title: full.title || ch.title,
+          description: full.description || ch.description,
+          difficulty: full.difficulty || ch.difficulty,
+          type: full.type || ch.type,
+          category: full.category || ch.category,
+          xpReward: full.xpReward || ch.xpReward,
+          explanation: full.explanation || "",
+          hints: full.hints || "",
+          isActive: full.isActive ?? ch.isActive,
+        });
+      }
+    } catch {
+      // Fallback: use list data (partial)
+      setEditForm({
+        title: ch.title,
+        description: ch.description,
+        difficulty: ch.difficulty,
+        type: ch.type,
+        category: ch.category,
+        xpReward: ch.xpReward,
+        explanation: ch.explanation || "",
+        hints: ch.hints || "",
+        isActive: ch.isActive,
+      });
+    }
   };
 
   // --- Skill CRUD ---

@@ -90,7 +90,8 @@ export async function POST(
     if (challenge.validationType === "static") {
       const correctAnswer = JSON.parse(challenge.correctAnswer);
       if (challenge.type === "multiple_choice") {
-        isCorrect = answer === correctAnswer;
+        // Normalize both sides to string for comparison (correctAnswer may be number or string)
+        isCorrect = String(answer) === String(correctAnswer);
       } else if (
         challenge.type === "ordering" ||
         challenge.type === "workflow_build"
