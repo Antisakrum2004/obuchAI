@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validTypes = ["metadata", "glossary", "graph"];
+    const validTypes = ["metadata", "glossary", "graph", "categorize"];
     if (!type || !validTypes.includes(type)) {
       return NextResponse.json(
         { error: `type обязателен и должен быть одним из: ${validTypes.join(", ")}` },
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch the article
     const { rows: articleRows } = await pool.query(
-      `SELECT id, title, content, summary, tags, "keyTopics" FROM articles WHERE id = $1`,
+      `SELECT id, title, content, summary, tags, "keyTopics", "categoryId" FROM articles WHERE id = $1`,
       [articleId]
     );
 
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       metadata: "ai_metadata",
       glossary: "glossary_extract",
       graph: "graph_build",
+      categorize: "ai_metadata",
     };
     const queueType = queueTypeMap[type];
 
@@ -87,7 +88,13 @@ export async function POST(request: NextRequest) {
     try {
       const zai = await ZAI.create();
 
-      if (type === "metadata") {
+      if (type === "metadata" || type === "categorize") {
+        // Check if we need auto-categorization (article has no categoryId)
+        const needsCategorization = !article.categoryId;
+        if (needsCategorization) {
+          await processCategorization(zai, article, articleId, queueId);
+        }
+        // Always process metadata (includes categorization if needed)
         await processMetadata(zai, article, articleId, queueId);
       } else if (type === "glossary") {
         await processGlossary(zai, article, articleId, queueId);
@@ -150,6 +157,174 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Process categorization: AI determines the best category for an article.
+ * If no matching category exists, creates a new one.
+ */
+async function processCategorization(
+  zai: ZAI,
+  article: Record<string, unknown>,
+  articleId: string,
+  queueId: string
+) {
+  await pool.query(
+    `UPDATE processing_queue SET progress = 15, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const title = (article.title as string) || "";
+  const content = (article.content as string) || "";
+
+  // Fetch all available spaces and categories
+  const { rows: spaces } = await pool.query(
+    `SELECT id, name, slug, description FROM knowledge_spaces ORDER BY name`
+  );
+  const { rows: categories } = await pool.query(
+    `SELECT c.id, c.name, c.slug, c.description, c."spaceId", ks.name as "spaceName"
+     FROM categories c
+     JOIN knowledge_spaces ks ON c."spaceId" = ks.id
+     ORDER BY ks.name, c.name`
+  );
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 25, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // Build category list for AI
+  const categoryList = categories.map((c: Record<string, unknown>) => ({
+    id: c.id,
+    name: c.name,
+    spaceName: c.spaceName,
+    description: c.description,
+  }));
+
+  const spaceList = spaces.map((s: Record<string, unknown>) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+  }));
+
+  const completion = await zai.chat.completions.create({
+    messages: [
+      {
+        role: "system",
+        content: `Ты — AI-ассистент для классификации образовательных материалов. 
+На основе названия и содержания статьи, определи наиболее подходящую категорию.
+
+Доступные категории:
+${JSON.stringify(categoryList, null, 2)}
+
+Доступные пространства:
+${JSON.stringify(spaceList, null, 2)}
+
+Правила:
+1. Если есть подходящая категория — верни её ID в поле "categoryId"
+2. Если ни одна категория не подходит, но есть подходящее пространство — верни "createCategory" с названием новой категории и ID пространства
+3. Если нет подходящего пространства — верни "createSpace" с названием нового пространства и "createCategory" с названием категории
+
+Верни ТОЛЬКО валидный JSON с одной из структур:
+- {"action": "assign", "categoryId": "existing-cat-id"}
+- {"action": "create_category", "spaceId": "existing-space-id", "categoryName": "Новая категория"}
+- {"action": "create_both", "spaceName": "Новое пространство", "categoryName": "Новая категория"}`,
+      },
+      {
+        role: "user",
+        content: `Название статьи: ${title}\n\nСодержание:\n${content.substring(0, 4000)}`,
+      },
+    ],
+  });
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 50, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const result = completion.choices[0]?.message?.content;
+  if (!result) {
+    console.warn("AI categorization: no result returned, skipping");
+    return;
+  }
+
+  let parsed: Record<string, string>;
+  try {
+    const cleaned = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.warn(`AI categorization: failed to parse response: ${result.substring(0, 200)}`);
+    return;
+  }
+
+  let assignedCategoryId: string | null = null;
+
+  if (parsed.action === "assign" && parsed.categoryId) {
+    // Verify the category exists
+    const { rows: catCheck } = await pool.query(
+      `SELECT id FROM categories WHERE id = $1`,
+      [parsed.categoryId]
+    );
+    if (catCheck.length > 0) {
+      assignedCategoryId = parsed.categoryId;
+    }
+  } else if (parsed.action === "create_category" && parsed.spaceId && parsed.categoryName) {
+    // Create new category in existing space
+    const slug = parsed.categoryName
+      .toLowerCase()
+      .replace(/[^a-zа-яё0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 60) || `cat-${Date.now()}`;
+
+    const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+    const { rows: newCat } = await pool.query(
+      `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
+       RETURNING id`,
+      [newCatId, parsed.categoryName, slug, parsed.spaceId]
+    );
+    assignedCategoryId = newCat[0]?.id;
+  } else if (parsed.action === "create_both" && parsed.spaceName && parsed.categoryName) {
+    // Create new space and new category
+    const spaceSlug = parsed.spaceName
+      .toLowerCase()
+      .replace(/[^a-zа-яё0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 60) || `ks-${Date.now()}`;
+
+    const newSpaceId = 'ks_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+    await pool.query(
+      `INSERT INTO knowledge_spaces (id, name, slug, "order", "isPublished", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, 0, true, NOW(), NOW())`,
+      [newSpaceId, parsed.spaceName, spaceSlug]
+    );
+
+    const catSlug = parsed.categoryName
+      .toLowerCase()
+      .replace(/[^a-zа-яё0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 60) || `cat-${Date.now()}`;
+
+    const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+    const { rows: newCat } = await pool.query(
+      `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
+       RETURNING id`,
+      [newCatId, parsed.categoryName, catSlug, newSpaceId]
+    );
+    assignedCategoryId = newCat[0]?.id;
+  }
+
+  // Assign the category to the article
+  if (assignedCategoryId) {
+    await pool.query(
+      `UPDATE articles SET "categoryId" = $1, "updatedAt" = NOW() WHERE id = $2`,
+      [assignedCategoryId, articleId]
+    );
+  }
+}
+
+/**
  * Process metadata: AI generates summary, difficulty, keyConcepts, estimatedTime, tags, keyTopics
  */
 async function processMetadata(
@@ -159,7 +334,7 @@ async function processMetadata(
   queueId: string
 ) {
   await pool.query(
-    `UPDATE processing_queue SET progress = 20, "updatedAt" = NOW() WHERE id = $1`,
+    `UPDATE processing_queue SET progress = 60, "updatedAt" = NOW() WHERE id = $1`,
     [queueId]
   );
 
@@ -188,7 +363,7 @@ async function processMetadata(
   });
 
   await pool.query(
-    `UPDATE processing_queue SET progress = 70, "updatedAt" = NOW() WHERE id = $1`,
+    `UPDATE processing_queue SET progress = 80, "updatedAt" = NOW() WHERE id = $1`,
     [queueId]
   );
 

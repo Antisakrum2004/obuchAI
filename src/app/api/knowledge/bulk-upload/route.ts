@@ -26,6 +26,9 @@ const FILE_FIELD_MAP: Record<string, string> = {
  * Bulk upload multiple files (PDF, PPTX, DOCX, video, images).
  * Each file becomes a separate article with the file attached.
  * Admin only.
+ *
+ * categoryId is optional — if not provided, AI will auto-classify
+ * each article into the best matching category during processing.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -43,26 +46,23 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const categoryId = formData.get("categoryId") as string;
+    const categoryId = (formData.get("categoryId") as string) || null;
     const autoProcess = formData.get("autoProcess") === "true";
+    const autoCategorize = formData.get("autoCategorize") === "true";
 
-    if (!categoryId) {
-      return NextResponse.json(
-        { error: "Укажите категорию (categoryId)" },
-        { status: 400 }
+    // categoryId is optional — if not provided, AI will classify later
+    if (categoryId) {
+      // Verify category exists (only if provided)
+      const catResult = await pool.query(
+        `SELECT id, name FROM categories WHERE id = $1`,
+        [categoryId]
       );
-    }
-
-    // Verify category exists
-    const catResult = await pool.query(
-      `SELECT id, name FROM categories WHERE id = $1`,
-      [categoryId]
-    );
-    if (catResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Категория не найдена" },
-        { status: 404 }
-      );
+      if (catResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: "Категория не найдена" },
+          { status: 404 }
+        );
+      }
     }
 
     // Collect all files from formData
@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       fileName: string;
       fileType: string;
       status: string;
+      categoryId: string | null;
     }> = [];
     const errors: Array<{ fileName: string; error: string }> = [];
 
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
         const articleField = FILE_FIELD_MAP[fileCategory] || "sourceUrl";
 
         // Create article with placeholder content
+        // categoryId may be null — AI will assign it later
         await pool.query(
           `INSERT INTO articles (
             id, title, slug, content, summary, "categoryId",
@@ -174,6 +176,7 @@ export async function POST(request: NextRequest) {
         );
 
         // Create processing queue entries
+        // Always add ai_metadata (it will also handle category assignment if autoCategorize)
         const queueTypes = ["ai_metadata"];
         if (autoProcess) {
           queueTypes.push("glossary_extract");
@@ -190,7 +193,12 @@ export async function POST(request: NextRequest) {
               type,
               "pending",
               articleId,
-              JSON.stringify({ fileName: file.name, fileCategory }),
+              JSON.stringify({
+                fileName: file.name,
+                fileCategory,
+                autoCategorize: autoCategorize || !categoryId,
+                originalCategoryId: categoryId,
+              }),
               0,
             ]
           );
@@ -203,6 +211,7 @@ export async function POST(request: NextRequest) {
           fileName: file.name,
           fileType: getFileIcon(validation.fileType || "document", file.type),
           status: "pending",
+          categoryId,
         });
       } catch (fileErr) {
         const msg = fileErr instanceof Error ? fileErr.message : "Ошибка загрузки";
@@ -210,8 +219,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const categorizeNote = !categoryId || autoCategorize
+      ? " AI автоматически определит категории." : "";
+
     return NextResponse.json({
-      message: `Загружено ${results.length} из ${files.length} файлов`,
+      message: `Загружено ${results.length} из ${files.length} файлов.${categorizeNote}`,
       articles: results,
       errors: errors.length > 0 ? errors : undefined,
     }, { status: 201 });
