@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,69 +8,56 @@ export async function GET(request: NextRequest) {
 
     if (slug) {
       // Find single space by slug
-      const space = await db.knowledgeSpace.findUnique({
-        where: { slug, isPublished: true },
-        include: {
-          categories: {
-            where: { parentId: null },
-            orderBy: { order: "asc" },
-            include: {
-              _count: { select: { articles: { where: { isPublished: true } } } },
-            },
-          },
-          _count: {
-            select: {
-              categories: true,
-              articles: true,
-            },
-          },
-        },
-      });
+      const result = await pool.query(
+        `SELECT ks.id, ks.name, ks.slug, ks.description, ks.icon, ks."order",
+          (SELECT COUNT(*) FROM categories c WHERE c."spaceId" = ks.id) as "categoryCount",
+          (SELECT COUNT(*) FROM articles a JOIN categories cat ON a."categoryId" = cat.id WHERE cat."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
+         FROM knowledge_spaces ks
+         WHERE ks.slug = $1 AND ks."isPublished" = true`,
+        [slug]
+      );
 
-      if (!space) {
+      if (result.rows.length === 0) {
         return NextResponse.json(
           { error: "Пространство не найдено" },
           { status: 404 }
         );
       }
 
+      const space = result.rows[0];
       return NextResponse.json({
         id: space.id,
         name: space.name,
         slug: space.slug,
         description: space.description,
         icon: space.icon,
-        categoryCount: space._count.categories,
-        articleCount: space._count.articles,
+        categoryCount: parseInt(space.categoryCount),
+        articleCount: parseInt(space.articleCount),
       });
     }
 
     // List all published spaces with counts
-    const spaces = await db.knowledgeSpace.findMany({
-      where: { isPublished: true },
-      orderBy: { order: "asc" },
-      include: {
-        _count: {
-          select: {
-            categories: true,
-            articles: { where: { isPublished: true } },
-          },
-        },
-      },
-    });
+    const result = await pool.query(
+      `SELECT ks.id, ks.name, ks.slug, ks.description, ks.icon, ks."order",
+        (SELECT COUNT(*) FROM categories c WHERE c."spaceId" = ks.id) as "categoryCount",
+        (SELECT COUNT(*) FROM articles a JOIN categories cat ON a."categoryId" = cat.id WHERE cat."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
+       FROM knowledge_spaces ks
+       WHERE ks."isPublished" = true
+       ORDER BY ks."order" ASC`
+    );
 
-    const result = spaces.map((space) => ({
-      id: space.id,
-      name: space.name,
-      slug: space.slug,
-      description: space.description,
-      icon: space.icon,
-      order: space.order,
-      categoryCount: space._count.categories,
-      articleCount: space._count.articles,
+    const spaces = result.rows.map((row: Record<string, unknown>) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      icon: row.icon,
+      order: row.order,
+      categoryCount: parseInt(row.categoryCount as string),
+      articleCount: parseInt(row.articleCount as string),
     }));
 
-    return NextResponse.json(result);
+    return NextResponse.json(spaces);
   } catch (error) {
     console.error("Error fetching knowledge spaces:", error);
     return NextResponse.json(

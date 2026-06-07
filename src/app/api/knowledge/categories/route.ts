@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,24 +13,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const categories = await db.category.findMany({
-      where: { spaceId, parentId: null },
-      orderBy: { order: "asc" },
-      include: {
-        _count: {
-          select: { articles: { where: { isPublished: true } } },
-        },
-      },
-    });
+    const { rows } = await pool.query(
+      `SELECT c.id, c.name, c.slug, c.description, c.icon, c.order,
+              COUNT(a.id)::int AS "articleCount"
+       FROM categories c
+       LEFT JOIN articles a ON a."categoryId" = c.id AND a."isPublished" = true
+       WHERE c."spaceId" = $1 AND c."parentId" IS NULL
+       GROUP BY c.id
+       ORDER BY c.order ASC`,
+      [spaceId]
+    );
 
-    const result = categories.map((cat) => ({
+    const result = rows.map((cat) => ({
       id: cat.id,
       name: cat.name,
       slug: cat.slug,
       description: cat.description,
       icon: cat.icon,
       order: cat.order,
-      articleCount: cat._count.articles,
+      articleCount: cat.articleCount,
     }));
 
     return NextResponse.json(result);

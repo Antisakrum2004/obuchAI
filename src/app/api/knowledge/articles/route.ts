@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,32 +14,35 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const where: Record<string, unknown> = { isPublished: true };
+    let query: string;
+    let params: unknown[];
 
     if (categoryId) {
-      where.categoryId = categoryId;
-    } else if (spaceId) {
-      where.category = { spaceId };
+      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "createdAt"
+               FROM articles
+               WHERE "isPublished" = true AND "categoryId" = $1
+               ORDER BY "createdAt" DESC`;
+      params = [categoryId];
+    } else {
+      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."createdAt"
+               FROM articles a
+               JOIN categories c ON a."categoryId" = c.id
+               WHERE a."isPublished" = true AND c."spaceId" = $1
+               ORDER BY a."createdAt" DESC`;
+      params = [spaceId];
     }
 
-    const articles = await db.article.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        summary: true,
-        tags: true,
-        viewCount: true,
-        categoryId: true,
-        createdAt: true,
-      },
-    });
+    const { rows } = await pool.query(query, params);
 
-    const result = articles.map((article) => ({
-      ...article,
-      createdAt: article.createdAt.toISOString(),
+    const result = rows.map((article) => ({
+      id: article.id,
+      title: article.title,
+      slug: article.slug,
+      summary: article.summary,
+      tags: article.tags,
+      viewCount: article.viewCount,
+      categoryId: article.categoryId,
+      createdAt: new Date(article.createdAt).toISOString(),
     }));
 
     return NextResponse.json(result);

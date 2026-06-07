@@ -76,3 +76,4 @@ worklog.md
 .env.vercel
 .env.production
 .env*.local
+.env*

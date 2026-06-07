@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { pool } from "@/lib/db";
 
 export async function GET(
   request: NextRequest,
@@ -8,25 +8,27 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const article = await db.article.findUnique({
-      where: { id, isPublished: true },
-      include: {
-        category: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            space: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    const { rows } = await pool.query(
+      `SELECT a.id, a.title, a.slug, a.content, a.summary, a.tags,
+              a."keyTopics", a."viewCount", a."createdAt", a."updatedAt",
+              json_build_object(
+                'id', c.id,
+                'name', c.name,
+                'slug', c.slug,
+                'space', json_build_object(
+                  'id', s.id,
+                  'name', s.name,
+                  'slug', s.slug
+                )
+              ) AS category
+       FROM articles a
+       JOIN categories c ON a."categoryId" = c.id
+       JOIN spaces s ON c."spaceId" = s.id
+       WHERE a.id = $1 AND a."isPublished" = true`,
+      [id]
+    );
+
+    const article = rows[0];
 
     if (!article) {
       return NextResponse.json(
@@ -35,9 +37,9 @@ export async function GET(
       );
     }
 
-    // Increment view count (non-blocking)
-    db.article
-      .update({ where: { id }, data: { viewCount: { increment: 1 } } })
+    // Increment view count (non-blocking, fire and forget)
+    pool
+      .query(`UPDATE articles SET "viewCount" = "viewCount" + 1 WHERE id = $1`, [id])
       .catch(() => {});
 
     // Find related glossary terms (by matching tags or key topics)
@@ -54,34 +56,42 @@ export async function GET(
     }> = [];
 
     if (searchTerms.length > 0) {
-      // Try to find glossary terms that match tags/topics
-      relatedGlossary = await db.glossaryTerm.findMany({
-        where: {
-          OR: searchTerms.map((term: string) => ({
-            term: { contains: term, mode: "insensitive" },
-          })),
-        },
-        take: 8,
-        select: {
-          id: true,
-          term: true,
-          shortDefinition: true,
-          category: true,
-        },
-      });
+      // Build ILIKE conditions for each search term
+      const conditions = searchTerms
+        .map((_: string, i: number) => `term ILIKE $${i + 1}`)
+        .join(" OR ");
+      const likeParams = searchTerms.map((term: string) => `%${term}%`);
+
+      const { rows: glossaryRows } = await pool.query(
+        `SELECT id, term, "shortDefinition", category
+         FROM glossary_terms
+         WHERE ${conditions}
+         LIMIT 8`,
+        likeParams
+      );
+
+      relatedGlossary = glossaryRows.map((g) => ({
+        id: g.id,
+        term: g.term,
+        shortDefinition: g.shortDefinition,
+        category: g.category,
+      }));
 
       // If no matches by tag, return some general glossary terms
       if (relatedGlossary.length === 0) {
-        relatedGlossary = await db.glossaryTerm.findMany({
-          take: 5,
-          orderBy: { order: "asc" },
-          select: {
-            id: true,
-            term: true,
-            shortDefinition: true,
-            category: true,
-          },
-        });
+        const { rows: fallbackRows } = await pool.query(
+          `SELECT id, term, "shortDefinition", category
+           FROM glossary_terms
+           ORDER BY order ASC
+           LIMIT 5`
+        );
+
+        relatedGlossary = fallbackRows.map((g) => ({
+          id: g.id,
+          term: g.term,
+          shortDefinition: g.shortDefinition,
+          category: g.category,
+        }));
       }
     }
 
@@ -94,8 +104,8 @@ export async function GET(
       tags: article.tags,
       keyTopics: article.keyTopics,
       viewCount: article.viewCount,
-      createdAt: article.createdAt.toISOString(),
-      updatedAt: article.updatedAt.toISOString(),
+      createdAt: new Date(article.createdAt).toISOString(),
+      updatedAt: new Date(article.updatedAt).toISOString(),
       category: article.category,
       relatedGlossary,
     };
