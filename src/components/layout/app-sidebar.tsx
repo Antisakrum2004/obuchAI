@@ -20,6 +20,9 @@ import { Separator } from "@/components/ui/separator";
 import { useSession } from "next-auth/react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+// Read version from package.json at build time
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.5.2";
+
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
@@ -106,7 +109,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           <ThemeToggle size="small" />
         </div>
         <p className="text-center text-[10px] text-muted-foreground/50">
-          v2.5.0
+          v{APP_VERSION}
         </p>
       </div>
     </div>

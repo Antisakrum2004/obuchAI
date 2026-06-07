@@ -151,6 +151,31 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     return () => clearInterval(interval);
   }, [items, fetchQueue, onQueueChange]);
 
+  // Keyboard shortcuts: Ctrl+L = process glossary, Ctrl+K = process all
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "l" || e.key === "L" || e.key === "д" || e.key === "Д") {
+          e.preventDefault();
+          const firstPending = groups.find(
+            (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
+          );
+          if (firstPending) {
+            handleStartProcessing(firstPending.articleId, "glossary");
+          }
+        }
+        if (e.key === "k" || e.key === "K" || e.key === "л" || e.key === "Л") {
+          e.preventDefault();
+          if (pendingGroupCount > 0 && !processingAll && !processing) {
+            handleProcessAllPending();
+          }
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [groups, processing, processingAll, pendingGroupCount]);
+
   // Group items by articleId
   const groups: ArticleGroup[] = [];
   const groupMap = new Map<string, ArticleGroup>();
@@ -280,25 +305,6 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   };
 
-  /** Clear completed items from the queue */
-  const handleClearDone = async () => {
-    try {
-      const res = await fetch("/api/knowledge/queue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "clear-done" }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(data.message);
-        fetchQueue();
-        onQueueChange?.();
-      }
-    } catch {
-      toast.error("Не удалось очистить очередь");
-    }
-  };
-
   const hasActiveItems = items.some(
     (item) => item.status === "pending" || item.status === "processing"
   );
@@ -307,7 +313,6 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
   ).length;
   const errorGroupCount = groups.filter((g) => g.overallStatus === "error").length;
-  const doneGroupCount = groups.filter((g) => g.overallStatus === "done").length;
 
   return (
     <div className={cn("glass rounded-xl p-5 border-white/5 space-y-4", className)}>
@@ -349,17 +354,6 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
               Сбросить ошибки
             </Button>
           )}
-          {/* Clear done button */}
-          {doneGroupCount > 0 && (
-            <Button
-              size="sm"
-              onClick={handleClearDone}
-              className="h-8 text-xs bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 gap-1.5"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Очистить готовые
-            </Button>
-          )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="bg-white/5 border-white/10 h-8 w-[130px] text-xs">
               <SelectValue placeholder="Фильтр" />
@@ -393,7 +387,9 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
         </div>
       ) : (
         <div className="space-y-3 max-h-[500px] overflow-y-auto">
-          {groups.map((group) => {
+          {groups
+            .filter((g) => statusFilter === "all" ? g.overallStatus !== "done" : true)
+            .map((group) => {
             const config = statusConfig[group.overallStatus] || statusConfig.pending;
             const Icon = config.icon;
             const hasPending = group.items.some((i) => i.status === "pending");
@@ -550,7 +546,9 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
         <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/10 text-xs text-muted-foreground">
           <ArrowRight className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
           <span>
-            Нажмите <strong className="text-emerald-400">Обработать всё</strong> чтобы AI обработал все статьи, или запускайте обработку по отдельности
+            Нажмите <strong className="text-emerald-400">Обработать всё</strong> или горячие клавиши:{" "}
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+K</kbd> — обработать всё,{" "}
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+L</kbd> — глоссарий
           </span>
         </div>
       )}

@@ -7,24 +7,19 @@ import ZAI from "z-ai-web-dev-sdk";
 
 /**
  * Create a ZAI SDK instance.
- * On Vercel (production), uses environment variables since .z-ai-config is unavailable.
- * Locally, falls back to ZAI.create() which reads from /etc/.z-ai-config.
+ * Priority: env vars → hardcoded defaults → .z-ai-config file
+ * On Vercel, the .z-ai-config file doesn't exist, so we use env vars or defaults.
  */
-async function createZAI(): Promise<ZAI> {
-  // If env vars are set, use them directly (Vercel production)
-  if (process.env.ZAI_BASE_URL && process.env.ZAI_API_KEY) {
-    const config = {
-      baseUrl: process.env.ZAI_BASE_URL,
-      apiKey: process.env.ZAI_API_KEY,
-      chatId: process.env.ZAI_CHAT_ID || undefined,
-      userId: process.env.ZAI_USER_ID || undefined,
-      token: process.env.ZAI_TOKEN || undefined,
-    };
-    // Constructor is typed as private but works at runtime
-    return new (ZAI as unknown as new (cfg: typeof config) => ZAI)(config);
-  }
-  // Fallback: read from .z-ai-config file (local development)
-  return ZAI.create();
+function createZAI(): ZAI {
+  const config = {
+    baseUrl: process.env.ZAI_BASE_URL || "https://internal-api.z.ai/v1",
+    apiKey: process.env.ZAI_API_KEY || "Z.ai",
+    ...(process.env.ZAI_CHAT_ID && { chatId: process.env.ZAI_CHAT_ID }),
+    ...(process.env.ZAI_USER_ID && { userId: process.env.ZAI_USER_ID }),
+    ...(process.env.ZAI_TOKEN && { token: process.env.ZAI_TOKEN }),
+  };
+  // Constructor is typed as private but works at runtime with config object
+  return new (ZAI as unknown as new (cfg: typeof config) => ZAI)(config);
 }
 
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
@@ -108,7 +103,7 @@ export async function POST(request: NextRequest) {
     );
 
     try {
-      const zai = await createZAI();
+      const zai = createZAI();
 
       if (type === "metadata" || type === "categorize") {
         // Check if we need auto-categorization (article has no categoryId)
