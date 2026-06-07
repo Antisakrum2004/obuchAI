@@ -243,8 +243,8 @@ export async function POST(request: Request) {
         ON CONFLICT (key) DO NOTHING;
       `)
 
-      // Add missing columns (safe ALTER TABLE for tables that already exist)
-      const alterStatements = [
+      // Add missing columns for users and challenge_attempts (these tables already exist)
+      const alterStatementsPhase1 = [
         `ALTER TABLE challenge_attempts ADD COLUMN IF NOT EXISTS "timeSpent" INTEGER;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastIp" TEXT;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastUserAgent" TEXT;`,
@@ -254,32 +254,13 @@ export async function POST(request: Request) {
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCode" TEXT UNIQUE;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referredBy" TEXT;`,
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCount" INTEGER DEFAULT 0;`,
-
-        // Sprint 6: Article extensions for AI Content Processing Pipeline
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3);`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT;`,
-
-        // Sprint 6: GlossaryTerm extension
-        `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
       ];
 
-      for (const alterSql of alterStatements) {
+      for (const alterSql of alterStatementsPhase1) {
         try {
           await client.query(alterSql)
         } catch (alterErr) {
-          console.warn('ALTER warning:', alterErr)
+          console.warn('ALTER Phase 1 warning:', alterErr)
         }
       }
 
@@ -355,6 +336,36 @@ export async function POST(request: Request) {
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `)
+
+      // Sprint 6: Add columns to articles and glossary_terms (AFTER tables are created)
+      const alterStatementsPhase2 = [
+        // Article extensions for AI Content Processing Pipeline
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3);`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT;`,
+
+        // GlossaryTerm extension
+        `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
+      ];
+
+      for (const alterSql of alterStatementsPhase2) {
+        try {
+          await client.query(alterSql)
+        } catch (alterErr) {
+          console.warn('ALTER Phase 2 warning:', alterErr)
+        }
+      }
 
       // Knowledge Hub foreign keys
       const knowledgeFkStatements = [

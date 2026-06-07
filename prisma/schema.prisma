@@ -34,6 +34,15 @@ model User {
   lastUserAgent String?  // Last browser User-Agent
   lastDevice    String?  // Parsed device info (e.g. "Chrome / Windows" or "Safari / iPhone")
 
+  // Adaptive difficulty tracking
+  consecutiveCorrect Int   @default(0) // Streak of correct answers for adaptive difficulty
+  consecutiveWrong   Int   @default(0) // Streak of wrong answers for adaptive difficulty
+
+  // Referral system
+  referralCode  String?  @unique // User's unique referral code
+  referredBy    String?          // Referral code of the user who invited this user
+  referralCount Int      @default(0) // Number of users referred by this user
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
