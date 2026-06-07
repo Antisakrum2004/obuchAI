@@ -261,17 +261,34 @@ src/
 - **Vercel Toolbar killer**: Cookie `vercel-toolbar=0` + `vercel-toolbar-hide=1` на все маршруты
 - **Matcher**: admin routes + все страницы (кроме API/static)
 
+### 3.13 Knowledge Hub (`src/app/knowledge/`, `src/app/api/knowledge/`)
+- **Сущности**: KnowledgeSpace → Category → Article → Media, GlossaryTerm
+- **KnowledgeSpace**: Пространства знаний (AI Разработка, Промпт-инжиниринг, 1С и AI, Инструменты)
+- **Category**: Иерархические категории внутри пространств (Cursor, Claude Code, MCP, OpenAI)
+- **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount
+- **Media**: Видео/документы/изображения, привязанные к статьям (URL, MinIO/S3)
+- **GlossaryTerm**: Термины с определениями, категориями, связанными терминами
+- **API**: 9 маршрутов (CRUD spaces, categories, articles, glossary, search, seed)
+- **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья)
+
+### 3.14 AI-Глоссарий (`src/components/knowledge/glossary-command.tsx`, `glossary-trigger.tsx`)
+- **Cmd+K / Ctrl+K**: Глобальный поиск по терминам из любого места приложения
+- **Floating ? button**: Кнопка в правом нижнем углу (позиционирована над mobile tab bar)
+- **Command Dialog**: Fuzzy-поиск по glossary_terms, кликабельные related terms
+- **Категории**: AI, Tools, 1C, General — цветные badge
+- **10 предзагруженных терминов**: LLM, Промпт, MCP, RAG, Context Window, Tool Calling, AI Агент, Токен, Fine-tuning, Embedding
+
 ---
 
 ## 4. Current State
 
 ### Метрики проекта
-- **Строк кода**: 20,422 (src/ только .ts/.tsx)
-- **Страниц**: 14
-- **API маршрутов**: 26
-- **Компонентов**: 84
+- **Строк кода**: ~23,000 (src/ только .ts/.tsx)
+- **Страниц**: 17
+- **API маршрутов**: 35
+- **Компонентов**: 86
 - **Хуков**: 5
-- **Моделей Prisma**: 11 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement)
+- **Моделей Prisma**: 16 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm)
 - **Размер GitHub repo**: 6,752 KB
 
 ### Реализовано и работает стабильно
@@ -292,6 +309,9 @@ src/
 - Particle effects + confetti (отключаемые через feature flags)
 - Profile page с share-карточкой (PNG генерация)
 - Vercel деплой — READY, работает на production
+- **Knowledge Hub** — База знаний (4 пространства, 6 категорий, статьи, медиа)
+- **AI-Глоссарий** — ⌘K глобальный поиск по терминам (10 предзагруженных терминов)
+- **Умный поиск** — /api/knowledge/search — поиск по статьям, глоссарию, задачам
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
@@ -302,11 +322,14 @@ src/
 ### Не реализовано
 - **Playground** (`/playground`): Страница есть, но z-ai-web-dev-sdk не интегрирован
 - **Уведомления** (push/email)
-- **Глобальный поиск**
 - **Мультиязычность** (только русский, next-intl установлен но не используется)
 - **Тесты** (0 тестовых файлов, playwright установлен)
 - **Error boundaries** (любой рантайм краш = белый экран)
 - **Rate limiting** (API без защиты от спама)
+- **Загрузка файлов** (MinIO/S3 — Sprint 2)
+- **Видео HLS-трансляция** (FFMPEG — Sprint 2)
+- **AI-анализ материалов** (авто-извлечение терминов — Sprint 3)
+- **Learning Path** (дорожные карты онбординга)
 
 ### Рассинхронизация кодовых баз
 - **Workspace → Vercel (obuch-ai)**: Деплоится напрямую, содержит весь функционал
@@ -453,6 +476,29 @@ src/
 ---
 
 ## 9. Next Steps
+
+### Sprint 1 — Knowledge Hub (ЗАВЕРШЁН ✅)
+- [x] Prisma модели: KnowledgeSpace, Category, Article, Media, GlossaryTerm
+- [x] Миграция: CREATE TABLE + FK + индексы + seed данные
+- [x] API routes: 9 маршрутов (CRUD + search + seed)
+- [x] UI: /knowledge, /knowledge/[slug], /knowledge/article/[id]
+- [x] AI-Глоссарий: ⌘K overlay + floating ? button
+- [x] Sidebar: "База знаний" с BookOpen иконкой
+
+### Sprint 2 — Загрузка файлов (СЛЕДУЮЩИЙ)
+- [ ] MinIO/S3 хранилище: docker-compose + SDK интеграция
+- [ ] Upload API: POST /api/knowledge/media/upload
+- [ ] Поддержка типов: PDF, PPTX, DOCX, видео, изображения
+- [ ] Структура хранения: /company/courses/, /company/knowledge/
+- [ ] HLS-трансляция для видео 500+ МБ (FFMPEG)
+- [ ] Превью: thumbnailUrl для видео/изображений
+
+### Sprint 3 — AI-анализ материалов
+- [ ] Извлечение текста из PDF/PPTX/DOCX
+- [ ] AI-генерация summary, tags, keyTopics при загрузке
+- [ ] Авто-извлечение глоссарий-терминов из материала
+- [ ] Предложение добавить термины в глоссарий
+- [ ] Semantic search (embeddings)
 
 ### Безопасность (P0)
 - [ ] Вынести admin credentials в env vars

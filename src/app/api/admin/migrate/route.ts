@@ -263,6 +263,137 @@ export async function POST(request: Request) {
         }
       }
 
+      // ==========================================
+      // KNOWLEDGE HUB TABLES
+      // ==========================================
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS knowledge_spaces (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          description TEXT,
+          icon TEXT,
+          "order" INTEGER NOT NULL DEFAULT 0,
+          "isPublished" BOOLEAN NOT NULL DEFAULT false,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS categories (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          description TEXT,
+          icon TEXT,
+          "order" INTEGER NOT NULL DEFAULT 0,
+          "spaceId" TEXT NOT NULL,
+          "parentId" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS articles (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          slug TEXT NOT NULL UNIQUE,
+          content TEXT NOT NULL,
+          summary TEXT,
+          tags TEXT,
+          "keyTopics" TEXT,
+          "categoryId" TEXT NOT NULL,
+          "authorId" TEXT,
+          "isPublished" BOOLEAN NOT NULL DEFAULT false,
+          "viewCount" INTEGER NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS media (
+          id TEXT PRIMARY KEY,
+          "fileName" TEXT NOT NULL,
+          "fileType" TEXT NOT NULL,
+          "mimeType" TEXT NOT NULL,
+          "fileSize" INTEGER NOT NULL,
+          url TEXT NOT NULL,
+          "thumbnailUrl" TEXT,
+          duration INTEGER,
+          "articleId" TEXT,
+          "uploadedBy" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS glossary_terms (
+          id TEXT PRIMARY KEY,
+          term TEXT NOT NULL UNIQUE,
+          definition TEXT NOT NULL,
+          "shortDefinition" TEXT,
+          category TEXT,
+          "relatedTerms" TEXT,
+          "sourceArticleId" TEXT,
+          "order" INTEGER NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `)
+
+      // Knowledge Hub foreign keys
+      const knowledgeFkStatements = [
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_spaceId_fkey;
+         ALTER TABLE categories ADD CONSTRAINT categories_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+        `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_parentId_fkey;
+         ALTER TABLE categories ADD CONSTRAINT categories_parentId_fkey FOREIGN KEY ("parentId") REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE;`,
+        `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_categoryId_fkey;
+         ALTER TABLE articles ADD CONSTRAINT articles_categoryId_fkey FOREIGN KEY ("categoryId") REFERENCES categories(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+        `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey;
+         ALTER TABLE media ADD CONSTRAINT media_articleId_fkey FOREIGN KEY ("articleId") REFERENCES articles(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+      ]
+
+      for (const fkSql of knowledgeFkStatements) {
+        try {
+          await client.query(fkSql)
+        } catch (fkErr) {
+          console.warn('Knowledge FK warning (may already exist):', fkErr)
+        }
+      }
+
+      // Seed default knowledge spaces
+      await client.query(`
+        INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES
+          ('ks_ai_dev', 'AI Разработка', 'ai-development', 'Инструменты и концепции AI-разработки', '🤖', 1, true),
+          ('ks_prompt', 'Промпт-инжиниринг', 'prompt-engineering', 'Техники работы с языковыми моделями', '✍️', 2, true),
+          ('ks_1c', '1С и AI', '1c-ai', 'Интеграция AI в экосистему 1С', '🖥️', 3, true),
+          ('ks_tools', 'Инструменты', 'tools', 'Cursor, Claude Code, MCP и другие', '🛠️', 4, true)
+        ON CONFLICT (slug) DO NOTHING;
+      `)
+
+      // Seed default categories
+      await client.query(`
+        INSERT INTO categories (id, name, slug, description, icon, "spaceId", "order") VALUES
+          ('cat_cursor', 'Cursor', 'cursor', 'AI-редактор кода', '🖱️', 'ks_tools', 1),
+          ('cat_claude_code', 'Claude Code', 'claude-code', 'AI-ассистент для терминала', '⌨️', 'ks_tools', 2),
+          ('cat_openai', 'OpenAI', 'openai', 'GPT, DALL-E, Whisper', '🧠', 'ks_tools', 3),
+          ('cat_mcp', 'MCP', 'mcp', 'Model Context Protocol', '🔌', 'ks_tools', 4),
+          ('cat_prompt_basics', 'Основы', 'prompt-basics', 'Базовые техники промптинга', '📝', 'ks_prompt', 1),
+          ('cat_prompt_advanced', 'Продвинутые', 'prompt-advanced', 'Chain-of-thought, few-shot и др.', '🎯', 'ks_prompt', 2)
+        ON CONFLICT (slug) DO NOTHING;
+      `)
+
+      // Seed default glossary terms
+      await client.query(`
+        INSERT INTO glossary_terms (id, term, definition, "shortDefinition", category, "relatedTerms", "order") VALUES
+          ('gt_llm', 'LLM', 'Large Language Model — большая языковая модель. Нейронная сеть, обученная на огромных объёмах текста, способная генерировать, анализировать и трансформировать текст. Примеры: GPT-4, Claude, Gemini.', 'Большая языковая модель', 'AI', '["prompt", "rag", "mcp"]', 1),
+          ('gt_prompt', 'Промпт', 'Промпт (prompt) — текстовый запрос к языковой модели. От качества промпта напрямую зависит точность и релевантность ответа. Включает контекст, инструкцию, примеры и ограничения.', 'Текстовый запрос к AI', 'AI', '["llm", "prompt-engineering"]', 2),
+          ('gt_mcp', 'MCP', 'Model Context Protocol — открытый протокол подключения внешних инструментов и источников данных к LLM. Позволяет моделям взаимодействовать с файлами, API, базами данных.', 'Протокол подключения инструментов к LLM', 'Tools', '["llm", "tool-calling"]', 3),
+          ('gt_rag', 'RAG', 'Retrieval-Augmented Generation — метод улучшения ответов LLM путём поиска релевантной информации во внешних источниках перед генерацией ответа.', 'Усиленная поиском генерация', 'AI', '["llm", "vector-database"]', 4),
+          ('gt_context_window', 'Context Window', 'Окно контекста — максимальный объём текста (в токенах), который LLM может обработать за один запрос. У GPT-4 — 128K токенов, у Claude 3.5 — 200K токенов.', 'Макс. объём текста для одного запроса', 'AI', '["llm", "token"]', 5),
+          ('gt_tool_calling', 'Tool Calling', 'Tool Calling (Function Calling) — способность LLM вызывать внешние функции и API в процессе генерации ответа. Основа для создания AI-агентов.', 'Вызов функций через LLM', 'Tools', '["mcp", "agent"]', 6),
+          ('gt_agent', 'AI Агент', 'AI Агент — система, использующая LLM для автономного выполнения задач. Агент планирует, использует инструменты, анализирует результаты и принимает решения.', 'Автономная AI-система', 'AI', '["tool-calling", "mcp"]', 7),
+          ('gt_token', 'Токен', 'Токен — минимальная единица текста, которую обрабатывает LLM. Один токен ≈ 0.75 слова на английском, ≈ 0.5 слова на русском. Стоимость API считается за токены.', 'Единица текста для LLM', 'AI', '["llm", "context-window"]', 8),
+          ('gt_fine_tuning', 'Fine-tuning', 'Fine-tuning — дообучение предобученной модели на специфичных данных. Позволяет адаптировать модель под конкретную задачу, стиль или домен.', 'Дообучение модели на своих данных', 'AI', '["llm"]', 9),
+          ('gt_embedding', 'Embedding', 'Embedding (векторное представление) — числовой вектор, кодирующий смысл текста. Используется для поиска, кластеризации и RAG.', 'Векторное представление текста', 'AI', '["rag", "vector-database"]', 10)
+        ON CONFLICT (term) DO NOTHING;
+      `)
+
       // Create indexes
       const indexStatements = [
         `CREATE INDEX IF NOT EXISTS accounts_userId_idx ON accounts("userId");`,
@@ -276,6 +407,13 @@ export async function POST(request: Request) {
         `CREATE INDEX IF NOT EXISTS xp_logs_userId_idx ON xp_logs("userId");`,
         `CREATE INDEX IF NOT EXISTS user_achievements_userId_idx ON user_achievements("userId");`,
         `CREATE INDEX IF NOT EXISTS user_achievements_achievementId_idx ON user_achievements("achievementId");`,
+        `CREATE INDEX IF NOT EXISTS categories_spaceId_idx ON categories("spaceId");`,
+        `CREATE INDEX IF NOT EXISTS categories_parentId_idx ON categories("parentId");`,
+        `CREATE INDEX IF NOT EXISTS articles_categoryId_idx ON articles("categoryId");`,
+        `CREATE INDEX IF NOT EXISTS articles_isPublished_idx ON articles("isPublished");`,
+        `CREATE INDEX IF NOT EXISTS media_articleId_idx ON media("articleId");`,
+        `CREATE INDEX IF NOT EXISTS glossary_terms_category_idx ON glossary_terms(category);`,
+        `CREATE INDEX IF NOT EXISTS glossary_terms_term_idx ON glossary_terms(term);`,
       ]
 
       for (const idxSql of indexStatements) {

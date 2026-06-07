@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ParticlesBackground } from "@/components/effects/particles-background";
 import { AppSettingsProvider } from "@/hooks/use-app-settings";
+import { GlossaryCommand } from "@/components/knowledge/glossary-command";
+import { GlossaryTrigger } from "@/components/knowledge/glossary-trigger";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -66,6 +68,8 @@ export default function RootLayout({
         <ThemeProvider>
           <AppSettingsProvider>
             <ParticlesBackground />
+            <GlossaryCommand />
+            <GlossaryTrigger />
             <div className="relative z-[1]">{children}</div>
           </AppSettingsProvider>
         </ThemeProvider>

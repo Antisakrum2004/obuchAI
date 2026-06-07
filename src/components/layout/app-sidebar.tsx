@@ -14,6 +14,7 @@ import {
   Info,
   Flame,
   Award,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +26,7 @@ const allNavItems = [
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false },
+  { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
   { href: "/playground", label: "Песочница", icon: FlaskConical, adminOnly: false },

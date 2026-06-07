@@ -66,7 +66,7 @@ export default function ChallengesPage() {
   // Fetch on mount and when filters change
   useEffect(() => {
     fetchChallenges();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [categoryFilter, difficultyFilter, typeFilter]);
 
   // Also re-fetch when page gets focus (user returns from solving a task)
@@ -74,7 +74,7 @@ export default function ChallengesPage() {
     const onFocus = () => fetchChallenges();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [categoryFilter, difficultyFilter, typeFilter]);
 
   // Sort challenges: active first, then blocked (cooldown), then solved at the bottom

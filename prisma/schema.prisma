@@ -253,3 +253,98 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@map("user_achievements")
 }
+
+// ============================================
+// KNOWLEDGE HUB
+// ============================================
+
+model KnowledgeSpace {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  icon        String?
+  order       Int        @default(0)
+  isPublished Boolean    @default(false)
+  categories  Category[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("knowledge_spaces")
+}
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  icon        String?
+  order       Int        @default(0)
+  spaceId     String
+  space       KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryTree")
+  articles    Article[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("categories")
+}
+
+model Article {
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  content       String     // Markdown content
+  summary       String?    // AI-generated short summary
+  tags          String?    // JSON array of tags ["prompt", "mcp"]
+  keyTopics     String?    // JSON array of key topics
+  categoryId    String
+  category      Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  authorId      String?
+  media         Media[]
+  isPublished   Boolean    @default(false)
+  viewCount     Int        @default(0)
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@map("articles")
+}
+
+model Media {
+  id           String   @id @default(cuid())
+  fileName     String
+  fileType     String   // "video" | "document" | "image"
+  mimeType     String
+  fileSize     Int      // bytes
+  url          String   // Storage URL (MinIO, S3, local)
+  thumbnailUrl String?
+  duration     Int?     // seconds, for video
+  articleId    String?
+  article      Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  uploadedBy   String?
+
+  createdAt    DateTime @default(now())
+
+  @@map("media")
+}
+
+model GlossaryTerm {
+  id              String   @id @default(cuid())
+  term            String   @unique
+  definition      String
+  shortDefinition String?  // Brief definition for tooltip/popup
+  category        String?  // "AI" | "Tools" | "1C" | "General"
+  relatedTerms    String?  // JSON array of related term slugs
+  sourceArticleId String?  // Link back to article if auto-extracted
+  order           Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("glossary_terms")
+}
