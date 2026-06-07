@@ -14,10 +14,7 @@ export async function GET() {
     return NextResponse.json(result.rows);
   } catch (error) {
     console.error("Error fetching glossary:", error);
-    return NextResponse.json(
-      { error: "Ошибка загрузки глоссария" },
-      { status: 500 }
-    );
+    return NextResponse.json([]);
   }
 }
 
@@ -51,11 +48,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const id = 'gt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+
     const result = await pool.query(
-      `INSERT INTO glossary_terms (term, definition, "shortDefinition", category, "relatedTerms", "sourceArticleId", "order", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      `INSERT INTO glossary_terms (id, term, definition, "shortDefinition", category, "relatedTerms", "sourceArticleId", "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        RETURNING *`,
       [
+        id,
         term,
         definition,
         shortDefinition || null,

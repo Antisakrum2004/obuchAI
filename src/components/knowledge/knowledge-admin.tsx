@@ -240,13 +240,13 @@ export function KnowledgeAdmin() {
 
   // ── Categories CRUD ──────────────────────────────────────────
 
-  const emptyCatForm = { name: "", slug: "", description: "", icon: "", order: 0, spaceId: "", parentId: "" };
+  const emptyCatForm = { name: "", slug: "", description: "", icon: "", order: 0, spaceId: "__none__", parentId: "__none__" };
   const [catForm, setCatForm] = useState(emptyCatForm);
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editCatForm, setEditCatForm] = useState<Partial<CategoryData>>({});
 
   const createCategory = async () => {
-    if (!catForm.name || !catForm.slug || !catForm.spaceId) { showToast("name, slug и spaceId обязательны", "err"); return; }
+    if (!catForm.name || !catForm.slug || !catForm.spaceId || catForm.spaceId === "__none__") { showToast("name, slug и spaceId обязательны", "err"); return; }
     setSaving(true);
     try {
       const res = await fetch("/api/knowledge/categories", {
@@ -254,7 +254,8 @@ export function KnowledgeAdmin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...catForm,
-          parentId: catForm.parentId || null,
+          spaceId: catForm.spaceId === "__none__" ? null : catForm.spaceId,
+          parentId: catForm.parentId === "__none__" ? null : catForm.parentId,
         }),
       });
       if (res.ok) {
@@ -298,14 +299,14 @@ export function KnowledgeAdmin() {
 
   // ── Articles CRUD ────────────────────────────────────────────
 
-  const emptyArtForm = { title: "", slug: "", content: "", summary: "", categoryId: "", isPublished: true, tags: "", keyTopics: "" };
+  const emptyArtForm = { title: "", slug: "", content: "", summary: "", categoryId: "__none__", isPublished: true, tags: "", keyTopics: "" };
   const [artForm, setArtForm] = useState(emptyArtForm);
   const [editingArtId, setEditingArtId] = useState<string | null>(null);
   const [editArtForm, setEditArtForm] = useState<Record<string, unknown>>({});
   const [showPreview, setShowPreview] = useState(false);
 
   const createArticle = async () => {
-    if (!artForm.title || !artForm.slug || !artForm.categoryId) { showToast("title, slug и categoryId обязательны", "err"); return; }
+    if (!artForm.title || !artForm.slug || !artForm.categoryId || artForm.categoryId === "__none__") { showToast("title, slug и categoryId обязательны", "err"); return; }
     setSaving(true);
     try {
       const tags = artForm.tags ? artForm.tags.split(",").map((t) => t.trim()).filter(Boolean) : null;
@@ -594,6 +595,7 @@ export function KnowledgeAdmin() {
                 <Select value={catForm.spaceId} onValueChange={(v) => setCatForm({ ...catForm, spaceId: v })}>
                   <SelectTrigger className="bg-white/5 border-white/10 w-48"><SelectValue placeholder="Пространство" /></SelectTrigger>
                   <SelectContent className="bg-[#111118] border-white/10">
+                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите пространство</SelectItem>
                     {spaces.map((s) => (<SelectItem key={s.id} value={s.id}>{s.icon || "📚"} {s.name}</SelectItem>))}
                   </SelectContent>
                 </Select>
@@ -671,6 +673,7 @@ export function KnowledgeAdmin() {
                 <Select value={artForm.categoryId} onValueChange={(v) => setArtForm({ ...artForm, categoryId: v })}>
                   <SelectTrigger className="bg-white/5 border-white/10"><SelectValue placeholder="Категория" /></SelectTrigger>
                   <SelectContent className="bg-[#111118] border-white/10">
+                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите категорию</SelectItem>
                     {spaces.map((s) => (
                       <SelectItem key={s.id} value={s.id} disabled className="font-semibold text-emerald-400">
                         {s.icon || "📚"} {s.name}

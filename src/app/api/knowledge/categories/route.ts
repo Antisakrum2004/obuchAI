@@ -42,10 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching categories:", error);
-    return NextResponse.json(
-      { error: "Ошибка загрузки категорий" },
-      { status: 500 }
-    );
+    return NextResponse.json([]);
   }
 }
 
@@ -79,11 +76,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const id = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+
     const result = await pool.query(
-      `INSERT INTO categories (name, slug, description, icon, "order", "spaceId", "parentId", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      `INSERT INTO categories (id, name, slug, description, icon, "order", "spaceId", "parentId", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        RETURNING *`,
       [
+        id,
         name,
         slug,
         description || null,

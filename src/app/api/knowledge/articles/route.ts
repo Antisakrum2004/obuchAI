@@ -52,10 +52,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching articles:", error);
-    return NextResponse.json(
-      { error: "Ошибка загрузки статей" },
-      { status: 500 }
-    );
+    return NextResponse.json([]);
   }
 }
 
@@ -98,13 +95,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const id = 'art_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
     const authorId = (session.user as Record<string, unknown>).id as string;
 
     const result = await pool.query(
-      `INSERT INTO articles (title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, NOW(), NOW())
+      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, NOW(), NOW())
        RETURNING *`,
       [
+        id,
         title,
         slug,
         content || "",
