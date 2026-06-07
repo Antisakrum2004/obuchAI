@@ -9,7 +9,7 @@
 - **Что это**: AI Тренажёр для 1C-разработчиков — Duolingo-style геймифицированная платформа обучения навыкам работы с ИИ
 - **Задача**: Научить 1C-разработчиков промпт-инжинирингу, работе с AI-агентами, дебаггингу через решение задач
 - **Домен**: obuch-ai.vercel.app
-- **Репозиторий**: github.com/Antisakrum2004/obuch-project (публичный, но отстаёт от реального деплоя)
+- **Репозиторий**: github.com/Antisakrum2004/obuchAI (синхронизирован с workspace)
 - **Стек**:
   - Frontend: Next.js 16 (App Router) + React 19 + Tailwind CSS 4 + shadcn/ui
   - Backend: Next.js API Routes (serverless)
@@ -23,12 +23,12 @@
 
 | Окружение | URL | Статус | Что запущено |
 |---|---|---|---|
-| **obuch-ai** (production) | obuch-ai.vercel.app | READY | Полный проект из workspace (без привязки к GitHub) |
+| **obuch-ai** (production) | obuch-ai.vercel.app | READY | Полный проект из workspace, привязан к GitHub (obuchAI) |
 | **obuch-project-rggt** | obuch-project-rggt.vercel.app | READY | Реструктурированная версия из GitHub repo |
-| **GitHub repo** | Antisakrum2004/obuch-project | main | Упрощённая версия (journeys/tasks вместо challenges) |
-| **Старый repo** | Antisakrum2004/obuchAI | main | Неактивен с 2026-05-14 |
+| **GitHub repo** | Antisakrum2004/obuchAI | main | Рабочий код (синхронизирован с workspace) |
+| **Старый repo** | Antisakrum2004/obuch-project | main | Устаревшая реструктурированная версия |
 
-> ⚠️ **Важно**: obuch-ai.vercel.app и GitHub repo — **два разных кодовых баз**. Рабочий проект (20,422 строк кода) живёт в workspace и деплоится напрямую. GitHub repo содержит реструктурированную, но незавершённую версию.
+> ✅ **Синхронизация**: obuch-ai.vercel.app привязан к GitHub repo Antisakrum2004/obuchAI. Код из workspace деплоится через `vercel deploy --prod` (пока нет auto-deploy через webhook).
 
 ### Env vars на Vercel (obuch-ai)
 
@@ -44,7 +44,11 @@
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret |
 | `VERCEL_TOOLBAR_DISABLED` | Отключение Vercel Toolbar |
 | `NEXT_PUBLIC_VERCEL_*` | Клиентские флаги для тулбара |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob Storage (авто-устанавливается при создании Blob Store) |
+| `BLOB_STORE_ID` | ID Blob Store: store_5OkTkSLciotjEC41 (авто-устанавливается Vercel) |
+| `BLOB_WEBHOOK_PUBLIC_KEY` | Публичный ключ для Blob Store webhook'ов |
+| `STORAGE_PROVIDER` | Провайдер файлового хранилища: "vercel-blob" (default) / "s3" / "minio" |
+
+> ℹ️ **BLOB_READ_WRITE_TOKEN**: Не требуется! @vercel/blob v2.4.0 использует внутреннюю аутентификацию Vercel при запуске на серверless-функциях. OIDC токен автоматически доступен в production.
 | `STORAGE_PROVIDER` | Провайдер файлового хранилища: "vercel-blob" (default) / "s3" / "minio" |
 
 ---
@@ -162,7 +166,7 @@ src/
 | date-fns | ^4.1.0 | Работа с датами (streak, daily) |
 | react-markdown | ^10.1.0 | Рендеринг Markdown в задачах |
 | react-syntax-highlighter | ^15.6.1 | Подсветка кода в задачах |
-| @vercel/blob | ^1.0.0 | Файловое хранилище (Vercel Blob Storage) |
+| @vercel/blob | ^2.4.0 | Файловое хранилище (Vercel Blob Storage, OIDC auth) |
 
 ### Мёртвые зависимости (установлены, не используются в src/)
 
@@ -348,11 +352,10 @@ src/
 - **AI-анализ материалов** (авто-извлечение терминов — Sprint 3)
 - **Learning Path** (дорожные карты онбординга)
 
-### Рассинхронизация кодовых баз
-- **Workspace → Vercel (obuch-ai)**: Деплоится напрямую, содержит весь функционал
-- **GitHub repo (obuch-project)**: Реструктурированная версия (journeys/tasks, rbac, events, journey-engine), создана 2026-06-07, не завершена
-- **Старый repo (obuchAI)**: Неактивен с 2026-05-14
-- **Проблема**: Код в workspace не синхронизирован с GitHub; push в GitHub = потеря существующего функционала
+### Синхронизация кодовых баз
+- **Workspace → Vercel (obuch-ai)**: Деплоится через `vercel deploy --prod`, содержит весь функционал
+- **GitHub repo (obuchAI)**: Синхронизирован с workspace, Vercel привязан к GitHub
+- **Старый repo (obuch-project)**: Устаревшая реструктурированная версия, не используется
 
 ---
 
@@ -374,7 +377,7 @@ src/
 11. **Type-unsafe касты** — 44+ инстансов `as Record<string, unknown>` вместо расширения NextAuth типов
 12. **`ignoreBuildErrors: true`** в next.config.ts — TypeScript ошибки не ломают билд
 13. **`reactStrictMode: false`** — Отключён строгий режим React
-14. **GitHub не синхронизирован** — Рабочий код в workspace, GitHub содержит другую структуру
+14. **GitHub синхронизирован** — Рабочий код в obuchAI repo, Vercel привязан к GitHub
 
 ### Минорные (P2)
 15. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.4.0`
@@ -471,7 +474,7 @@ src/
 3. **Hardcoded admin credentials** — `admin/admin123` в исходном коде
 4. **Marathon читерство** — correctAnswer на клиенте
 5. **`ignoreBuildErrors: true`** — TypeScript ошибки не блокируют деплой
-6. **GitHub не синхронизирован** — Рабочий код деплоится не из GitHub
+6. **GitHub синхронизирован** — Рабочий код в obuchAI repo, Vercel привязан к GitHub
 
 ### Ограничения архитектуры
 1. **Нет миграций** — Prisma schema не синхронизирована с реальной БД
@@ -502,7 +505,7 @@ src/
 - [x] AI-Глоссарий: ⌘K overlay + floating ? button
 - [x] Sidebar: "База знаний" с BookOpen иконкой
 
-### Sprint 2 — Загрузка файлов (В РАБОТЕ 🚧)
+### Sprint 2 — Загрузка файлов (ЗАВЕРШЁН ✅)
 - [x] StorageProvider интерфейс (абстракция: upload, delete, getUrl)
 - [x] VercelBlobStorageProvider реализация (@vercel/blob)
 - [x] MediaService (бизнес-логика, не знает про Blob/S3)
@@ -514,6 +517,8 @@ src/
 - [x] UI: MediaViewer — видеоплеер, документы, изображения в статье
 - [x] Интеграция: MediaUpload + MediaViewer в /knowledge/article/[id]
 - [x] Env vars: BLOB_READ_WRITE_TOKEN, STORAGE_PROVIDER
+- [x] Blob Store подключён и верифицирован (store_5OkTkSLciotjEC41, region iad1)
+- [x] BLOB_READ_WRITE_TOKEN не нужен — Vercel internal auth работает
 - [ ] Привязка файлов к урокам (когда появятся lessons)
 - [ ] Превью: thumbnailUrl для видео (FFmpeg — отложено)
 - [ ] HLS-трансляция для видео 500+ МБ (отложено до VPS/Render Worker)
@@ -602,7 +607,9 @@ src/
 - Новые API → проверка admin через `getServerSession()`, не через middleware
 
 ### Деплой
-- Код из workspace деплоится на Vercel (obuch-ai) напрямую, НЕ через GitHub
-- Для редеплоя: `vercel --prod` или push в GitHub (если настроен auto-deploy)
+- Код из workspace деплоится на Vercel (obuch-ai) через `vercel deploy --prod`
+- GitHub repo (obuchAI) привязан к Vercel проекту, но auto-deploy через webhook пока не настроен
+- Для редеплоя: `vercel deploy --prod --token <VERCEL_TOKEN>` или push в GitHub + ручной деплой
 - БД: Neon PostgreSQL — соединения pooled (DATABASE_URL) и unpooled (DATABASE_URL_UNPOOLED)
+- Blob Store: store_5OkTkSLciotjEC41 (region iad1, public access, OIDC auth)
 - После изменений в Prisma schema: `prisma generate` + `prisma db push`
