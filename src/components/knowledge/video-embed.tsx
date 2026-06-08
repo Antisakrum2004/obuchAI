@@ -62,13 +62,15 @@ function extractRutubeId(url: string): string | null {
  * Invidious instances that proxy YouTube content — work without VPN in Russia.
  * We try them in order; if the first fails, fallback to the next.
  */
-const INVIDIOUS_INSTANCES = [
-  "inv.nadeko.net",
-  "invidious.fdn.fr",
-  "vid.puffyan.us",
-  "invidious.nerdvpn.de",
-  "yewtu.be",
-];
+/**
+ * YouTube player strategy:
+ * 1. youtube-nocookie.com (privacy-enhanced, less tracking, less browser blocking)
+ * 2. Direct youtube.com embed (fallback)
+ * 3. Link to YouTube (if embeds completely fail)
+ *
+ * Invidious/Piped instances are unreliable (CAPTCHAs, dead, rate-limited)
+ * so we don't use them as primary strategy.
+ */
 
 const sourceTypeLabels: Record<string, string> = {
   youtube: "YouTube",
@@ -79,57 +81,64 @@ const sourceTypeLabels: Record<string, string> = {
   other: "Ссылка",
 };
 
-// ─── YouTube Player with Invidious proxy (works in Russia without VPN) ───
+// ─── YouTube Player with nocookie + direct fallback ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [useInvidious, setUseInvidious] = useState(true);
-  const [invidiousInstance, setInvidiousInstance] = useState(INVIDIOUS_INSTANCES[0]);
+  const [strategy, setStrategy] = useState<"nocookie" | "direct" | "link">("nocookie");
   const [iframeError, setIframeError] = useState(false);
+  const [loadTimeout, setLoadTimeout] = useState(false);
 
-  const embedUrl = useInvidious
-    ? `https://${invidiousInstance}/embed/${videoId}`
-    : `https://www.youtube.com/embed/${videoId}`;
+  const embedUrl =
+    strategy === "nocookie"
+      ? `https://www.youtube-nocookie.com/embed/${videoId}`
+      : strategy === "direct"
+        ? `https://www.youtube.com/embed/${videoId}`
+        : null;
+
+  // Auto-fallback: if nocookie iframe doesn't signal load within 8s, try direct
+  useEffect(() => {
+    if (strategy === "nocookie" && !iframeError) {
+      const timer = setTimeout(() => {
+        console.log("[YouTubePlayer] nocookie timed out, trying direct embed");
+        setLoadTimeout(true);
+        setStrategy("direct");
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [strategy, iframeError]);
 
   const handleIframeError = useCallback(() => {
-    if (useInvidious) {
-      // Try next Invidious instance
-      const currentIdx = INVIDIOUS_INSTANCES.indexOf(invidiousInstance);
-      if (currentIdx < INVIDIOUS_INSTANCES.length - 1) {
-        setInvidiousInstance(INVIDIOUS_INSTANCES[currentIdx + 1]);
-      } else {
-        // All Invidious instances failed, fallback to YouTube directly
-        setUseInvidious(false);
-      }
-    } else {
-      setIframeError(true);
+    if (strategy === "nocookie") {
+      setStrategy("direct");
+    } else if (strategy === "direct") {
+      setStrategy("link");
     }
-  }, [useInvidious, invidiousInstance]);
+  }, [strategy]);
+
+  const handleIframeLoad = useCallback(() => {
+    // iframe loaded successfully — stop timeout
+    setLoadTimeout(false);
+  }, []);
 
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
         <Play className="h-4 w-4 text-emerald-400" />
         <span className="text-sm font-medium">Видео</span>
-        {useInvidious ? (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-            Invidious
-          </Badge>
-        ) : (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
-            {sourceTypeLabels.youtube}
-          </Badge>
-        )}
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+          {sourceTypeLabels.youtube}
+        </Badge>
       </div>
-      {iframeError ? (
+      {strategy === "link" || iframeError ? (
         <div className="glass rounded-xl p-5 border-white/5">
           <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить видео. Возможно, требуется VPN для YouTube.
+            Не удалось загрузить встроенный плеер. Возможно, браузер блокирует YouTube или требуются VPN для региональных ограничений.
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
           >
             <Play className="h-4 w-4" />
             Открыть на YouTube
@@ -138,20 +147,27 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
       ) : (
         <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
           <iframe
-            src={embedUrl}
+            src={embedUrl!}
             title={title || "YouTube видео"}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             className="absolute inset-0 h-full w-full"
             onError={handleIframeError}
-            // If iframe doesn't load after 8s, try next instance
-            onLoad={() => {}}
+            onLoad={handleIframeLoad}
           />
         </div>
       )}
-      {!useInvidious && !iframeError && (
+      {strategy !== "link" && !iframeError && (
         <p className="text-[10px] text-muted-foreground/60">
-          Если видео не загружается — возможны региональные ограничения. Включите VPN или попробуйте позже.
+          Если видео не загружается — возможны региональные ограничения. Попробуйте VPN или{" "}
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-muted-foreground"
+          >
+            откройте на YouTube
+          </a>.
         </p>
       )}
     </div>
@@ -171,7 +187,7 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
     setLoading(true);
     setDirectUrl(null);
     try {
-      const res = await fetch("/api/knowledge/video/resolve", {
+      const res = await fetch("/api/knowledge/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -185,6 +201,9 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
           setLoading(false);
           return;
         }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        console.log("[YandexDiskPlayer] API error:", data.error || data.details || res.status);
       }
 
       // API failed — fallback to iframe embed of the Yandex Disk share page
@@ -251,33 +270,43 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
         </div>
       )}
 
-      {!loading && strategy === "iframe" && !iframeFailed && (
-        <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
-          <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
-            <iframe
-              src={url}
-              title={title || "Яндекс Диск видео"}
-              allowFullScreen
-              allow="autoplay; encrypted-media"
-              className="absolute inset-0 h-full w-full"
-              onError={() => setIframeFailed(true)}
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            />
+      {!loading && strategy === "iframe" && !iframeFailed && (() => {
+        // Convert Yandex Disk share URL to player embed URL
+        // e.g. https://disk.yandex.ru/d/XXXX → https://disk.yandex.ru/player/d/XXXX
+        let playerSrc = url;
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname.includes("disk.yandex") && parsed.pathname) {
+            playerSrc = `https://disk.yandex.ru/player${parsed.pathname}`;
+          }
+        } catch {}
+        return (
+          <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
+            <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
+              <iframe
+                src={playerSrc}
+                title={title || "Яндекс Диск видео"}
+                allowFullScreen
+                allow="autoplay; encrypted-media; fullscreen"
+                className="absolute inset-0 h-full w-full"
+                onError={() => setIframeFailed(true)}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2 px-1">
+              <span className="text-[10px] text-muted-foreground">Плеер Яндекс Диска</span>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
+              >
+                <ExternalLink className="h-2.5 w-2.5" />
+                Открыть на Яндекс Диске
+              </a>
+            </div>
           </div>
-          <div className="flex items-center justify-between mt-2 px-1">
-            <span className="text-[10px] text-muted-foreground">Плеер Яндекс Диска</span>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
-            >
-              <ExternalLink className="h-2.5 w-2.5" />
-              Открыть на Яндекс Диске
-            </a>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {!loading && (strategy === "link" || iframeFailed) && (
         <div className="glass rounded-xl p-5 border-white/5">
@@ -319,7 +348,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → Invidious proxy (works without VPN in Russia)
+  // YouTube → nocookie + direct fallback
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;

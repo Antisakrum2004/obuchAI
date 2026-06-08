@@ -163,11 +163,14 @@ export default function ArticlePage({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
   const [editingTags, setEditingTags] = useState(false);
+  const [editingContent, setEditingContent] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState("");
   const [editSummaryValue, setEditSummaryValue] = useState("");
   const [editTagsValue, setEditTagsValue] = useState("");
+  const [editContentValue, setEditContentValue] = useState("");
   const [savingField, setSavingField] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [contentPreview, setContentPreview] = useState(false);
 
   // Track heading IDs for duplicate handling (must match extractHeadings logic)
   const headingIdCountsRef = useRef<Map<string, number>>(new Map());
@@ -188,6 +191,8 @@ export default function ArticlePage({
           .map((t) => t.trim())
           .filter(Boolean);
         body.tags = JSON.stringify(tagsList);
+      } else if (field === "content") {
+        body.content = value;
       }
       const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
         method: "PUT",
@@ -256,6 +261,25 @@ export default function ArticlePage({
   const handleTagsCancel = () => {
     setEditingTags(false);
     setEditTagsValue("");
+  };
+
+  const handleContentEdit = () => {
+    if (!isAdmin || !article) return;
+    setEditContentValue(article.content || "");
+    setEditingContent(true);
+    setContentPreview(false);
+  };
+
+  const handleContentSave = async () => {
+    if (!article) return;
+    await handleInlineSave("content", editContentValue);
+    setEditingContent(false);
+  };
+
+  const handleContentCancel = () => {
+    setEditingContent(false);
+    setEditContentValue("");
+    setContentPreview(false);
   };
 
   // ─── Delete handler ───
@@ -853,57 +877,158 @@ export default function ArticlePage({
               )}
 
               {/* Markdown Content */}
-              <div className="glass rounded-xl p-6 border-white/5">
-                <article className="prose-custom">
-                  <ReactMarkdown
-                    components={{
-                      h2: ({ children }) => {
-                        const text = extractTextFromChildren(children);
-                        let id = slugifyHeading(text);
-                        // Track duplicates — must match extractHeadings logic
-                        const counts = headingIdCountsRef.current;
-                        const count = counts.get(id) || 0;
-                        counts.set(id, count + 1);
-                        if (count > 0) id = `${id}-${count + 1}`;
-                        return <h2 id={id} className="scroll-mt-20">{children}</h2>;
-                      },
-                      h3: ({ children }) => {
-                        const text = extractTextFromChildren(children);
-                        let id = slugifyHeading(text);
-                        // Track duplicates — must match extractHeadings logic
-                        const counts = headingIdCountsRef.current;
-                        const count = counts.get(id) || 0;
-                        counts.set(id, count + 1);
-                        if (count > 0) id = `${id}-${count + 1}`;
-                        return <h3 id={id} className="scroll-mt-20">{children}</h3>;
-                      },
-                      img: ({ src, alt }) => (
-                        <button
-                          onClick={() => {
-                            if (src) {
-                              setLightboxSrc(typeof src === 'string' ? src : null);
-                              setLightboxAlt(alt || "");
-                            }
-                          }}
-                          className="relative group/myimg inline-block cursor-zoom-in w-full my-4"
-                          type="button"
+              <div className="glass rounded-xl border-white/5 overflow-hidden">
+                {/* Content toolbar — admin only */}
+                {isAdmin && (
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-white/[0.02]">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5" />
+                      {editingContent ? "Редактирование содержимого" : "Содержимое статьи"}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {editingContent ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setContentPreview((p) => !p)}
+                            className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground"
+                          >
+                            {contentPreview ? <Pencil className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            {contentPreview ? "Редактор" : "Превью"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleContentSave}
+                            disabled={savingField === "content"}
+                            className="text-xs h-7 px-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                          >
+                            {savingField === "content" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />}
+                            Сохранить
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleContentCancel}
+                            disabled={savingField === "content"}
+                            className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground"
+                          >
+                            <XIcon className="h-3 w-3 mr-1" />
+                            Отмена
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleContentEdit}
+                          className="text-xs h-7 px-2 text-muted-foreground hover:text-emerald-400 hover:bg-emerald-500/10"
                         >
-                          { }
-                          <img
-                            src={src}
-                            alt={alt}
-                            className="w-full rounded-lg border border-white/10"
-                          />
-                          <span className="absolute top-2 right-2 opacity-0 group-hover/myimg:opacity-100 transition-opacity bg-black/50 rounded-full p-1.5">
-                            <ZoomIn className="h-4 w-4 text-white/80" />
-                          </span>
-                        </button>
-                      ),
-                    }}
-                  >
-                    {article.content}
-                  </ReactMarkdown>
-                </article>
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Редактировать
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {editingContent && !contentPreview ? (
+                  <div className="p-4">
+                    <Textarea
+                      value={editContentValue}
+                      onChange={(e) => setEditContentValue(e.target.value)}
+                      className="font-mono text-sm min-h-[500px] resize-y bg-transparent border-white/10 focus:border-emerald-500/30"
+                      placeholder="Введите содержимое статьи в формате Markdown..."
+                      disabled={savingField === "content"}
+                    />
+                    <p className="text-[10px] text-muted-foreground/50 mt-2">
+                      Поддерживается Markdown. Нажмите «Превью» для предпросмотра или «Сохранить» для применения изменений.
+                    </p>
+                  </div>
+                ) : editingContent && contentPreview ? (
+                  <div className="p-6">
+                    <article className="prose-custom">
+                      <ReactMarkdown
+                        components={{
+                          h2: ({ children }) => {
+                            const text = extractTextFromChildren(children);
+                            let id = slugifyHeading(text);
+                            const counts = headingIdCountsRef.current;
+                            const count = counts.get(id) || 0;
+                            counts.set(id, count + 1);
+                            if (count > 0) id = `${id}-${count + 1}`;
+                            return <h2 id={id} className="scroll-mt-20">{children}</h2>;
+                          },
+                          h3: ({ children }) => {
+                            const text = extractTextFromChildren(children);
+                            let id = slugifyHeading(text);
+                            const counts = headingIdCountsRef.current;
+                            const count = counts.get(id) || 0;
+                            counts.set(id, count + 1);
+                            if (count > 0) id = `${id}-${count + 1}`;
+                            return <h3 id={id} className="scroll-mt-20">{children}</h3>;
+                          },
+                          img: ({ src, alt }) => (
+                            <img src={src} alt={alt} className="w-full rounded-lg border border-white/10 my-4" />
+                          ),
+                        }}
+                      >
+                        {editContentValue}
+                      </ReactMarkdown>
+                    </article>
+                  </div>
+                ) : (
+                  <div className="p-6">
+                    <article className="prose-custom">
+                      <ReactMarkdown
+                        components={{
+                          h2: ({ children }) => {
+                            const text = extractTextFromChildren(children);
+                            let id = slugifyHeading(text);
+                            const counts = headingIdCountsRef.current;
+                            const count = counts.get(id) || 0;
+                            counts.set(id, count + 1);
+                            if (count > 0) id = `${id}-${count + 1}`;
+                            return <h2 id={id} className="scroll-mt-20">{children}</h2>;
+                          },
+                          h3: ({ children }) => {
+                            const text = extractTextFromChildren(children);
+                            let id = slugifyHeading(text);
+                            const counts = headingIdCountsRef.current;
+                            const count = counts.get(id) || 0;
+                            counts.set(id, count + 1);
+                            if (count > 0) id = `${id}-${count + 1}`;
+                            return <h3 id={id} className="scroll-mt-20">{children}</h3>;
+                          },
+                          img: ({ src, alt }) => (
+                            <button
+                              onClick={() => {
+                                if (src) {
+                                  setLightboxSrc(typeof src === 'string' ? src : null);
+                                  setLightboxAlt(alt || "");
+                                }
+                              }}
+                              className="relative group/myimg inline-block cursor-zoom-in w-full my-4"
+                              type="button"
+                            >
+                              <img
+                                src={src}
+                                alt={alt}
+                                className="w-full rounded-lg border border-white/10"
+                              />
+                              <span className="absolute top-2 right-2 opacity-0 group-hover/myimg:opacity-100 transition-opacity bg-black/50 rounded-full p-1.5">
+                                <ZoomIn className="h-4 w-4 text-white/80" />
+                              </span>
+                            </button>
+                          ),
+                        }}
+                      >
+                        {article.content}
+                      </ReactMarkdown>
+                    </article>
+                  </div>
+                )}
               </div>
 
               {/* Media Files */}
