@@ -388,7 +388,10 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
       ) : (
         <div className="space-y-3 max-h-[500px] overflow-y-auto">
           {groups
-            .filter((g) => statusFilter === "all" ? g.overallStatus !== "done" : true)
+            .filter((g) => {
+              if (statusFilter === "all") return g.overallStatus !== "done"; // hide done by default (auto-cleaned)
+              return g.overallStatus === statusFilter;
+            })
             .map((group) => {
             const config = statusConfig[group.overallStatus] || statusConfig.pending;
             const Icon = config.icon;
@@ -548,7 +551,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           <span>
             Нажмите <strong className="text-emerald-400">Обработать всё</strong> или горячие клавиши:{" "}
             <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+K</kbd> — обработать всё,{" "}
-            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+L</kbd> — глоссарий
+            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+L</kbd> — глоссарий.{" "}
+            Готовые статьи автоматически появятся в Базе знаний.
           </span>
         </div>
       )}

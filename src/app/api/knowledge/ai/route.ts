@@ -4,23 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
 import ZAI from "z-ai-web-dev-sdk";
-
-/**
- * Create a ZAI SDK instance.
- * Priority: env vars → hardcoded defaults → .z-ai-config file
- * On Vercel, the .z-ai-config file doesn't exist, so we use env vars or defaults.
- */
-function createZAI(): ZAI {
-  const config = {
-    baseUrl: process.env.ZAI_BASE_URL || "https://internal-api.z.ai/v1",
-    apiKey: process.env.ZAI_API_KEY || "Z.ai",
-    ...(process.env.ZAI_CHAT_ID && { chatId: process.env.ZAI_CHAT_ID }),
-    ...(process.env.ZAI_USER_ID && { userId: process.env.ZAI_USER_ID }),
-    ...(process.env.ZAI_TOKEN && { token: process.env.ZAI_TOKEN }),
-  };
-  // Constructor is typed as private but works at runtime with config object
-  return new (ZAI as unknown as new (cfg: typeof config) => ZAI)(config);
-}
+import { createZAI } from "@/lib/zai";
 
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
 export async function POST(request: NextRequest) {
@@ -131,6 +115,27 @@ export async function POST(request: NextRequest) {
         [queueId]
       );
 
+      // Auto-cleanup: if ALL queue items for this article are done, publish the article
+      // and remove completed queue items
+      const { rows: remainingItems } = await pool.query(
+        `SELECT status FROM processing_queue WHERE "articleId" = $1`,
+        [articleId]
+      );
+      const allDone = remainingItems.length > 0 && remainingItems.every((r: { status: string }) => r.status === "done");
+      if (allDone) {
+        // Publish the article (mark as done + published)
+        await pool.query(
+          `UPDATE articles SET status = 'done', "isPublished" = true, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+          [articleId]
+        );
+        // Remove completed queue items for this article
+        await pool.query(
+          `DELETE FROM processing_queue WHERE "articleId" = $1 AND status = 'done'`,
+          [articleId]
+        );
+        console.log(`[AI] Article ${articleId} fully processed — published and queue cleaned up`);
+      }
+
       // Fetch and return the updated article
       const { rows: updatedRows } = await pool.query(
         `SELECT * FROM articles WHERE id = $1`,
@@ -138,7 +143,7 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json({
-        message: "AI-обработка завершена успешно",
+        message: allDone ? "AI-обработка завершена — статья опубликована" : "AI-обработка завершена успешно",
         article: updatedRows[0],
         queueId,
       });

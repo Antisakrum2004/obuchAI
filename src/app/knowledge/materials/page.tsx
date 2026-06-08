@@ -32,6 +32,7 @@ import {
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { ZipUpload } from "@/components/knowledge/zip-upload";
 import { BulkUpload } from "@/components/knowledge/bulk-upload";
 import { ProcessingQueue } from "@/components/knowledge/processing-queue";
@@ -98,7 +99,7 @@ function formatDate(dateStr: string): string {
 
 // ── Page Component ─────────────────────────────────────────────
 
-export default function MaterialsPage() {
+function MaterialsPageInner() {
   const [articles, setArticles] = useState<MaterialArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -108,22 +109,41 @@ export default function MaterialsPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showQueue, setShowQueue] = useState(true); // Show queue by default for admin
 
-  const { role: storeRole } = useUserStore();
+  const { role: storeRole, isLoading: storeLoading } = useUserStore();
   const sessionResult = useSession();
-  const session = sessionResult?.data ?? null;
-  const sessionRole = (session?.user as Record<string, unknown>)?.role;
+
+  // Safely extract session data with null guards
+  const sessionLoading = sessionResult?.status === "loading";
+  const session = !sessionLoading && sessionResult?.data ? sessionResult.data : null;
+  const sessionRole =
+    (session?.user as Record<string, unknown> | undefined)?.role?.toString() ?? null;
   const [apiAdmin, setApiAdmin] = useState(false);
-  const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;
+
+  // Only determine admin status after session has finished loading
+  const isAdmin =
+    !sessionLoading &&
+    !storeLoading &&
+    (storeRole === "admin" || sessionRole === "admin" || apiAdmin);
 
   useEffect(() => {
+    if (sessionLoading) return;
     if (storeRole === "admin" || sessionRole === "admin") return;
     fetch("/api/user/stats")
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r.ok) return null;
+        try {
+          return r.json();
+        } catch {
+          return null;
+        }
+      })
       .then((data) => {
-        if (data?.role === "admin") setApiAdmin(true);
+        if (data && typeof data === "object" && data.role === "admin") {
+          setApiAdmin(true);
+        }
       })
       .catch(() => {});
-  }, [storeRole, sessionRole]);
+  }, [storeRole, sessionRole, sessionLoading]);
 
   const fetchArticles = useCallback(async () => {
     try {
@@ -162,6 +182,14 @@ export default function MaterialsPage() {
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
+        {/* Show a loading indicator while session is still resolving */}
+        {sessionLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {!sessionLoading && (
+        <>
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -465,7 +493,17 @@ export default function MaterialsPage() {
             Всего материалов: {articles.length} · Показано: {filtered.length}
           </div>
         )}
+        </>
+        )}
       </div>
     </AppLayout>
+  );
+}
+
+export default function MaterialsPage() {
+  return (
+    <ErrorBoundary>
+      <MaterialsPageInner />
+    </ErrorBoundary>
   );
 }
