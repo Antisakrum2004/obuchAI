@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -151,55 +151,51 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     return () => clearInterval(interval);
   }, [items, fetchQueue, onQueueChange]);
 
-  // Keyboard shortcuts: Ctrl+L = process glossary, Ctrl+K = process all
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === "l" || e.key === "L" || e.key === "д" || e.key === "Д") {
-          e.preventDefault();
-          const firstPending = groups.find(
-            (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
-          );
-          if (firstPending) {
-            handleStartProcessing(firstPending.articleId, "glossary");
-          }
-        }
-        if (e.key === "k" || e.key === "K" || e.key === "л" || e.key === "Л") {
-          e.preventDefault();
-          if (pendingGroupCount > 0 && !processingAll && !processing) {
-            handleProcessAllPending();
-          }
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [groups, processing, processingAll, pendingGroupCount]);
+  // ── COMPUTED VALUES (declared BEFORE useEffect that references them) ──
 
   // Group items by articleId
-  const groups: ArticleGroup[] = [];
-  const groupMap = new Map<string, ArticleGroup>();
-  for (const item of items) {
-    const existing = groupMap.get(item.articleId);
-    if (existing) {
-      existing.items.push(item);
-    } else {
-      const group: ArticleGroup = {
-        articleId: item.articleId,
-        articleTitle: item.articleTitle || item.articleId.slice(0, 12),
-        items: [item],
-        overallStatus: "pending",
-      };
-      groupMap.set(item.articleId, group);
-      groups.push(group);
+  const groups = useMemo<ArticleGroup[]>(() => {
+    const result: ArticleGroup[] = [];
+    const groupMap = new Map<string, ArticleGroup>();
+    for (const item of items) {
+      const existing = groupMap.get(item.articleId);
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        const group: ArticleGroup = {
+          articleId: item.articleId,
+          articleTitle: item.articleTitle || item.articleId.slice(0, 12),
+          items: [item],
+          overallStatus: "pending",
+        };
+        groupMap.set(item.articleId, group);
+        result.push(group);
+      }
     }
-  }
-  // Compute overall status
-  for (const g of groups) {
-    g.overallStatus = computeOverallStatus(g.items);
-  }
+    for (const g of result) {
+      g.overallStatus = computeOverallStatus(g.items);
+    }
+    return result;
+  }, [items]);
 
-  const handleStartProcessing = async (articleId: string, type: string) => {
+  const pendingGroupCount = useMemo(
+    () => groups.filter((g) => g.overallStatus === "pending" || g.overallStatus === "mixed").length,
+    [groups]
+  );
+
+  const errorGroupCount = useMemo(
+    () => groups.filter((g) => g.overallStatus === "error").length,
+    [groups]
+  );
+
+  const hasActiveItems = useMemo(
+    () => items.some((item) => item.status === "pending" || item.status === "processing"),
+    [items]
+  );
+
+  // ── HANDLERS (declared BEFORE useEffect that references them) ──
+
+  const handleStartProcessing = useCallback(async (articleId: string, type: string) => {
     setProcessing(`${articleId}-${type}`);
     try {
       await fetch("/api/knowledge/ai", {
@@ -214,9 +210,9 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } finally {
       setProcessing(null);
     }
-  };
+  }, [fetchQueue, onQueueChange]);
 
-  const handleStartAllForArticle = async (articleId: string) => {
+  const handleStartAllForArticle = useCallback(async (articleId: string) => {
     setProcessing(`${articleId}-all`);
     try {
       for (const { type } of aiTypes) {
@@ -233,10 +229,10 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } finally {
       setProcessing(null);
     }
-  };
+  }, [fetchQueue, onQueueChange]);
 
   /** Process ALL pending articles at once */
-  const handleProcessAllPending = async () => {
+  const handleProcessAllPending = useCallback(async () => {
     const pendingArticles = groups.filter(
       (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
     );
@@ -272,9 +268,9 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } else {
       toast.warning(`Обработано: ${successCount}, ошибок: ${errorCount}`);
     }
-  };
+  }, [groups, fetchQueue, onQueueChange]);
 
-  const handleCancel = async (itemId: string) => {
+  const handleCancel = useCallback(async (itemId: string) => {
     try {
       await fetch(`/api/knowledge/process/${itemId}`, {
         method: "DELETE",
@@ -284,10 +280,10 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } catch {
       // silently fail
     }
-  };
+  }, [fetchQueue, onQueueChange]);
 
   /** Reset all error items back to pending */
-  const handleResetErrors = async () => {
+  const handleResetErrors = useCallback(async () => {
     try {
       const res = await fetch("/api/knowledge/queue", {
         method: "POST",
@@ -303,16 +299,36 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } catch {
       toast.error("Не удалось сбросить ошибки");
     }
-  };
+  }, [fetchQueue, onQueueChange]);
 
-  const hasActiveItems = items.some(
-    (item) => item.status === "pending" || item.status === "processing"
-  );
+  // ── KEYBOARD SHORTCUTS (now all dependencies are declared above) ──
 
-  const pendingGroupCount = groups.filter(
-    (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
-  ).length;
-  const errorGroupCount = groups.filter((g) => g.overallStatus === "error").length;
+  // Keyboard shortcuts: Ctrl+L = process glossary, Ctrl+K = process all
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "l" || e.key === "L" || e.key === "д" || e.key === "Д") {
+          e.preventDefault();
+          const firstPending = groups.find(
+            (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
+          );
+          if (firstPending) {
+            handleStartProcessing(firstPending.articleId, "glossary");
+          }
+        }
+        if (e.key === "k" || e.key === "K" || e.key === "л" || e.key === "Л") {
+          e.preventDefault();
+          if (pendingGroupCount > 0 && !processingAll && !processing) {
+            handleProcessAllPending();
+          }
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [groups, processing, processingAll, pendingGroupCount, handleStartProcessing, handleProcessAllPending]);
+
+  // ── RENDER ──
 
   return (
     <div className={cn("glass rounded-xl p-5 border-white/5 space-y-4", className)}>
