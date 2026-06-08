@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +31,6 @@ import {
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ErrorBoundary } from "@/components/error-boundary";
 import { ZipUpload } from "@/components/knowledge/zip-upload";
 import { BulkUpload } from "@/components/knowledge/bulk-upload";
 import { ProcessingQueue } from "@/components/knowledge/processing-queue";
@@ -55,7 +53,6 @@ interface MaterialArticle {
   spaceName?: string;
   spaceSlug?: string;
   spaceIcon?: string;
-  // Sprint 6 fields
   videoUrl?: string | null;
   pdfUrl?: string | null;
   pptxUrl?: string | null;
@@ -99,7 +96,7 @@ function formatDate(dateStr: string): string {
 
 // ── Page Component ─────────────────────────────────────────────
 
-function MaterialsPageInner() {
+export default function MaterialsPage() {
   const [articles, setArticles] = useState<MaterialArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -107,43 +104,29 @@ function MaterialsPageInner() {
   const [sourceTypeFilter, setSourceTypeFilter] = useState("all");
   const [showZipUpload, setShowZipUpload] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
-  const [showQueue, setShowQueue] = useState(true); // Show queue by default for admin
+  const [showQueue, setShowQueue] = useState(true);
 
-  const { role: storeRole, isLoading: storeLoading } = useUserStore();
+  // Admin detection — use store (hydrated by AppLayout → useUserStats)
+  const storeRole = useUserStore((s) => s.role);
   const sessionResult = useSession();
-
-  // Safely extract session data with null guards
-  const sessionLoading = sessionResult?.status === "loading";
-  const session = !sessionLoading && sessionResult?.data ? sessionResult.data : null;
-  const sessionRole =
-    (session?.user as Record<string, unknown> | undefined)?.role?.toString() ?? null;
+  const sessionRole = (sessionResult?.data?.user as Record<string, unknown> | undefined)?.role as string | undefined;
   const [apiAdmin, setApiAdmin] = useState(false);
-
-  // Only determine admin status after session has finished loading
-  const isAdmin =
-    !sessionLoading &&
-    !storeLoading &&
-    (storeRole === "admin" || sessionRole === "admin" || apiAdmin);
+  const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;
 
   useEffect(() => {
-    if (sessionLoading) return;
     if (storeRole === "admin" || sessionRole === "admin") return;
     fetch("/api/user/stats")
       .then((r) => {
         if (!r.ok) return null;
-        try {
-          return r.json();
-        } catch {
-          return null;
-        }
+        try { return r.json(); } catch { return null; }
       })
       .then((data) => {
-        if (data && typeof data === "object" && data.role === "admin") {
+        if (data && typeof data === "object" && (data as Record<string, unknown>).role === "admin") {
           setApiAdmin(true);
         }
       })
       .catch(() => {});
-  }, [storeRole, sessionRole, sessionLoading]);
+  }, [storeRole, sessionRole]);
 
   const fetchArticles = useCallback(async () => {
     try {
@@ -182,20 +165,8 @@ function MaterialsPageInner() {
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Show a loading indicator while session is still resolving */}
-        {sessionLoading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {!sessionLoading && (
-        <>
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
+        <div className="transition-opacity duration-300">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold md:text-3xl flex items-center gap-3">
@@ -240,63 +211,36 @@ function MaterialsPageInner() {
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
 
-        {/* Processing Queue — always visible for admin when there are pending items */}
+        {/* Processing Queue */}
         {isAdmin && showQueue && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <ProcessingQueue />
-          </motion.div>
+          <ProcessingQueue />
         )}
 
         {/* Bulk File Upload */}
         {isAdmin && showBulkUpload && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <BulkUpload
-              onUploadComplete={() => {
-                fetchArticles();
-                // Keep queue visible, don't close upload panel immediately
-                // so user can see the toast notification and result
-                setShowQueue(true);
-                setTimeout(() => {
-                  setShowBulkUpload(false);
-                }, 2000);
-              }}
-            />
-          </motion.div>
+          <BulkUpload
+            onUploadComplete={() => {
+              fetchArticles();
+              setShowQueue(true);
+              setTimeout(() => setShowBulkUpload(false), 2000);
+            }}
+          />
         )}
 
         {/* ZIP Upload */}
         {isAdmin && showZipUpload && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <ZipUpload
-              onUploadComplete={() => {
-                fetchArticles();
-                setShowZipUpload(false);
-              }}
-            />
-          </motion.div>
+          <ZipUpload
+            onUploadComplete={() => {
+              fetchArticles();
+              setShowZipUpload(false);
+            }}
+          />
         )}
 
         {/* Filter Bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-          className="glass rounded-xl p-4 border-white/5"
-        >
+        <div className="glass rounded-xl p-4 border-white/5">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -336,156 +280,139 @@ function MaterialsPageInner() {
               </Select>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Articles List */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          {loading ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="glass rounded-xl p-5 border-white/5 space-y-3">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-1/2" />
-                  <div className="flex gap-2">
-                    <Skeleton className="h-5 w-16" />
-                    <Skeleton className="h-5 w-20" />
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="glass rounded-xl p-5 border-white/5 space-y-3">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-1/2" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <Archive className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-muted-foreground">
+              {search || statusFilter !== "all" || sourceTypeFilter !== "all"
+                ? "Ничего не найдено"
+                : "Библиотека пуста"}
+            </h3>
+            <p className="text-sm text-muted-foreground/60 mt-1">
+              {search || statusFilter !== "all" || sourceTypeFilter !== "all"
+                ? "Попробуйте изменить фильтры"
+                : "Материалы будут добавлены позже"}
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((article) => (
+              <Link
+                key={article.id}
+                href={`/knowledge/article/${article.id}`}
+                className="block"
+              >
+                <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group">
+                  {/* Title */}
+                  <h3 className="font-semibold text-sm group-hover:text-emerald-400 transition-colors line-clamp-2 mb-2">
+                    {article.title}
+                  </h3>
+
+                  {/* Summary */}
+                  {article.summary && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
+                      {article.summary}
+                    </p>
+                  )}
+
+                  {/* Badges Row */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {article.status && article.status !== "done" && statusConfig[article.status] && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0",
+                          statusConfig[article.status].color
+                        )}
+                      >
+                        {statusConfig[article.status].label}
+                      </Badge>
+                    )}
+                    {article.sourceType && sourceTypeConfig[article.sourceType] && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0",
+                          sourceTypeConfig[article.sourceType].color
+                        )}
+                      >
+                        {sourceTypeConfig[article.sourceType].label}
+                      </Badge>
+                    )}
+                    {article.aiGenerated && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                      >
+                        <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                        AI
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Media Indicators */}
+                  <div className="flex items-center gap-3 mb-3 text-muted-foreground">
+                    {article.videoUrl && (
+                      <span className="flex items-center gap-1 text-[11px]" title="Есть видео">
+                        <Video className="h-3 w-3" />
+                      </span>
+                    )}
+                    {article.pdfUrl && (
+                      <span className="flex items-center gap-1 text-[11px]" title="Есть PDF">
+                        <FileIcon className="h-3 w-3" />
+                      </span>
+                    )}
+                    {article.pptxUrl && (
+                      <span className="flex items-center gap-1 text-[11px]" title="Есть презентация">
+                        <Presentation className="h-3 w-3" />
+                      </span>
+                    )}
+                    {article.sourceUrl && (
+                      <span className="flex items-center gap-1 text-[11px]" title="Есть источник">
+                        <ExternalLink className="h-3 w-3" />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
+                    {article.categoryName && (
+                      <span className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        {article.categoryName}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Eye className="h-3 w-3" />
+                      {article.viewCount}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatDate(article.createdAt)}
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <Archive className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground">
-                {search || statusFilter !== "all" || sourceTypeFilter !== "all"
-                  ? "Ничего не найдено"
-                  : "Библиотека пуста"}
-              </h3>
-              <p className="text-sm text-muted-foreground/60 mt-1">
-                {search || statusFilter !== "all" || sourceTypeFilter !== "all"
-                  ? "Попробуйте изменить фильтры"
-                  : "Материалы будут добавлены позже"}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((article, i) => (
-                <motion.div
-                  key={article.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: i * 0.03 }}
-                >
-                  <Link
-                    href={`/knowledge/article/${article.id}`}
-                    className="block"
-                  >
-                    <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group">
-                      {/* Title */}
-                      <h3 className="font-semibold text-sm group-hover:text-emerald-400 transition-colors line-clamp-2 mb-2">
-                        {article.title}
-                      </h3>
-
-                      {/* Summary */}
-                      {article.summary && (
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-                          {article.summary}
-                        </p>
-                      )}
-
-                      {/* Badges Row */}
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {/* Status Badge */}
-                        {article.status && article.status !== "done" && statusConfig[article.status] && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px] px-1.5 py-0",
-                              statusConfig[article.status].color
-                            )}
-                          >
-                            {statusConfig[article.status].label}
-                          </Badge>
-                        )}
-
-                        {/* Source Type Badge */}
-                        {article.sourceType && sourceTypeConfig[article.sourceType] && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-[10px] px-1.5 py-0",
-                              sourceTypeConfig[article.sourceType].color
-                            )}
-                          >
-                            {sourceTypeConfig[article.sourceType].label}
-                          </Badge>
-                        )}
-
-                        {/* AI Generated Badge */}
-                        {article.aiGenerated && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-                          >
-                            <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                            AI
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Media Indicators */}
-                      <div className="flex items-center gap-3 mb-3 text-muted-foreground">
-                        {article.videoUrl && (
-                          <span className="flex items-center gap-1 text-[11px]" title="Есть видео">
-                            <Video className="h-3 w-3" />
-                          </span>
-                        )}
-                        {article.pdfUrl && (
-                          <span className="flex items-center gap-1 text-[11px]" title="Есть PDF">
-                            <FileIcon className="h-3 w-3" />
-                          </span>
-                        )}
-                        {article.pptxUrl && (
-                          <span className="flex items-center gap-1 text-[11px]" title="Есть презентация">
-                            <Presentation className="h-3 w-3" />
-                          </span>
-                        )}
-                        {article.sourceUrl && (
-                          <span className="flex items-center gap-1 text-[11px]" title="Есть источник">
-                            <ExternalLink className="h-3 w-3" />
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Footer */}
-                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
-                        {article.categoryName && (
-                          <span className="flex items-center gap-1">
-                            <FileText className="h-3 w-3" />
-                            {article.categoryName}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Eye className="h-3 w-3" />
-                          {article.viewCount}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatDate(article.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </motion.div>
+              </Link>
+            ))}
+          </div>
+        )}
 
         {/* Stats Footer */}
         {!loading && articles.length > 0 && (
@@ -493,17 +420,7 @@ function MaterialsPageInner() {
             Всего материалов: {articles.length} · Показано: {filtered.length}
           </div>
         )}
-        </>
-        )}
       </div>
     </AppLayout>
-  );
-}
-
-export default function MaterialsPage() {
-  return (
-    <ErrorBoundary>
-      <MaterialsPageInner />
-    </ErrorBoundary>
   );
 }
