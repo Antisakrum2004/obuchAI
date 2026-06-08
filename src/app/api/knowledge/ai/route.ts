@@ -769,9 +769,11 @@ async function processContentExtraction(
   );
 
   // Extract text from PDF using pdf-parse
+  // NOTE: Must import from 'pdf-parse/lib/pdf-parse.js' directly to avoid
+  // the broken test runner in index.js that checks `module.parent` (broken in ESM)
   let rawText: string;
   try {
-    const pdfParse = (await import("pdf-parse")).default;
+    const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
     const pdfData = await pdfParse(pdfBuffer);
     rawText = pdfData.text || "";
     console.log(`[Content] Extracted ${rawText.length} chars from PDF, ${pdfData.numpages} pages`);
