@@ -26,6 +26,7 @@ import {
   FileText,
   FolderOpen,
   ArrowRight,
+  Video,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,8 @@ interface ArticleData {
   tags: string | null;
   viewCount: number;
   categoryId: string;
+  videoUrl?: string | null;
+  sourceType?: string | null;
 }
 
 interface SpaceData {
@@ -313,21 +316,23 @@ export default function KnowledgeSpacePage({
                                         </p>
                                       )}
                                     </div>
-                                    {article.tags && (
-                                      <div className="hidden sm:flex items-center gap-1">
-                                        {parseTags(article.tags)
-                                          .slice(0, 2)
-                                          .map((tag) => (
-                                            <Badge
-                                              key={tag}
-                                              variant="outline"
-                                              className="text-[9px] px-1.5 py-0 border-white/10"
-                                            >
-                                              {tag}
-                                            </Badge>
-                                          ))}
-                                      </div>
-                                    )}
+                                    <div className="hidden sm:flex items-center gap-1 shrink-0">
+                                      {article.videoUrl && (
+                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+                                          <Video className="h-2.5 w-2.5 mr-0.5" />
+                                          Видео
+                                        </Badge>
+                                      )}
+                                      {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
+                                        <Badge
+                                          key={tag}
+                                          variant="outline"
+                                          className="text-[9px] px-1.5 py-0 border-white/10"
+                                        >
+                                          {tag}
+                                        </Badge>
+                                      ))}
+                                    </div>
                                     <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-emerald-400 shrink-0 transition-colors" />
                                   </div>
                                 </Link>

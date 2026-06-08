@@ -28,15 +28,12 @@ function detectSourceType(url: string): string {
 function extractYoutubeId(url: string): string | null {
   try {
     const u = new URL(url);
-    // youtube.com/watch?v=ID
     if (u.hostname.includes("youtube.com") && u.searchParams.get("v")) {
       return u.searchParams.get("v");
     }
-    // youtu.be/ID
     if (u.hostname === "youtu.be") {
       return u.pathname.slice(1);
     }
-    // youtube.com/embed/ID
     if (u.pathname.startsWith("/embed/")) {
       return u.pathname.split("/embed/")[1]?.split("/")[0] || null;
     }
@@ -49,14 +46,41 @@ function extractYoutubeId(url: string): string | null {
 function extractRutubeId(url: string): string | null {
   try {
     const u = new URL(url);
-    // rutube.ru/video/ID/
     if (u.pathname.startsWith("/video/")) {
       return u.pathname.split("/video/")[1]?.split("/")[0] || null;
     }
-    // rutube.ru/play/embed/ID
     if (u.pathname.startsWith("/play/embed/")) {
       return u.pathname.split("/play/embed/")[1]?.split("/")[0] || null;
     }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert a Yandex Disk public link to an embeddable player URL.
+ * Supports formats:
+ * - https://disk.yandex.ru/d/XXXX  (file share)
+ * - https://disk.yandex.ru/i/XXXX  (file share, new format)
+ * - https://yadi.sk/d/XXXX         (short link)
+ *
+ * Yandex Disk has an undocumented embed player at:
+ *   https://disk.yandex.ru/client/embed?...  (iframe-based)
+ *
+ * However, the most reliable approach is:
+ * 1. Try the Public API to get a direct download link → HTML5 <video>
+ * 2. If that fails, try iframe embed via the share URL
+ * 3. If that also fails, show a nice link button
+ */
+function getYandexEmbedUrl(shareUrl: string): string | null {
+  try {
+    const u = new URL(shareUrl);
+    // The Yandex Disk iframe player can be constructed from the share URL
+    // Format: https://disk.yandex.ru/client/embed?hash=XXX
+    // But the hash isn't directly in the URL. Alternative: just use the URL in an iframe
+    // Yandex does NOT officially support iframe embedding of videos from Disk
+    // So we cannot reliably construct an embed URL
     return null;
   } catch {
     return null;
@@ -72,12 +96,15 @@ const sourceTypeLabels: Record<string, string> = {
   other: "Ссылка",
 };
 
-// ─── Yandex Disk Video Player with server-side URL resolution ───
+// ─── Yandex Disk Video Player with multiple fallback strategies ───
+
+type YandexStrategy = "api" | "iframe" | "link";
 
 function YandexDiskPlayer({ url, title, className }: { url: string; title?: string; className?: string }) {
   const [directUrl, setDirectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [strategy, setStrategy] = useState<YandexStrategy>("api");
 
   const resolveUrl = useCallback(async () => {
     setLoading(true);
@@ -91,14 +118,36 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
+        // Handle specific error codes from our resolve API
+        const errorCode = data.code || "";
+        if (errorCode === "NOT_PUBLIC_OR_NOT_FOUND" || res.status === 404) {
+          setStrategy("link");
+          setError("Видео не доступно для предпросмотра. Убедитесь, что ссылка создана через «Поделиться» на Яндекс Диске.");
+        } else if (errorCode === "ACCESS_DENIED" || res.status === 403) {
+          setStrategy("link");
+          setError("Доступ к видео запрещён. Файл не является публичным.");
+        } else if (errorCode === "TIMEOUT" || res.status === 504) {
+          setStrategy("link");
+          setError("Яндекс Диск не отвечает. Попробуйте позже или откройте видео напрямую.");
+        } else {
+          setStrategy("link");
+          setError(data.error || data.details || `Ошибка сервера (HTTP ${res.status})`);
+        }
+        return;
       }
 
       const data = await res.json();
-      setDirectUrl(data.directUrl);
+      if (data.directUrl) {
+        setDirectUrl(data.directUrl);
+        setStrategy("api");
+      } else {
+        setStrategy("link");
+        setError("Не удалось получить ссылку для воспроизведения");
+      }
     } catch (err) {
       console.error("[YandexDiskPlayer] Failed to resolve URL:", err);
-      setError(err instanceof Error ? err.message : "Не удалось получить ссылку на видео");
+      setStrategy("link");
+      setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
     } finally {
       setLoading(false);
     }
@@ -129,37 +178,7 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
         </div>
       )}
 
-      {error && (
-        <div className="glass rounded-xl p-4 border-red-500/20 bg-red-500/[0.03]">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-            <div className="flex-1 space-y-2">
-              <p className="text-sm text-red-400">Не удалось загрузить видео</p>
-              <p className="text-xs text-muted-foreground">{error}</p>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={resolveUrl}
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-xs font-medium"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  Повторить
-                </button>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 transition-colors text-xs font-medium"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Открыть на Яндекс Диске
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {directUrl && !loading && !error && (
+      {!loading && strategy === "api" && directUrl && (
         <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
           <video
             src={directUrl}
@@ -183,6 +202,36 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
               <ExternalLink className="h-2.5 w-2.5" />
               Открыть оригинал
             </a>
+          </div>
+        </div>
+      )}
+
+      {!loading && (strategy === "link" || error) && (
+        <div className="glass rounded-xl p-5 border-white/5">
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <p className="text-sm text-muted-foreground mb-3">
+                {error || "Видео не доступно для предпросмотра"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+                >
+                  <Play className="h-4 w-4" />
+                  Смотреть видео на Яндекс Диске
+                </a>
+                <button
+                  onClick={resolveUrl}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 transition-colors text-xs"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Повторить
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -270,7 +319,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
-  // Yandex Disk — use server-side URL resolution + HTML5 <video> player
+  // Yandex Disk — use server-side URL resolution + HTML5 <video> player with fallback
   if (type === "yandex_disk") {
     return <YandexDiskPlayer url={url} title={title} className={className} />;
   }

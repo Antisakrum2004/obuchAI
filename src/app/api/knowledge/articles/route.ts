@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       const limit = parseInt(recent) || 10;
       const { rows } = await pool.query(
         `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt",
+                a."videoUrl", a."sourceType",
                 c.name as "categoryName", c."spaceId", ks.name as "spaceName", ks.slug as "spaceSlug", ks.icon as "spaceIcon"
          FROM articles a
          JOIN categories c ON a."categoryId" = c.id
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
         spaceName: article.spaceName,
         spaceSlug: article.spaceSlug,
         spaceIcon: article.spaceIcon,
+        videoUrl: article.videoUrl,
+        sourceType: article.sourceType,
       }));
 
       return NextResponse.json(result);
@@ -57,13 +60,13 @@ export async function GET(request: NextRequest) {
     let params: unknown[];
 
     if (categoryId) {
-      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "isPublished", "createdAt"
+      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "isPublished", "createdAt", "videoUrl", "sourceType"
                FROM articles
                ${all !== "true" ? 'WHERE "isPublished" = true AND' : "WHERE"} "categoryId" = $1
                ORDER BY "createdAt" DESC`;
       params = [categoryId];
     } else {
-      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt"
+      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt", a."videoUrl", a."sourceType"
                FROM articles a
                JOIN categories c ON a."categoryId" = c.id
                ${all !== "true" ? 'WHERE a."isPublished" = true AND' : "WHERE"} c."spaceId" = $1
@@ -83,6 +86,8 @@ export async function GET(request: NextRequest) {
       categoryId: article.categoryId,
       isPublished: article.isPublished,
       createdAt: new Date(article.createdAt).toISOString(),
+      videoUrl: article.videoUrl,
+      sourceType: article.sourceType,
     }));
 
     return NextResponse.json(result);

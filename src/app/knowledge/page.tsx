@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye, Search } from "lucide-react";
+import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye, Search, Video } from "lucide-react";
 import { useGlossaryOpen } from "@/components/knowledge/glossary-command";
 
 interface KnowledgeSpaceData {
@@ -36,6 +36,8 @@ interface RecentArticle {
   spaceName: string;
   spaceSlug: string;
   spaceIcon: string | null;
+  videoUrl?: string | null;
+  sourceType?: string | null;
 }
 
 const containerVariants = {
@@ -211,6 +213,12 @@ export default function KnowledgePage() {
                           <Badge variant="secondary" className="text-[9px] bg-secondary/50">
                             {article.categoryName}
                           </Badge>
+                          {article.videoUrl && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10 ml-auto">
+                              <Video className="h-2.5 w-2.5 mr-0.5" />
+                              Видео
+                            </Badge>
+                          )}
                         </div>
                         <h3 className="font-medium text-sm text-foreground group-hover:text-emerald-400 transition-colors line-clamp-2 mb-1.5">
                           {article.title}
