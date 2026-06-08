@@ -79,7 +79,7 @@ export async function createChatCompletion(
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
       "HTTP-Referer": "https://obuch-ai.vercel.app",
-      "X-Title": "ObuchAI — Educational Platform",
+      "X-Title": "ObuchAI",
     },
     body: JSON.stringify(body),
   });
