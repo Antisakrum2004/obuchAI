@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Badge } from "@/components/ui/badge";
@@ -33,21 +32,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
-
-// Lazy-load heavy components to avoid SSR bundling issues
-// (Cannot access 'f' before initialization in React 19 + Next.js 16)
-const ProcessingQueue = dynamic(
-  () => import("@/components/knowledge/processing-queue").then((m) => m.ProcessingQueue),
-  { ssr: false }
-);
-const BulkUpload = dynamic(
-  () => import("@/components/knowledge/bulk-upload").then((m) => m.BulkUpload),
-  { ssr: false }
-);
-const ZipUpload = dynamic(
-  () => import("@/components/knowledge/zip-upload").then((m) => m.ZipUpload),
-  { ssr: false }
-);
+import { ProcessingQueue } from "@/components/knowledge/processing-queue";
+import { BulkUpload } from "@/components/knowledge/bulk-upload";
+import { ZipUpload } from "@/components/knowledge/zip-upload";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -118,10 +105,11 @@ export default function MaterialsPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showQueue, setShowQueue] = useState(true);
 
-  // Admin detection
-  const storeRole = useUserStore((s) => s.role);
+  // Admin detection — use destructuring like other pages
+  const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
-  const sessionRole = (sessionResult?.data?.user as Record<string, unknown> | undefined)?.role as string | undefined;
+  const session = sessionResult?.data ?? null;
+  const sessionRole = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined;
   const [apiAdmin, setApiAdmin] = useState(false);
   const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;
 
@@ -224,12 +212,12 @@ export default function MaterialsPage() {
           </div>
         </div>
 
-        {/* Processing Queue — lazy loaded, client-only */}
+        {/* Processing Queue */}
         {isAdmin && showQueue && (
           <ProcessingQueue />
         )}
 
-        {/* Bulk File Upload — lazy loaded, client-only */}
+        {/* Bulk File Upload */}
         {isAdmin && showBulkUpload && (
           <BulkUpload
             onUploadComplete={() => {
@@ -240,7 +228,7 @@ export default function MaterialsPage() {
           />
         )}
 
-        {/* ZIP Upload — lazy loaded, client-only */}
+        {/* ZIP Upload */}
         {isAdmin && showZipUpload && (
           <ZipUpload
             onUploadComplete={() => {
