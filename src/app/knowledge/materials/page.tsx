@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Badge } from "@/components/ui/badge";
@@ -25,17 +26,28 @@ import {
   Clock,
   Eye,
   Sparkles,
-  Loader2,
   Upload,
   Cpu,
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ZipUpload } from "@/components/knowledge/zip-upload";
-import { BulkUpload } from "@/components/knowledge/bulk-upload";
-import { ProcessingQueue } from "@/components/knowledge/processing-queue";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
+
+// Lazy-load heavy components to avoid SSR bundling issues
+// (Cannot access 'f' before initialization in React 19 + Next.js 16)
+const ProcessingQueue = dynamic(
+  () => import("@/components/knowledge/processing-queue").then((m) => m.ProcessingQueue),
+  { ssr: false }
+);
+const BulkUpload = dynamic(
+  () => import("@/components/knowledge/bulk-upload").then((m) => m.BulkUpload),
+  { ssr: false }
+);
+const ZipUpload = dynamic(
+  () => import("@/components/knowledge/zip-upload").then((m) => m.ZipUpload),
+  { ssr: false }
+);
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -106,7 +118,7 @@ export default function MaterialsPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showQueue, setShowQueue] = useState(true);
 
-  // Admin detection — use store (hydrated by AppLayout → useUserStats)
+  // Admin detection
   const storeRole = useUserStore((s) => s.role);
   const sessionResult = useSession();
   const sessionRole = (sessionResult?.data?.user as Record<string, unknown> | undefined)?.role as string | undefined;
@@ -146,7 +158,6 @@ export default function MaterialsPage() {
     fetchArticles();
   }, [fetchArticles]);
 
-  // Filter articles
   const filtered = articles.filter((a) => {
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
     if (sourceTypeFilter !== "all" && a.sourceType !== sourceTypeFilter) return false;
@@ -166,7 +177,7 @@ export default function MaterialsPage() {
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
         {/* Header */}
-        <div className="transition-opacity duration-300">
+        <div>
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold md:text-3xl flex items-center gap-3">
@@ -213,12 +224,12 @@ export default function MaterialsPage() {
           </div>
         </div>
 
-        {/* Processing Queue */}
+        {/* Processing Queue — lazy loaded, client-only */}
         {isAdmin && showQueue && (
           <ProcessingQueue />
         )}
 
-        {/* Bulk File Upload */}
+        {/* Bulk File Upload — lazy loaded, client-only */}
         {isAdmin && showBulkUpload && (
           <BulkUpload
             onUploadComplete={() => {
@@ -229,7 +240,7 @@ export default function MaterialsPage() {
           />
         )}
 
-        {/* ZIP Upload */}
+        {/* ZIP Upload — lazy loaded, client-only */}
         {isAdmin && showZipUpload && (
           <ZipUpload
             onUploadComplete={() => {
@@ -320,54 +331,35 @@ export default function MaterialsPage() {
                 className="block"
               >
                 <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group">
-                  {/* Title */}
                   <h3 className="font-semibold text-sm group-hover:text-emerald-400 transition-colors line-clamp-2 mb-2">
                     {article.title}
                   </h3>
 
-                  {/* Summary */}
                   {article.summary && (
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
                       {article.summary}
                     </p>
                   )}
 
-                  {/* Badges Row */}
                   <div className="flex flex-wrap gap-1.5 mb-3">
                     {article.status && article.status !== "done" && statusConfig[article.status] && (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-[10px] px-1.5 py-0",
-                          statusConfig[article.status].color
-                        )}
-                      >
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusConfig[article.status].color)}>
                         {statusConfig[article.status].label}
                       </Badge>
                     )}
                     {article.sourceType && sourceTypeConfig[article.sourceType] && (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-[10px] px-1.5 py-0",
-                          sourceTypeConfig[article.sourceType].color
-                        )}
-                      >
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", sourceTypeConfig[article.sourceType].color)}>
                         {sourceTypeConfig[article.sourceType].label}
                       </Badge>
                     )}
                     {article.aiGenerated && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-                      >
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
                         <Sparkles className="h-2.5 w-2.5 mr-0.5" />
                         AI
                       </Badge>
                     )}
                   </div>
 
-                  {/* Media Indicators */}
                   <div className="flex items-center gap-3 mb-3 text-muted-foreground">
                     {article.videoUrl && (
                       <span className="flex items-center gap-1 text-[11px]" title="Есть видео">
@@ -391,7 +383,6 @@ export default function MaterialsPage() {
                     )}
                   </div>
 
-                  {/* Footer */}
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
                     {article.categoryName && (
                       <span className="flex items-center gap-1">
@@ -414,7 +405,6 @@ export default function MaterialsPage() {
           </div>
         )}
 
-        {/* Stats Footer */}
         {!loading && articles.length > 0 && (
           <div className="text-center text-xs text-muted-foreground/40 pt-2">
             Всего материалов: {articles.length} · Показано: {filtered.length}
