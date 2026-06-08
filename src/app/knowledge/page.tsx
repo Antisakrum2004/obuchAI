@@ -214,7 +214,7 @@ export default function KnowledgePage() {
                             {article.categoryName}
                           </Badge>
                           {article.videoUrl && (
-                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10 ml-auto">
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80 ml-auto">
                               <Video className="h-2.5 w-2.5 mr-0.5" />
                               Видео
                             </Badge>

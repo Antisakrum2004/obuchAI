@@ -318,7 +318,7 @@ export default function KnowledgeSpacePage({
                                     </div>
                                     <div className="hidden sm:flex items-center gap-1 shrink-0">
                                       {article.videoUrl && (
-                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
                                           <Video className="h-2.5 w-2.5 mr-0.5" />
                                           Видео
                                         </Badge>

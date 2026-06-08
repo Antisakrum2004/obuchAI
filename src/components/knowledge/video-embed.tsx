@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { ExternalLink, Play, Loader2, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -18,7 +18,7 @@ function detectSourceType(url: string): string {
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
     if (hostname.includes("rutube.ru")) return "rutube";
     if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
-    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    if (hostname.includes("disk.yandex") || hostname.includes("yandex") || hostname.includes("yadi.sk")) return "yandex_disk";
     return "direct";
   } catch {
     return "other";
@@ -59,33 +59,16 @@ function extractRutubeId(url: string): string | null {
 }
 
 /**
- * Convert a Yandex Disk public link to an embeddable player URL.
- * Supports formats:
- * - https://disk.yandex.ru/d/XXXX  (file share)
- * - https://disk.yandex.ru/i/XXXX  (file share, new format)
- * - https://yadi.sk/d/XXXX         (short link)
- *
- * Yandex Disk has an undocumented embed player at:
- *   https://disk.yandex.ru/client/embed?...  (iframe-based)
- *
- * However, the most reliable approach is:
- * 1. Try the Public API to get a direct download link → HTML5 <video>
- * 2. If that fails, try iframe embed via the share URL
- * 3. If that also fails, show a nice link button
+ * Invidious instances that proxy YouTube content — work without VPN in Russia.
+ * We try them in order; if the first fails, fallback to the next.
  */
-function getYandexEmbedUrl(shareUrl: string): string | null {
-  try {
-    const u = new URL(shareUrl);
-    // The Yandex Disk iframe player can be constructed from the share URL
-    // Format: https://disk.yandex.ru/client/embed?hash=XXX
-    // But the hash isn't directly in the URL. Alternative: just use the URL in an iframe
-    // Yandex does NOT officially support iframe embedding of videos from Disk
-    // So we cannot reliably construct an embed URL
-    return null;
-  } catch {
-    return null;
-  }
-}
+const INVIDIOUS_INSTANCES = [
+  "inv.nadeko.net",
+  "invidious.fdn.fr",
+  "vid.puffyan.us",
+  "invidious.nerdvpn.de",
+  "yewtu.be",
+];
 
 const sourceTypeLabels: Record<string, string> = {
   youtube: "YouTube",
@@ -96,19 +79,97 @@ const sourceTypeLabels: Record<string, string> = {
   other: "Ссылка",
 };
 
-// ─── Yandex Disk Video Player with multiple fallback strategies ───
+// ─── YouTube Player with Invidious proxy (works in Russia without VPN) ───
+
+function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
+  const [useInvidious, setUseInvidious] = useState(true);
+  const [invidiousInstance, setInvidiousInstance] = useState(INVIDIOUS_INSTANCES[0]);
+  const [iframeError, setIframeError] = useState(false);
+
+  const embedUrl = useInvidious
+    ? `https://${invidiousInstance}/embed/${videoId}`
+    : `https://www.youtube.com/embed/${videoId}`;
+
+  const handleIframeError = useCallback(() => {
+    if (useInvidious) {
+      // Try next Invidious instance
+      const currentIdx = INVIDIOUS_INSTANCES.indexOf(invidiousInstance);
+      if (currentIdx < INVIDIOUS_INSTANCES.length - 1) {
+        setInvidiousInstance(INVIDIOUS_INSTANCES[currentIdx + 1]);
+      } else {
+        // All Invidious instances failed, fallback to YouTube directly
+        setUseInvidious(false);
+      }
+    } else {
+      setIframeError(true);
+    }
+  }, [useInvidious, invidiousInstance]);
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div className="flex items-center gap-2 mb-2">
+        <Play className="h-4 w-4 text-emerald-400" />
+        <span className="text-sm font-medium">Видео</span>
+        {useInvidious ? (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+            Invidious
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+            {sourceTypeLabels.youtube}
+          </Badge>
+        )}
+      </div>
+      {iframeError ? (
+        <div className="glass rounded-xl p-5 border-white/5">
+          <p className="text-sm text-muted-foreground mb-3">
+            Не удалось загрузить видео. Возможно, требуется VPN для YouTube.
+          </p>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+          >
+            <Play className="h-4 w-4" />
+            Открыть на YouTube
+          </a>
+        </div>
+      ) : (
+        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+          <iframe
+            src={embedUrl}
+            title={title || "YouTube видео"}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 h-full w-full"
+            onError={handleIframeError}
+            // If iframe doesn't load after 8s, try next instance
+            onLoad={() => {}}
+          />
+        </div>
+      )}
+      {!useInvidious && !iframeError && (
+        <p className="text-[10px] text-muted-foreground/60">
+          Если видео не загружается — возможны региональные ограничения. Включите VPN или попробуйте позже.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Yandex Disk Video Player with fallback strategies ───
 
 type YandexStrategy = "api" | "iframe" | "link";
 
 function YandexDiskPlayer({ url, title, className }: { url: string; title?: string; className?: string }) {
   const [directUrl, setDirectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [strategy, setStrategy] = useState<YandexStrategy>("api");
 
   const resolveUrl = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setDirectUrl(null);
     try {
       const res = await fetch("/api/knowledge/video/resolve", {
         method: "POST",
@@ -116,38 +177,22 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
         body: JSON.stringify({ url }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        // Handle specific error codes from our resolve API
-        const errorCode = data.code || "";
-        if (errorCode === "NOT_PUBLIC_OR_NOT_FOUND" || res.status === 404) {
-          setStrategy("link");
-          setError("Видео не доступно для предпросмотра. Убедитесь, что ссылка создана через «Поделиться» на Яндекс Диске.");
-        } else if (errorCode === "ACCESS_DENIED" || res.status === 403) {
-          setStrategy("link");
-          setError("Доступ к видео запрещён. Файл не является публичным.");
-        } else if (errorCode === "TIMEOUT" || res.status === 504) {
-          setStrategy("link");
-          setError("Яндекс Диск не отвечает. Попробуйте позже или откройте видео напрямую.");
-        } else {
-          setStrategy("link");
-          setError(data.error || data.details || `Ошибка сервера (HTTP ${res.status})`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.directUrl) {
+          setDirectUrl(data.directUrl);
+          setStrategy("api");
+          setLoading(false);
+          return;
         }
-        return;
       }
 
-      const data = await res.json();
-      if (data.directUrl) {
-        setDirectUrl(data.directUrl);
-        setStrategy("api");
-      } else {
-        setStrategy("link");
-        setError("Не удалось получить ссылку для воспроизведения");
-      }
+      // API failed — fallback to iframe embed of the Yandex Disk share page
+      console.log("[YandexDiskPlayer] API failed, trying iframe fallback");
+      setStrategy("iframe");
     } catch (err) {
-      console.error("[YandexDiskPlayer] Failed to resolve URL:", err);
-      setStrategy("link");
-      setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+      console.error("[YandexDiskPlayer] Error:", err);
+      setStrategy("iframe");
     } finally {
       setLoading(false);
     }
@@ -156,6 +201,9 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
   useEffect(() => {
     resolveUrl();
   }, [resolveUrl]);
+
+  // If iframe also fails, show link
+  const [iframeFailed, setIframeFailed] = useState(false);
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -185,14 +233,11 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
             controls
             className="w-full rounded-lg"
             preload="metadata"
-            crossOrigin="anonymous"
           >
             Ваш браузер не поддерживает воспроизведение видео.
           </video>
           <div className="flex items-center justify-between mt-2 px-1">
-            <span className="text-[10px] text-muted-foreground">
-              Видео с Яндекс Диска
-            </span>
+            <span className="text-[10px] text-muted-foreground">Видео с Яндекс Диска</span>
             <a
               href={url}
               target="_blank"
@@ -206,12 +251,40 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
         </div>
       )}
 
-      {!loading && (strategy === "link" || error) && (
+      {!loading && strategy === "iframe" && !iframeFailed && (
+        <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
+          <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
+            <iframe
+              src={url}
+              title={title || "Яндекс Диск видео"}
+              allowFullScreen
+              allow="autoplay; encrypted-media"
+              className="absolute inset-0 h-full w-full"
+              onError={() => setIframeFailed(true)}
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+            />
+          </div>
+          <div className="flex items-center justify-between mt-2 px-1">
+            <span className="text-[10px] text-muted-foreground">Плеер Яндекс Диска</span>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
+            >
+              <ExternalLink className="h-2.5 w-2.5" />
+              Открыть на Яндекс Диске
+            </a>
+          </div>
+        </div>
+      )}
+
+      {!loading && (strategy === "link" || iframeFailed) && (
         <div className="glass rounded-xl p-5 border-white/5">
           <div className="flex items-start gap-3">
             <div className="flex-1">
               <p className="text-sm text-muted-foreground mb-3">
-                {error || "Видео не доступно для предпросмотра"}
+                Встроенный просмотр недоступен. Откройте видео на Яндекс Диске:
               </p>
               <div className="flex flex-wrap gap-2">
                 <a
@@ -246,30 +319,11 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
+  // YouTube → Invidious proxy (works without VPN in Russia)
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
-
-    return (
-      <div className={cn("space-y-2", className)}>
-        <div className="flex items-center gap-2 mb-2">
-          <Play className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-medium">Видео</span>
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
-            {sourceTypeLabels[type]}
-          </Badge>
-        </div>
-        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            src={`https://www.youtube.com/embed/${videoId}`}
-            title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full"
-          />
-        </div>
-      </div>
-    );
+    return <YouTubePlayer videoId={videoId} title={title} className={className} />;
   }
 
   if (type === "rutube") {
@@ -319,7 +373,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
-  // Yandex Disk — use server-side URL resolution + HTML5 <video> player with fallback
+  // Yandex Disk — API → iframe → link button
   if (type === "yandex_disk") {
     return <YandexDiskPlayer url={url} title={title} className={className} />;
   }

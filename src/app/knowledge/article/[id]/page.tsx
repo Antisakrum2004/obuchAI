@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
   Breadcrumb,
@@ -21,6 +22,20 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import {
   Eye,
   Calendar,
   BookOpen,
@@ -34,8 +49,13 @@ import {
   Sparkles,
   ChevronDown,
   Zap,
+  Pencil,
+  Trash2,
+  Check,
+  X as XIcon,
+  Loader2,
 } from "lucide-react";
-import { X, ZoomIn, Download, FileText, Loader2 } from "lucide-react";
+import { X, ZoomIn, Download, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MediaUpload } from "@/components/knowledge/media-upload";
 import { MediaViewer } from "@/components/knowledge/media-viewer";
@@ -116,7 +136,7 @@ export default function ArticlePage({
   const [article, setArticle] = useState<ArticleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaKey, setMediaKey] = useState(0);
-  const [urlImportOpen, setUrlImportOpen] = useState(false);
+  const [urlImportOpen, setUrlImportOpen] = useState(true); // expanded by default for admin
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
@@ -137,9 +157,128 @@ export default function ArticlePage({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const router = useRouter();
+
+  // ─── Inline editing state (admin only) ───
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [editingTags, setEditingTags] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState("");
+  const [editSummaryValue, setEditSummaryValue] = useState("");
+  const [editTagsValue, setEditTagsValue] = useState("");
+  const [savingField, setSavingField] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Track heading IDs for duplicate handling (must match extractHeadings logic)
   const headingIdCountsRef = useRef<Map<string, number>>(new Map());
+
+  // ─── Inline save handler ───
+  const handleInlineSave = useCallback(async (field: string, value: string) => {
+    if (!article) return;
+    setSavingField(field);
+    try {
+      let body: Record<string, unknown> = {};
+      if (field === "title") {
+        body.title = value;
+      } else if (field === "summary") {
+        body.summary = value || null;
+      } else if (field === "tags") {
+        const tagsList = value
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        body.tags = JSON.stringify(tagsList);
+      }
+      const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setArticle((prev) => prev ? { ...prev, ...updated } : prev);
+        toast.success("Сохранено");
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Ошибка сохранения");
+      }
+    } catch {
+      toast.error("Не удалось сохранить");
+    } finally {
+      setSavingField(null);
+    }
+  }, [article]);
+
+  const handleTitleEdit = () => {
+    if (!isAdmin || !article) return;
+    setEditTitleValue(article.title);
+    setEditingTitle(true);
+  };
+
+  const handleTitleSave = () => {
+    handleInlineSave("title", editTitleValue);
+    setEditingTitle(false);
+  };
+
+  const handleTitleCancel = () => {
+    setEditingTitle(false);
+    setEditTitleValue("");
+  };
+
+  const handleSummaryEdit = () => {
+    if (!isAdmin || !article) return;
+    setEditSummaryValue(article.summary || "");
+    setEditingSummary(true);
+  };
+
+  const handleSummarySave = () => {
+    handleInlineSave("summary", editSummaryValue);
+    setEditingSummary(false);
+  };
+
+  const handleSummaryCancel = () => {
+    setEditingSummary(false);
+    setEditSummaryValue("");
+  };
+
+  const handleTagsEdit = () => {
+    if (!isAdmin || !article) return;
+    const tags = article.tags ? parseTags(article.tags).join(", ") : "";
+    setEditTagsValue(tags);
+    setEditingTags(true);
+  };
+
+  const handleTagsSave = () => {
+    handleInlineSave("tags", editTagsValue);
+    setEditingTags(false);
+  };
+
+  const handleTagsCancel = () => {
+    setEditingTags(false);
+    setEditTagsValue("");
+  };
+
+  // ─── Delete handler ───
+  const handleDeleteArticle = async () => {
+    if (!article) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        toast.success("Статья удалена");
+        router.push("/knowledge");
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Ошибка удаления");
+      }
+    } catch {
+      toast.error("Не удалось удалить статью");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Check if content is still a placeholder
   const isPlaceholderContent = article?.content
@@ -330,9 +469,52 @@ export default function ArticlePage({
               {/* Article Header */}
               <div className="mb-6">
                 <div className="flex items-start gap-3">
-                  <h1 className="text-2xl font-bold md:text-3xl leading-tight flex-1">
-                    {article.title}
-                  </h1>
+                  {editingTitle ? (
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        value={editTitleValue}
+                        onChange={(e) => setEditTitleValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleTitleSave();
+                          if (e.key === "Escape") handleTitleCancel();
+                        }}
+                        autoFocus
+                        className="text-2xl font-bold md:text-3xl h-auto py-1"
+                        disabled={savingField === "title"}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleTitleSave}
+                        disabled={savingField === "title"}
+                        className="shrink-0 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                      >
+                        {savingField === "title" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleTitleCancel}
+                        disabled={savingField === "title"}
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <XIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <h1
+                      className={cn(
+                        "text-2xl font-bold md:text-3xl leading-tight flex-1",
+                        isAdmin && "cursor-pointer group/title relative"
+                      )}
+                      onClick={isAdmin ? handleTitleEdit : undefined}
+                    >
+                      {article.title}
+                      {isAdmin && (
+                        <Pencil className="inline-block h-4 w-4 ml-2 text-muted-foreground/0 group-hover/title:text-muted-foreground/60 transition-colors" />
+                      )}
+                    </h1>
+                  )}
                   {/* Status Badge (only if not done) */}
                   {article.status && article.status !== "done" && statusConfig[article.status] && (
                     <Badge
@@ -342,12 +524,101 @@ export default function ArticlePage({
                       {statusConfig[article.status].label}
                     </Badge>
                   )}
+                  {/* Delete Button — admin only */}
+                  {isAdmin && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 gap-1.5"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline text-xs">Удалить</span>
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Удалить статью?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Вы уверены, что хотите удалить статью «{article.title}»? Это действие нельзя отменить. Все прикреплённые файлы также будут удалены.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Отмена</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDeleteArticle}
+                            disabled={deleting}
+                            className="bg-red-600 text-white hover:bg-red-700 focus:ring-red-600"
+                          >
+                            {deleting ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Удаление...
+                              </>
+                            ) : (
+                              "Удалить статью"
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
-                {article.summary && (
-                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                    {article.summary}
+
+                {/* Summary — inline editable for admin */}
+                {editingSummary ? (
+                  <div className="mt-2 flex items-start gap-2">
+                    <Textarea
+                      value={editSummaryValue}
+                      onChange={(e) => setEditSummaryValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && e.ctrlKey) handleSummarySave();
+                        if (e.key === "Escape") handleSummaryCancel();
+                      }}
+                      autoFocus
+                      rows={2}
+                      className="text-sm leading-relaxed resize-none"
+                      placeholder="Введите краткое описание..."
+                      disabled={savingField === "summary"}
+                    />
+                    <div className="flex flex-col gap-1 shrink-0 pt-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleSummarySave}
+                        disabled={savingField === "summary"}
+                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 h-7 w-7"
+                      >
+                        {savingField === "summary" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleSummaryCancel}
+                        disabled={savingField === "summary"}
+                        className="text-muted-foreground hover:text-foreground h-7 w-7"
+                      >
+                        <XIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p
+                    className={cn(
+                      "mt-2 text-sm leading-relaxed",
+                      article.summary ? "text-muted-foreground" : "text-muted-foreground/50 italic",
+                      isAdmin && "cursor-pointer group/summary"
+                    )}
+                    onClick={isAdmin ? handleSummaryEdit : undefined}
+                  >
+                    {article.summary || (isAdmin ? "Нажмите, чтобы добавить описание" : "")}
+                    {isAdmin && (
+                      <Pencil className="inline-block h-3 w-3 ml-1.5 text-muted-foreground/0 group-hover/summary:text-muted-foreground/60 transition-colors" />
+                    )}
                   </p>
                 )}
+
                 <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <Eye className="h-3.5 w-3.5" />
@@ -363,18 +634,66 @@ export default function ArticlePage({
                     <Calendar className="h-3.5 w-3.5" />
                     {formatDate(article.createdAt)}
                   </span>
-                  {article.tags && parseTags(article.tags).length > 0 && (
-                    <span className="flex items-center gap-1.5 flex-wrap">
-                      <Tag className="h-3.5 w-3.5" />
-                      {parseTags(article.tags).map((tag) => (
-                        <Badge
-                          key={tag}
-                          variant="outline"
-                          className="text-[10px] px-1.5 py-0 border-white/10"
-                        >
-                          {tag}
-                        </Badge>
-                      ))}
+                  {/* Tags — inline editable for admin */}
+                  {editingTags ? (
+                    <span className="flex items-center gap-1.5">
+                      <Tag className="h-3.5 w-3.5 shrink-0" />
+                      <Input
+                        value={editTagsValue}
+                        onChange={(e) => setEditTagsValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleTagsSave();
+                          if (e.key === "Escape") handleTagsCancel();
+                        }}
+                        autoFocus
+                        className="h-6 text-xs py-0 px-2 w-48"
+                        placeholder="тег1, тег2, тег3"
+                        disabled={savingField === "tags"}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleTagsSave}
+                        disabled={savingField === "tags"}
+                        className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 h-5 w-5"
+                      >
+                        {savingField === "tags" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={handleTagsCancel}
+                        disabled={savingField === "tags"}
+                        className="text-muted-foreground hover:text-foreground h-5 w-5"
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </Button>
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "flex items-center gap-1.5 flex-wrap",
+                        isAdmin && "cursor-pointer group/tags"
+                      )}
+                      onClick={isAdmin ? handleTagsEdit : undefined}
+                    >
+                      <Tag className="h-3.5 w-3.5 shrink-0" />
+                      {article.tags && parseTags(article.tags).length > 0 ? (
+                        parseTags(article.tags).map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 border-white/10"
+                          >
+                            {tag}
+                          </Badge>
+                        ))
+                      ) : (
+                        isAdmin && <span className="text-muted-foreground/50 italic">Добавить теги</span>
+                      )}
+                      {isAdmin && (
+                        <Pencil className="h-3 w-3 text-muted-foreground/0 group-hover/tags:text-muted-foreground/60 transition-colors shrink-0" />
+                      )}
                     </span>
                   )}
                 </div>
@@ -615,13 +934,13 @@ export default function ArticlePage({
                 )}
               </div>
 
-              {/* URL Import Form — admin only, collapsible */}
+              {/* Медиа-ссылки — admin only, expanded by default */}
               {isAdmin && (
                 <div className="mt-6">
                   <Collapsible open={urlImportOpen} onOpenChange={setUrlImportOpen}>
                     <CollapsibleTrigger asChild>
-                      <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-emerald-400 transition-colors">
-                        <ExternalLink className="h-4 w-4" />
+                      <button className="flex items-center gap-2 text-sm font-semibold text-foreground hover:text-emerald-400 transition-colors">
+                        <ExternalLink className="h-4 w-4 text-emerald-400" />
                         Медиа-ссылки
                         <ChevronDown
                           className={cn(
