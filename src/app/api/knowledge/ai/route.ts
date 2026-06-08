@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
 import ZAI from "z-ai-web-dev-sdk";
-import { createZAI } from "@/lib/zai";
+import { createZAI, isZAIConfigured } from "@/lib/zai";
 
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
 export async function POST(request: NextRequest) {
@@ -77,6 +77,19 @@ export async function POST(request: NextRequest) {
         `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "startedAt", "createdAt", "updatedAt")
          VALUES ($1, $2, 'processing', $3, $4, 0, NOW(), NOW(), NOW())`,
         [queueId, queueType, articleId, JSON.stringify({ articleId, type })]
+      );
+    }
+
+    // Check ZAI availability BEFORE starting processing
+    if (!isZAIConfigured()) {
+      // Don't mark article/queue as error — just reject the request gracefully
+      return NextResponse.json(
+        {
+          error: "AI-сервис не настроен",
+          details: "ZAI SDK не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в переменные окружения Vercel (Settings → Environment Variables).",
+          code: "ZAI_NOT_CONFIGURED",
+        },
+        { status: 503 }
       );
     }
 

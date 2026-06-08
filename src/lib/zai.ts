@@ -27,6 +27,14 @@ interface ZAIConfig {
 let _cachedZai: ZAI | null = null;
 
 /**
+ * Check if ZAI SDK is configured (env vars present).
+ * Does NOT throw — safe to call for pre-checks.
+ */
+export function isZAIConfigured(): boolean {
+  return !!(process.env.ZAI_BASE_URL && process.env.ZAI_API_KEY);
+}
+
+/**
  * Create a ZAI SDK instance from environment variables.
  * Caches the instance for reuse across requests.
  *

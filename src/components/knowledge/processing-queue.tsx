@@ -23,6 +23,7 @@ import {
   GitBranch,
   Zap,
   ArrowRight,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -116,6 +117,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
   const [statusFilter, setStatusFilter] = useState("all");
   const [processing, setProcessing] = useState<string | null>(null);
   const [processingAll, setProcessingAll] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null); // null = checking
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -131,6 +133,14 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
       setLoading(false);
     }
   }, [statusFilter]);
+
+  // Check AI availability on mount
+  useEffect(() => {
+    fetch("/api/knowledge/ai/status")
+      .then((res) => res.json())
+      .then((data) => setAiAvailable(data.available))
+      .catch(() => setAiAvailable(false));
+  }, []);
 
   useEffect(() => {
     fetchQueue();
@@ -196,31 +206,21 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
   // ── HANDLERS (declared BEFORE useEffect that references them) ──
 
   const handleStartProcessing = useCallback(async (articleId: string, type: string) => {
+    if (aiAvailable === false) {
+      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      return;
+    }
     setProcessing(`${articleId}-${type}`);
     try {
-      await fetch("/api/knowledge/ai", {
+      const res = await fetch("/api/knowledge/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ articleId, type }),
       });
-      fetchQueue();
-      onQueueChange?.();
-    } catch {
-      // silently fail
-    } finally {
-      setProcessing(null);
-    }
-  }, [fetchQueue, onQueueChange]);
-
-  const handleStartAllForArticle = useCallback(async (articleId: string) => {
-    setProcessing(`${articleId}-all`);
-    try {
-      for (const { type } of aiTypes) {
-        await fetch("/api/knowledge/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articleId, type }),
-        });
+      if (res.status === 503) {
+        const data = await res.json();
+        toast.error(data.details || data.error);
+        setAiAvailable(false);
       }
       fetchQueue();
       onQueueChange?.();
@@ -229,10 +229,43 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     } finally {
       setProcessing(null);
     }
-  }, [fetchQueue, onQueueChange]);
+  }, [aiAvailable, fetchQueue, onQueueChange]);
+
+  const handleStartAllForArticle = useCallback(async (articleId: string) => {
+    if (aiAvailable === false) {
+      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      return;
+    }
+    setProcessing(`${articleId}-all`);
+    try {
+      for (const { type } of aiTypes) {
+        const res = await fetch("/api/knowledge/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articleId, type }),
+        });
+        if (res.status === 503) {
+          const data = await res.json();
+          toast.error(data.details || data.error);
+          setAiAvailable(false);
+          break;
+        }
+      }
+      fetchQueue();
+      onQueueChange?.();
+    } catch {
+      // silently fail
+    } finally {
+      setProcessing(null);
+    }
+  }, [aiAvailable, fetchQueue, onQueueChange]);
 
   /** Process ALL pending articles at once */
   const handleProcessAllPending = useCallback(async () => {
+    if (aiAvailable === false) {
+      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      return;
+    }
     const pendingArticles = groups.filter(
       (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
     );
@@ -243,17 +276,26 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
 
     let successCount = 0;
     let errorCount = 0;
+    let stopped = false;
 
     for (const group of pendingArticles) {
+      if (stopped) break;
       try {
         for (const { type } of aiTypes) {
-          await fetch("/api/knowledge/ai", {
+          const res = await fetch("/api/knowledge/ai", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ articleId: group.articleId, type }),
           });
+          if (res.status === 503) {
+            const data = await res.json();
+            toast.error(data.details || data.error);
+            setAiAvailable(false);
+            stopped = true;
+            break;
+          }
         }
-        successCount++;
+        if (!stopped) successCount++;
       } catch {
         errorCount++;
       }
@@ -263,12 +305,14 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     onQueueChange?.();
     setProcessingAll(false);
 
-    if (errorCount === 0) {
+    if (stopped) {
+      toast.error("AI-сервис не настроен. Обработка остановлена.");
+    } else if (errorCount === 0) {
       toast.success(`Обработка запущена для ${successCount} статей`);
     } else {
       toast.warning(`Обработано: ${successCount}, ошибок: ${errorCount}`);
     }
-  }, [groups, fetchQueue, onQueueChange]);
+  }, [aiAvailable, groups, fetchQueue, onQueueChange]);
 
   const handleCancel = useCallback(async (itemId: string) => {
     try {
@@ -332,6 +376,25 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
 
   return (
     <div className={cn("glass rounded-xl p-5 border-white/5 space-y-4", className)}>
+      {/* AI Not Configured Banner */}
+      {aiAvailable === false && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/[0.08] border border-red-500/20 text-sm">
+          <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-medium text-red-400">AI-сервис не настроен</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Для работы AI-обработки (метаданные, глоссарий, граф знаний) необходимо добавить переменные окружения в Vercel Dashboard:
+            </p>
+            <div className="mt-2 p-2 rounded bg-black/30 text-xs font-mono space-y-0.5">
+              <p className="text-amber-400">ZAI_BASE_URL=<span className="text-muted-foreground">https://internal-api.z.ai/v1</span></p>
+              <p className="text-amber-400">ZAI_API_KEY=<span className="text-muted-foreground">ваш_API_ключ</span></p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              <Settings className="h-3 w-3 inline" /> Vercel Dashboard → Project → Settings → Environment Variables
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2">
           <Cpu className="h-4 w-4 text-emerald-400" />
