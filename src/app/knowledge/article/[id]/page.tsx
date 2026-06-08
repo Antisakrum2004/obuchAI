@@ -85,6 +85,7 @@ interface ArticleDetail {
   sourceType: string | null;
   processedAt: string | null;
   errorMessage: string | null;
+  hasMediaPdf?: boolean;
 }
 
 interface GlossaryItem {
@@ -145,7 +146,7 @@ export default function ArticlePage({
     : true;
 
   // Check if article has a PDF available (either pdfUrl or media with PDF)
-  const hasPdf = !!(article?.pdfUrl);
+  const hasPdf = !!(article?.pdfUrl) || !!(article?.hasMediaPdf);
 
   const handleExtractContent = async () => {
     if (!article) return;

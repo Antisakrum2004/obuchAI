@@ -105,6 +105,16 @@ export async function GET(
       }
     }
 
+    // Check if there's a PDF in the media table (for articles where pdfUrl is empty but PDF was uploaded)
+    let hasMediaPdf = false;
+    if (!article.pdfUrl) {
+      const { rows: mediaCheck } = await pool.query(
+        `SELECT id FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' LIMIT 1`,
+        [id]
+      );
+      hasMediaPdf = mediaCheck.length > 0;
+    }
+
     const result = {
       id: article.id,
       title: article.title,
@@ -134,6 +144,7 @@ export async function GET(
       keyConcepts: article.keyConcepts,
       prerequisites: article.prerequisites,
       nextTopics: article.nextTopics,
+      hasMediaPdf,
     };
 
     return NextResponse.json(result);

@@ -69,7 +69,11 @@ export default function KnowledgeSpacePage({
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    params.then((p) => setSlug(p.slug));
+    params.then((p) => {
+      // Next.js may return URL-encoded slug; decode it to get the actual slug value
+      const decoded = decodeURIComponent(p.slug);
+      setSlug(decoded);
+    });
   }, [params]);
 
   useEffect(() => {
