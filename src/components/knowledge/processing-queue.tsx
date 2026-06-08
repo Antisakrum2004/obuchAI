@@ -386,8 +386,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
               Для работы AI-обработки (метаданные, глоссарий, граф знаний) необходимо добавить переменные окружения в Vercel Dashboard:
             </p>
             <div className="mt-2 p-2 rounded bg-black/30 text-xs font-mono space-y-0.5">
-              <p className="text-amber-400">ZAI_BASE_URL=<span className="text-muted-foreground">https://internal-api.z.ai/v1</span></p>
-              <p className="text-amber-400">ZAI_API_KEY=<span className="text-muted-foreground">ваш_API_ключ</span></p>
+              <p className="text-amber-400">OPENROUTER_API_KEY=<span className="text-muted-foreground">ваш_ключ</span></p>
+              <p className="text-muted-foreground">OPENROUTER_MODEL=<span className="text-muted-foreground">google/gemini-2.5-flash-preview (по умолчанию)</span></p>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               <Settings className="h-3 w-3 inline" /> Vercel Dashboard → Project → Settings → Environment Variables

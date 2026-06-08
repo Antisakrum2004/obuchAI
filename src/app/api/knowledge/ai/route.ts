@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
-import ZAI from "z-ai-web-dev-sdk";
-import { createZAI, isZAIConfigured } from "@/lib/zai";
+import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
 
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
 export async function POST(request: NextRequest) {
@@ -29,6 +28,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `type обязателен и должен быть одним из: ${validTypes.join(", ")}` },
         { status: 400 }
+      );
+    }
+
+    // Check AI availability BEFORE doing anything
+    if (!isAIConfigured()) {
+      return NextResponse.json(
+        {
+          error: "AI-сервис не настроен",
+          details: "Добавьте OPENROUTER_API_KEY в переменные окружения Vercel (Settings → Environment Variables).",
+          code: "AI_NOT_CONFIGURED",
+        },
+        { status: 503 }
       );
     }
 
@@ -80,19 +91,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check ZAI availability BEFORE starting processing
-    if (!isZAIConfigured()) {
-      // Don't mark article/queue as error — just reject the request gracefully
-      return NextResponse.json(
-        {
-          error: "AI-сервис не настроен",
-          details: "ZAI SDK не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в переменные окружения Vercel (Settings → Environment Variables).",
-          code: "ZAI_NOT_CONFIGURED",
-        },
-        { status: 503 }
-      );
-    }
-
     // Update queue entry to 'processing'
     await pool.query(
       `UPDATE processing_queue SET status = 'processing', "startedAt" = NOW(), progress = 10, "updatedAt" = NOW() WHERE id = $1`,
@@ -100,20 +98,18 @@ export async function POST(request: NextRequest) {
     );
 
     try {
-      const zai = createZAI();
-
       if (type === "metadata" || type === "categorize") {
         // Check if we need auto-categorization (article has no categoryId)
         const needsCategorization = !article.categoryId;
         if (needsCategorization) {
-          await processCategorization(zai, article, articleId, queueId);
+          await processCategorization(article, articleId, queueId);
         }
         // Always process metadata (includes categorization if needed)
-        await processMetadata(zai, article, articleId, queueId);
+        await processMetadata(article, articleId, queueId);
       } else if (type === "glossary") {
-        await processGlossary(zai, article, articleId, queueId);
+        await processGlossary(article, articleId, queueId);
       } else if (type === "graph") {
-        await processGraph(zai, articleId, queueId);
+        await processGraph(articleId, queueId);
       }
 
       // Update article status to 'done'
@@ -196,7 +192,6 @@ export async function POST(request: NextRequest) {
  * If no matching category exists, creates a new one.
  */
 async function processCategorization(
-  zai: ZAI,
   article: Record<string, unknown>,
   articleId: string,
   queueId: string
@@ -239,11 +234,10 @@ async function processCategorization(
     description: s.description,
   }));
 
-  const completion = await zai.chat.completions.create({
-    messages: [
-      {
-        role: "system",
-        content: `Ты — AI-ассистент для классификации образовательных материалов. 
+  const completion = await createChatCompletion([
+    {
+      role: "system",
+      content: `Ты — AI-ассистент для классификации образовательных материалов. 
 На основе названия и содержания статьи, определи наиболее подходящую категорию.
 
 Доступные категории:
@@ -261,13 +255,12 @@ ${JSON.stringify(spaceList, null, 2)}
 - {"action": "assign", "categoryId": "existing-cat-id"}
 - {"action": "create_category", "spaceId": "existing-space-id", "categoryName": "Новая категория"}
 - {"action": "create_both", "spaceName": "Новое пространство", "categoryName": "Новая категория"}`,
-      },
-      {
-        role: "user",
-        content: `Название статьи: ${title}\n\nСодержание:\n${content.substring(0, 4000)}`,
-      },
-    ],
-  });
+    },
+    {
+      role: "user",
+      content: `Название статьи: ${title}\n\nСодержание:\n${content.substring(0, 4000)}`,
+    },
+  ]);
 
   await pool.query(
     `UPDATE processing_queue SET progress = 50, "updatedAt" = NOW() WHERE id = $1`,
@@ -363,7 +356,6 @@ ${JSON.stringify(spaceList, null, 2)}
  * Process metadata: AI generates summary, difficulty, keyConcepts, estimatedTime, tags, keyTopics
  */
 async function processMetadata(
-  zai: ZAI,
   article: Record<string, unknown>,
   articleId: string,
   queueId: string
@@ -376,11 +368,10 @@ async function processMetadata(
   const content = (article.content as string) || "";
   const title = (article.title as string) || "";
 
-  const completion = await zai.chat.completions.create({
-    messages: [
-      {
-        role: "system",
-        content: `Ты — AI-ассистент для анализа образовательных статей. Проанализируй статью и верни JSON со следующими полями:
+  const completion = await createChatCompletion([
+    {
+      role: "system",
+      content: `Ты — AI-ассистент для анализа образовательных статей. Проанализируй статью и верни JSON со следующими полями:
 - summary: краткое описание статьи (1-2 предложения)
 - difficulty: уровень сложности ("easy", "medium" или "hard")
 - keyConcepts: массив ключевых концепций (строки, до 10 штук)
@@ -389,13 +380,12 @@ async function processMetadata(
 - keyTopics: массив ключевых тем (строки, до 5 штук)
 
 Верни ТОЛЬКО валидный JSON, без markdown-блоков и пояснений.`,
-      },
-      {
-        role: "user",
-        content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}`,
-      },
-    ],
-  });
+    },
+    {
+      role: "user",
+      content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}`,
+    },
+  ]);
 
   await pool.query(
     `UPDATE processing_queue SET progress = 80, "updatedAt" = NOW() WHERE id = $1`,
@@ -450,7 +440,6 @@ async function processMetadata(
  * Process glossary: AI extracts glossary terms from article content
  */
 async function processGlossary(
-  zai: ZAI,
   article: Record<string, unknown>,
   articleId: string,
   queueId: string
@@ -463,11 +452,10 @@ async function processGlossary(
   const content = (article.content as string) || "";
   const title = (article.title as string) || "";
 
-  const completion = await zai.chat.completions.create({
-    messages: [
-      {
-        role: "system",
-        content: `Ты — AI-ассистент для извлечения глоссарных терминов из образовательных статей. 
+  const completion = await createChatCompletion([
+    {
+      role: "system",
+      content: `Ты — AI-ассистент для извлечения глоссарных терминов из образовательных статей. 
 Проанализируй статью и верни JSON-массив терминов. Каждый термин — объект с полями:
 - term: название термина
 - definition: полное определение (2-3 предложения)
@@ -475,13 +463,12 @@ async function processGlossary(
 - category: категория ("AI", "Tools", "1C", "General")
 
 Верни ТОЛЬКО валидный JSON-массив, без markdown-блоков и пояснений. Если терминов нет — верни пустой массив [].`,
-      },
-      {
-        role: "user",
-        content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}`,
-      },
-    ],
-  });
+    },
+    {
+      role: "user",
+      content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}`,
+    },
+  ]);
 
   await pool.query(
     `UPDATE processing_queue SET progress = 60, "updatedAt" = NOW() WHERE id = $1`,
@@ -555,7 +542,6 @@ async function processGlossary(
  * Process graph: AI generates prerequisites and nextTopics relationships across all articles
  */
 async function processGraph(
-  zai: ZAI,
   articleId: string,
   queueId: string
 ) {
@@ -589,27 +575,25 @@ async function processGraph(
     throw new Error("Целевая статья не найдена для построения графа");
   }
 
-  const completion = await zai.chat.completions.create({
-    messages: [
-      {
-        role: "system",
-        content: `Ты — AI-ассистент для анализа связей между образовательными статьями. 
+  const completion = await createChatCompletion([
+    {
+      role: "system",
+      content: `Ты — AI-ассистент для анализа связей между образовательными статьями. 
 На основе списка статей определи для целевой статьи:
 - prerequisites: массив ID статей, которые нужно изучить перед этой (до 5 штук)
 - nextTopics: массив ID статей, которые стоит изучить после этой (до 5 штук)
 
 Учитывай логическую последовательность тем, сложность и тематические связи.
 Верни ТОЛЬКО валидный JSON с полями prerequisites и nextTopics, без markdown-блоков и пояснений.`,
-      },
-      {
-        role: "user",
-        content: `Целевая статья: ${JSON.stringify({ id: targetArticle.id, title: targetArticle.title, summary: targetArticle.summary })}
+    },
+    {
+      role: "user",
+      content: `Целевая статья: ${JSON.stringify({ id: targetArticle.id, title: targetArticle.title, summary: targetArticle.summary })}
 
 Все статьи базы знаний:
 ${JSON.stringify(articlesInfo, null, 2)}`,
-      },
-    ],
-  });
+    },
+  ]);
 
   await pool.query(
     `UPDATE processing_queue SET progress = 70, "updatedAt" = NOW() WHERE id = $1`,
