@@ -73,15 +73,24 @@ export async function POST(request: NextRequest) {
     };
     const queueType = queueTypeMap[type];
 
-    // Find existing pending/processing queue entry, or create one
+    // Find existing pending/processing/error queue entry, or create one
+    // Include 'error' status to support retry on failed items
     let { rows: queueRows } = await pool.query(
-      `SELECT id FROM processing_queue WHERE "articleId" = $1 AND type = $2 AND status IN ('pending', 'processing') ORDER BY "createdAt" DESC LIMIT 1`,
+      `SELECT id, status FROM processing_queue WHERE "articleId" = $1 AND type = $2 AND status IN ('pending', 'processing', 'error') ORDER BY "createdAt" DESC LIMIT 1`,
       [articleId, queueType]
     );
 
     let queueId: string;
     if (queueRows.length > 0) {
       queueId = queueRows[0].id;
+      // If retrying an error, also reset the article status
+      if (queueRows[0].status === "error") {
+        await pool.query(
+          `UPDATE articles SET status = 'pending', "errorMessage" = NULL, "updatedAt" = NOW() WHERE id = $1 AND status = 'error'`,
+          [articleId]
+        );
+        console.log(`[AI] Retrying error item ${queueId} for article ${articleId}`);
+      }
     } else {
       queueId = genId("pq_");
       await pool.query(
@@ -294,7 +303,7 @@ ${JSON.stringify(spaceList, null, 2)}
       assignedCategoryId = parsed.categoryId;
     }
   } else if (parsed.action === "create_category" && parsed.spaceId && parsed.categoryName) {
-    // Create new category in existing space
+    // Create new category in existing space (with duplicate slug handling)
     const slug = parsed.categoryName
       .toLowerCase()
       .replace(/[^a-zа-яё0-9\s-]/g, "")
@@ -302,16 +311,28 @@ ${JSON.stringify(spaceList, null, 2)}
       .replace(/-+/g, "-")
       .substring(0, 60) || `cat-${Date.now()}`;
 
-    const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-    const { rows: newCat } = await pool.query(
-      `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
-       RETURNING id`,
-      [newCatId, parsed.categoryName, slug, parsed.spaceId]
+    // Check if category with this slug already exists in the space
+    const { rows: existingCat } = await pool.query(
+      `SELECT id FROM categories WHERE slug = $1 AND "spaceId" = $2`,
+      [slug, parsed.spaceId]
     );
-    assignedCategoryId = newCat[0]?.id;
+
+    if (existingCat.length > 0) {
+      assignedCategoryId = existingCat[0].id;
+      console.log(`[AI] Reusing existing category "${parsed.categoryName}" (${assignedCategoryId})`);
+    } else {
+      const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+      const { rows: newCat } = await pool.query(
+        `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [newCatId, parsed.categoryName, slug, parsed.spaceId]
+      );
+      assignedCategoryId = newCat[0]?.id || null;
+    }
   } else if (parsed.action === "create_both" && parsed.spaceName && parsed.categoryName) {
-    // Create new space and new category
+    // Create new space and new category (with duplicate slug handling)
     const spaceSlug = parsed.spaceName
       .toLowerCase()
       .replace(/[^a-zа-яё0-9\s-]/g, "")
@@ -319,12 +340,28 @@ ${JSON.stringify(spaceList, null, 2)}
       .replace(/-+/g, "-")
       .substring(0, 60) || `ks-${Date.now()}`;
 
-    const newSpaceId = 'ks_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-    await pool.query(
-      `INSERT INTO knowledge_spaces (id, name, slug, "order", "isPublished", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, 0, true, NOW(), NOW())`,
-      [newSpaceId, parsed.spaceName, spaceSlug]
+    // Check if space with this slug already exists
+    let newSpaceId: string;
+    const { rows: existingSpace } = await pool.query(
+      `SELECT id FROM knowledge_spaces WHERE slug = $1`,
+      [spaceSlug]
     );
+
+    if (existingSpace.length > 0) {
+      // Reuse existing space
+      newSpaceId = existingSpace[0].id;
+      console.log(`[AI] Reusing existing space "${parsed.spaceName}" (${newSpaceId})`);
+    } else {
+      // Create new space with ON CONFLICT safety
+      newSpaceId = 'ks_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+      const { rows: insertedSpace } = await pool.query(
+        `INSERT INTO knowledge_spaces (id, name, slug, "order", "isPublished", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, 0, true, NOW(), NOW())
+         ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+        [newSpaceId, parsed.spaceName, spaceSlug]
+      );
+      newSpaceId = insertedSpace[0]?.id || newSpaceId;
+    }
 
     const catSlug = parsed.categoryName
       .toLowerCase()
@@ -333,14 +370,26 @@ ${JSON.stringify(spaceList, null, 2)}
       .replace(/-+/g, "-")
       .substring(0, 60) || `cat-${Date.now()}`;
 
-    const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-    const { rows: newCat } = await pool.query(
-      `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
-       RETURNING id`,
-      [newCatId, parsed.categoryName, catSlug, newSpaceId]
+    // Check if category with this slug already exists in the space
+    const { rows: existingCat } = await pool.query(
+      `SELECT id FROM categories WHERE slug = $1 AND "spaceId" = $2`,
+      [catSlug, newSpaceId]
     );
-    assignedCategoryId = newCat[0]?.id;
+
+    if (existingCat.length > 0) {
+      assignedCategoryId = existingCat[0].id;
+      console.log(`[AI] Reusing existing category "${parsed.categoryName}" (${assignedCategoryId})`);
+    } else {
+      const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+      const { rows: newCat } = await pool.query(
+        `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [newCatId, parsed.categoryName, catSlug, newSpaceId]
+      );
+      assignedCategoryId = newCat[0]?.id || null;
+    }
   }
 
   // Assign the category to the article

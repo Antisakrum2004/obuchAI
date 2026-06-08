@@ -207,7 +207,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
 
   const handleStartProcessing = useCallback(async (articleId: string, type: string) => {
     if (aiAvailable === false) {
-      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      toast.error("AI-сервис не настроен. Добавьте OPENROUTER_API_KEY в Vercel Dashboard.");
       return;
     }
     setProcessing(`${articleId}-${type}`);
@@ -233,7 +233,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
 
   const handleStartAllForArticle = useCallback(async (articleId: string) => {
     if (aiAvailable === false) {
-      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      toast.error("AI-сервис не настроен. Добавьте OPENROUTER_API_KEY в Vercel Dashboard.");
       return;
     }
     setProcessing(`${articleId}-all`);
@@ -260,14 +260,14 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [aiAvailable, fetchQueue, onQueueChange]);
 
-  /** Process ALL pending articles at once */
+  /** Process ALL pending/error articles at once */
   const handleProcessAllPending = useCallback(async () => {
     if (aiAvailable === false) {
-      toast.error("AI-сервис не настроен. Добавьте ZAI_BASE_URL и ZAI_API_KEY в Vercel Dashboard.");
+      toast.error("AI-сервис не настроен. Добавьте OPENROUTER_API_KEY в Vercel Dashboard.");
       return;
     }
     const pendingArticles = groups.filter(
-      (g) => g.overallStatus === "pending" || g.overallStatus === "mixed"
+      (g) => g.overallStatus === "pending" || g.overallStatus === "mixed" || g.overallStatus === "error"
     );
     if (pendingArticles.length === 0) return;
 
@@ -570,11 +570,11 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                     : `Создано: ${new Date(group.items[0]?.createdAt || "").toLocaleString("ru-RU")}`}
                 </p>
 
-                {/* Action buttons for articles with pending items */}
-                {hasPending && (
+                {/* Action buttons for articles with pending or error items */}
+                {(hasPending || group.overallStatus === "error") && (
                   <div className="flex flex-wrap gap-1 mt-2 ml-6">
                     {group.items
-                      .filter((i) => i.status === "pending")
+                      .filter((i) => i.status === "pending" || i.status === "error")
                       .map((item) => {
                         const typeInfo = typeLabels[item.type];
                         if (!typeInfo) return null;
@@ -585,6 +585,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                             (item.type === "glossary_extract" && t.type === "glossary") ||
                             (item.type === "graph_build" && t.type === "graph")
                         );
+                        const isItemError = item.status === "error";
 
                         return (
                           <Button
@@ -596,13 +597,15 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                             disabled={!!processing || processingAll}
                             className={cn(
                               "h-6 px-2 text-[10px] gap-1",
-                              "bg-white/5 border border-white/10 hover:bg-white/10",
-                              typeInfo.color
+                              isItemError
+                                ? "bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-300"
+                                : "bg-white/5 border border-white/10 hover:bg-white/10",
+                              !isItemError && typeInfo.color
                             )}
                             variant="outline"
                           >
-                            <TypeIcon className="h-2.5 w-2.5" />
-                            {typeInfo.label}
+                            {isItemError ? <RefreshCw className="h-2.5 w-2.5" /> : <TypeIcon className="h-2.5 w-2.5" />}
+                            {isItemError ? "Повтор" : typeInfo.label}
                           </Button>
                         );
                       })}
