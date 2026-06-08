@@ -28,7 +28,7 @@ const allNavItems = [
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   // { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false }, // removed
-  { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: false },
+  { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: true },
   { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },

@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Collapsible,
@@ -207,6 +206,17 @@ export default function ArticlePage({
   const headings = article?.content
     ? extractHeadings(article.content)
     : [];
+
+  // Handle TOC click — smooth scroll to heading
+  const handleTocClick = (e: React.MouseEvent<HTMLAnchorElement>, headingId: string) => {
+    e.preventDefault();
+    const el = document.getElementById(headingId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Update URL hash without jump
+      history.replaceState(null, '', `#${headingId}`);
+    }
+  };
 
   // Parse keyConcepts from JSON
   const keyConceptsList = article?.keyConcepts
@@ -519,6 +529,16 @@ export default function ArticlePage({
                 <article className="prose-custom">
                   <ReactMarkdown
                     components={{
+                      h2: ({ children }) => {
+                        const text = extractTextFromChildren(children);
+                        const id = slugifyHeading(text);
+                        return <h2 id={id} className="scroll-mt-20">{children}</h2>;
+                      },
+                      h3: ({ children }) => {
+                        const text = extractTextFromChildren(children);
+                        const id = slugifyHeading(text);
+                        return <h3 id={id} className="scroll-mt-20">{children}</h3>;
+                      },
                       img: ({ src, alt }) => (
                         <button
                           onClick={() => {
@@ -648,27 +668,26 @@ export default function ArticlePage({
                 <div className="sticky top-6 space-y-6">
                   {/* Table of Contents */}
                   {headings.length > 2 && (
-                    <div className="glass rounded-xl p-4 border-white/5">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <div className="glass rounded-xl p-4 border-white/5 max-h-[60vh] overflow-y-auto">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2 sticky top-0 bg-[#0a0a0f]/95 backdrop-blur-sm py-1 -mt-1">
                         <List className="h-3.5 w-3.5" />
                         Содержание
                       </h4>
-                      <ScrollArea className="max-h-64">
-                        <nav className="space-y-1.5">
-                          {headings.map((h, i) => (
-                            <a
-                              key={i}
-                              href={`#${h.id}`}
-                              className={cn(
-                                "block text-xs text-muted-foreground hover:text-emerald-400 transition-colors",
-                                h.level === 3 && "pl-3"
-                              )}
-                            >
-                              {h.text}
-                            </a>
-                          ))}
-                        </nav>
-                      </ScrollArea>
+                      <nav className="space-y-1.5">
+                        {headings.map((h, i) => (
+                          <a
+                            key={i}
+                            href={`#${h.id}`}
+                            onClick={(e) => handleTocClick(e, h.id)}
+                            className={cn(
+                              "block text-xs text-muted-foreground hover:text-emerald-400 transition-colors cursor-pointer py-0.5",
+                              h.level === 3 && "pl-3"
+                            )}
+                          >
+                            {h.text}
+                          </a>
+                        ))}
+                      </nav>
                     </div>
                   )}
 
@@ -753,19 +772,43 @@ export default function ArticlePage({
   );
 }
 
+/** Convert heading text to a URL-safe slug that matches the id attribute in the DOM */
+function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\wа-яё]+/gi, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** Extract plain text from React children (handles strings, numbers, arrays, elements) */
+function extractTextFromChildren(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(extractTextFromChildren).join("");
+  if (children && typeof children === "object" && "props" in children) {
+    return extractTextFromChildren((children as React.ReactElement).props.children);
+  }
+  return "";
+}
+
 function extractHeadings(
   markdown: string
 ): { id: string; text: string; level: number }[] {
   const lines = markdown.split("\n");
   const headings: { id: string; text: string; level: number }[] = [];
+  // Track heading occurrences to avoid duplicate ids
+  const idCounts = new Map<string, number>();
   for (const line of lines) {
     const match = line.match(/^(#{2,3})\s+(.+)/);
     if (match) {
       const text = match[2].trim();
-      const id = text
-        .toLowerCase()
-        .replace(/[^\wа-яё]+/gi, "-")
-        .replace(/^-|-$/g, "");
+      let id = slugifyHeading(text);
+      // Handle duplicate ids: append -2, -3, etc.
+      const count = idCounts.get(id) || 0;
+      idCounts.set(id, count + 1);
+      if (count > 0) {
+        id = `${id}-${count + 1}`;
+      }
       headings.push({ id, text, level: match[1].length });
     }
   }

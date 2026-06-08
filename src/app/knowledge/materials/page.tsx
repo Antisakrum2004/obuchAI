@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -14,6 +15,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Archive,
   Search,
@@ -28,6 +40,12 @@ import {
   Upload,
   Cpu,
   Filter,
+  Pencil,
+  Check,
+  X,
+  Trash2,
+  Tag,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/user-store";
@@ -35,6 +53,7 @@ import { useSession } from "next-auth/react";
 import { ProcessingQueue } from "@/components/knowledge/processing-queue";
 import { BulkUpload } from "@/components/knowledge/bulk-upload";
 import { ZipUpload } from "@/components/knowledge/zip-upload";
+import { toast } from "sonner";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -81,6 +100,12 @@ const sourceTypeConfig: Record<string, { label: string; color: string }> = {
   other: { label: "Другое", color: "border-white/10 text-muted-foreground bg-white/5" },
 };
 
+const difficultyOptions = [
+  { value: "easy", label: "Легко" },
+  { value: "medium", label: "Средне" },
+  { value: "hard", label: "Сложно" },
+];
+
 function formatDate(dateStr: string): string {
   try {
     return new Date(dateStr).toLocaleDateString("ru-RU", {
@@ -91,6 +116,339 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr;
   }
+}
+
+function parseTagsList(tagsJson: string | null): string[] {
+  if (!tagsJson) return [];
+  try {
+    const parsed = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+// ── Editable Article Card ─────────────────────────────────────
+
+function EditableArticleCard({
+  article,
+  isAdmin,
+  onUpdate,
+  onDelete,
+}: {
+  article: MaterialArticle;
+  isAdmin: boolean;
+  onUpdate: (id: string, fields: Partial<MaterialArticle>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editTitle, setEditTitle] = useState(article.title);
+  const [editSummary, setEditSummary] = useState(article.summary || "");
+  const [editTagsStr, setEditTagsStr] = useState(
+    parseTagsList(article.tags).join(", ")
+  );
+  const [editDifficulty, setEditDifficulty] = useState(article.difficulty || "");
+
+  const handleStartEdit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditTitle(article.title);
+    setEditSummary(article.summary || "");
+    setEditTagsStr(parseTagsList(article.tags).join(", "));
+    setEditDifficulty(article.difficulty || "");
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const tagsArray = editTagsStr
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const body: Record<string, unknown> = {
+        title: editTitle.trim(),
+        summary: editSummary.trim() || null,
+        tags: tagsArray.length > 0 ? tagsArray : null,
+        difficulty: editDifficulty || null,
+      };
+
+      const res = await fetch(
+        `/api/knowledge/articles/${encodeURIComponent(article.id)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (res.ok) {
+        toast.success("Статья обновлена");
+        onUpdate(article.id, {
+          title: editTitle.trim(),
+          summary: editSummary.trim() || null,
+          tags: tagsArray.length > 0 ? JSON.stringify(tagsArray) : null,
+          difficulty: editDifficulty || null,
+        });
+        setEditing(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Ошибка сохранения");
+      }
+    } catch {
+      toast.error("Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+  };
+
+  const handleDelete = async () => {
+    try {
+      const res = await fetch(
+        `/api/knowledge/articles/${encodeURIComponent(article.id)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        toast.success("Статья удалена");
+        onDelete(article.id);
+      } else {
+        toast.error("Ошибка удаления");
+      }
+    } catch {
+      toast.error("Не удалось удалить");
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="glass rounded-xl p-5 border border-emerald-500/20 h-full flex flex-col">
+        <div className="space-y-3 flex-1">
+          {/* Title */}
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              Название
+            </label>
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="bg-white/5 border-white/10 text-sm h-8"
+              placeholder="Название статьи"
+            />
+          </div>
+
+          {/* Summary */}
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              Описание
+            </label>
+            <Textarea
+              value={editSummary}
+              onChange={(e) => setEditSummary(e.target.value)}
+              className="bg-white/5 border-white/10 text-xs min-h-[60px] resize-none"
+              placeholder="Краткое описание статьи"
+              rows={2}
+            />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              Теги (через запятую)
+            </label>
+            <Input
+              value={editTagsStr}
+              onChange={(e) => setEditTagsStr(e.target.value)}
+              className="bg-white/5 border-white/10 text-xs h-8"
+              placeholder="AI, промпт, LLM"
+            />
+          </div>
+
+          {/* Difficulty */}
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+              Сложность
+            </label>
+            <Select value={editDifficulty || "_none"} onValueChange={(v) => setEditDifficulty(v === "_none" ? "" : v)}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-xs h-8">
+                <SelectValue placeholder="Не указана" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#111118] border-white/10">
+                <SelectItem value="_none">Не указана</SelectItem>
+                {difficultyOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/5">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !editTitle.trim()}
+            className="h-7 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 gap-1"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+            Сохранить
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleCancel}
+            className="h-7 text-xs bg-white/5 border border-white/10 hover:bg-white/10 gap-1"
+          >
+            <X className="h-3 w-3" />
+            Отмена
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={`/knowledge/article/${article.id}`}
+      className="block"
+    >
+      <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group relative">
+        {/* Admin edit button — top right */}
+        {isAdmin && (
+          <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button
+              onClick={handleStartEdit}
+              className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 transition-colors text-muted-foreground"
+              title="Редактировать"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 transition-colors text-muted-foreground"
+                  title="Удалить"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-[#111118] border-white/10" onClick={(e) => e.stopPropagation()}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-foreground">Удалить статью?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-muted-foreground">
+                    Статья &laquo;{article.title}&raquo; будет удалена без возможности восстановления. Все привязанные файлы также будут удалены.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-white/5 border-white/10 text-foreground hover:bg-white/10">
+                    Отмена
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    className="bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                  >
+                    Удалить
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
+
+        <h3 className="font-semibold text-sm group-hover:text-emerald-400 transition-colors line-clamp-2 mb-2 pr-12">
+          {article.title}
+        </h3>
+
+        {article.summary && (
+          <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
+            {article.summary}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {article.status && article.status !== "done" && statusConfig[article.status] && (
+            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusConfig[article.status].color)}>
+              {statusConfig[article.status].label}
+            </Badge>
+          )}
+          {article.sourceType && sourceTypeConfig[article.sourceType] && (
+            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", sourceTypeConfig[article.sourceType].color)}>
+              {sourceTypeConfig[article.sourceType].label}
+            </Badge>
+          )}
+          {article.aiGenerated && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+              <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+              AI
+            </Badge>
+          )}
+          {article.tags && parseTagsList(article.tags).length > 0 && (
+            <span className="flex items-center gap-1 flex-wrap">
+              <Tag className="h-2.5 w-2.5 text-muted-foreground/50" />
+              {parseTagsList(article.tags).slice(0, 3).map((tag) => (
+                <Badge key={tag} variant="outline" className="text-[9px] px-1 py-0 border-white/10 text-muted-foreground/70">
+                  {tag}
+                </Badge>
+              ))}
+              {parseTagsList(article.tags).length > 3 && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0 border-white/10 text-muted-foreground/50">
+                  +{parseTagsList(article.tags).length - 3}
+                </Badge>
+              )}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 mb-3 text-muted-foreground">
+          {article.videoUrl && (
+            <span className="flex items-center gap-1 text-[11px]" title="Есть видео">
+              <Video className="h-3 w-3" />
+            </span>
+          )}
+          {article.pdfUrl && (
+            <span className="flex items-center gap-1 text-[11px]" title="Есть PDF">
+              <FileIcon className="h-3 w-3" />
+            </span>
+          )}
+          {article.pptxUrl && (
+            <span className="flex items-center gap-1 text-[11px]" title="Есть презентация">
+              <Presentation className="h-3 w-3" />
+            </span>
+          )}
+          {article.sourceUrl && (
+            <span className="flex items-center gap-1 text-[11px]" title="Есть источник">
+              <ExternalLink className="h-3 w-3" />
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
+          {article.categoryName && (
+            <span className="flex items-center gap-1">
+              <FileText className="h-3 w-3" />
+              {article.categoryName}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <Eye className="h-3 w-3" />
+            {article.viewCount}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDate(article.createdAt)}
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
 }
 
 // ── Page Component ─────────────────────────────────────────────
@@ -161,6 +519,18 @@ export default function MaterialsPage() {
 
   const pendingCount = articles.filter((a) => a.status === "pending").length;
 
+  // Handle inline update from card
+  const handleArticleUpdate = useCallback((id: string, fields: Partial<MaterialArticle>) => {
+    setArticles((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, ...fields } : a))
+    );
+  }, []);
+
+  // Handle inline delete from card
+  const handleArticleDelete = useCallback((id: string) => {
+    setArticles((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
@@ -173,7 +543,7 @@ export default function MaterialsPage() {
                 Библиотека материалов
               </h1>
               <p className="text-muted-foreground mt-1 text-sm">
-                Все статьи и материалы базы знаний — видео, PDF, презентации
+                Управление статьями — загрузка, обработка, редактирование
               </p>
             </div>
             {isAdmin && (
@@ -214,7 +584,7 @@ export default function MaterialsPage() {
 
         {/* Processing Queue */}
         {isAdmin && showQueue && (
-          <ProcessingQueue />
+          <ProcessingQueue onQueueChange={fetchArticles} />
         )}
 
         {/* Bulk File Upload */}
@@ -313,82 +683,13 @@ export default function MaterialsPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((article) => (
-              <Link
+              <EditableArticleCard
                 key={article.id}
-                href={`/knowledge/article/${article.id}`}
-                className="block"
-              >
-                <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group">
-                  <h3 className="font-semibold text-sm group-hover:text-emerald-400 transition-colors line-clamp-2 mb-2">
-                    {article.title}
-                  </h3>
-
-                  {article.summary && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-                      {article.summary}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {article.status && article.status !== "done" && statusConfig[article.status] && (
-                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", statusConfig[article.status].color)}>
-                        {statusConfig[article.status].label}
-                      </Badge>
-                    )}
-                    {article.sourceType && sourceTypeConfig[article.sourceType] && (
-                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", sourceTypeConfig[article.sourceType].color)}>
-                        {sourceTypeConfig[article.sourceType].label}
-                      </Badge>
-                    )}
-                    {article.aiGenerated && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                        <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                        AI
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 mb-3 text-muted-foreground">
-                    {article.videoUrl && (
-                      <span className="flex items-center gap-1 text-[11px]" title="Есть видео">
-                        <Video className="h-3 w-3" />
-                      </span>
-                    )}
-                    {article.pdfUrl && (
-                      <span className="flex items-center gap-1 text-[11px]" title="Есть PDF">
-                        <FileIcon className="h-3 w-3" />
-                      </span>
-                    )}
-                    {article.pptxUrl && (
-                      <span className="flex items-center gap-1 text-[11px]" title="Есть презентация">
-                        <Presentation className="h-3 w-3" />
-                      </span>
-                    )}
-                    {article.sourceUrl && (
-                      <span className="flex items-center gap-1 text-[11px]" title="Есть источник">
-                        <ExternalLink className="h-3 w-3" />
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
-                    {article.categoryName && (
-                      <span className="flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
-                        {article.categoryName}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Eye className="h-3 w-3" />
-                      {article.viewCount}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatDate(article.createdAt)}
-                    </span>
-                  </div>
-                </div>
-              </Link>
+                article={article}
+                isAdmin={isAdmin}
+                onUpdate={handleArticleUpdate}
+                onDelete={handleArticleDelete}
+              />
             ))}
           </div>
         )}
