@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -138,6 +138,9 @@ export default function ArticlePage({
   const [lightboxAlt, setLightboxAlt] = useState("");
   const [extracting, setExtracting] = useState(false);
 
+  // Track heading IDs for duplicate handling (must match extractHeadings logic)
+  const headingIdCountsRef = useRef<Map<string, number>>(new Map());
+
   // Check if content is still a placeholder
   const isPlaceholderContent = article?.content
     ? article.content.includes("Содержимое будет добавлено после обработки") ||
@@ -203,9 +206,15 @@ export default function ArticlePage({
   }, [lightboxSrc]);
 
   // Extract headings for TOC
-  const headings = article?.content
-    ? extractHeadings(article.content)
-    : [];
+  const headings = useMemo(() =>
+    article?.content ? extractHeadings(article.content) : [],
+    [article?.content]
+  );
+
+  // Reset heading ID counter when content changes (for duplicate tracking in ReactMarkdown)
+  useEffect(() => {
+    headingIdCountsRef.current = new Map();
+  }, [article?.content]);
 
   // Handle TOC click — smooth scroll to heading
   const handleTocClick = (e: React.MouseEvent<HTMLAnchorElement>, headingId: string) => {
@@ -531,12 +540,22 @@ export default function ArticlePage({
                     components={{
                       h2: ({ children }) => {
                         const text = extractTextFromChildren(children);
-                        const id = slugifyHeading(text);
+                        let id = slugifyHeading(text);
+                        // Track duplicates — must match extractHeadings logic
+                        const counts = headingIdCountsRef.current;
+                        const count = counts.get(id) || 0;
+                        counts.set(id, count + 1);
+                        if (count > 0) id = `${id}-${count + 1}`;
                         return <h2 id={id} className="scroll-mt-20">{children}</h2>;
                       },
                       h3: ({ children }) => {
                         const text = extractTextFromChildren(children);
-                        const id = slugifyHeading(text);
+                        let id = slugifyHeading(text);
+                        // Track duplicates — must match extractHeadings logic
+                        const counts = headingIdCountsRef.current;
+                        const count = counts.get(id) || 0;
+                        counts.set(id, count + 1);
+                        if (count > 0) id = `${id}-${count + 1}`;
                         return <h3 id={id} className="scroll-mt-20">{children}</h3>;
                       },
                       img: ({ src, alt }) => (
@@ -668,8 +687,8 @@ export default function ArticlePage({
                 <div className="sticky top-6 space-y-6">
                   {/* Table of Contents */}
                   {headings.length > 2 && (
-                    <div className="glass rounded-xl p-4 border-white/5 max-h-[60vh] overflow-y-auto">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2 sticky top-0 bg-[#0a0a0f]/95 backdrop-blur-sm py-1 -mt-1">
+                    <div className="glass rounded-xl p-4 border-white/5 max-h-[60vh] overflow-y-auto overflow-x-hidden">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2 sticky top-0 bg-[#0a0a0f]/95 backdrop-blur-sm py-1 -mt-1 z-10">
                         <List className="h-3.5 w-3.5" />
                         Содержание
                       </h4>
@@ -680,7 +699,7 @@ export default function ArticlePage({
                             href={`#${h.id}`}
                             onClick={(e) => handleTocClick(e, h.id)}
                             className={cn(
-                              "block text-xs text-muted-foreground hover:text-emerald-400 transition-colors cursor-pointer py-0.5",
+                              "block text-xs text-muted-foreground hover:text-emerald-400 transition-colors cursor-pointer py-0.5 break-words hyphens-auto",
                               h.level === 3 && "pl-3"
                             )}
                           >
@@ -772,9 +791,29 @@ export default function ArticlePage({
   );
 }
 
+/** Strip markdown formatting (bold, italic, links, code, etc.) from text */
+function stripMarkdown(text: string): string {
+  return text
+    // Remove links [text](url) → text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Remove images ![alt](url) → alt
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    // Remove bold/italic markers **bold** *italic* ***both***
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
+    // Remove underline __underline__
+    .replace(/_{1,3}([^_]+)_{1,3}/g, "$1")
+    // Remove inline code `code`
+    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
+    // Remove strikethrough ~~text~~
+    .replace(/~~([^~]+)~~/g, "$1")
+    .trim();
+}
+
 /** Convert heading text to a URL-safe slug that matches the id attribute in the DOM */
 function slugifyHeading(text: string): string {
-  return text
+  // First strip any markdown formatting, then slugify
+  const cleanText = stripMarkdown(text);
+  return cleanText
     .toLowerCase()
     .replace(/[^\wа-яё]+/gi, "-")
     .replace(/^-|-$/g, "");
@@ -801,15 +840,17 @@ function extractHeadings(
   for (const line of lines) {
     const match = line.match(/^(#{2,3})\s+(.+)/);
     if (match) {
-      const text = match[2].trim();
-      let id = slugifyHeading(text);
+      // Strip markdown formatting for display text
+      const rawText = match[2].trim();
+      const displayText = stripMarkdown(rawText);
+      let id = slugifyHeading(rawText);
       // Handle duplicate ids: append -2, -3, etc.
       const count = idCounts.get(id) || 0;
       idCounts.set(id, count + 1);
       if (count > 0) {
         id = `${id}-${count + 1}`;
       }
-      headings.push({ id, text, level: match[1].length });
+      headings.push({ id, text: displayText, level: match[1].length });
     }
   }
   return headings;
