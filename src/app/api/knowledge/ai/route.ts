@@ -31,9 +31,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Content extraction doesn't need AI — only metadata/glossary/graph do
-    const needsAI = type !== "content";
-    if (needsAI && !isAIConfigured()) {
+    // All types need AI (content extraction uses AI to format PDF text into Markdown)
+    if (!isAIConfigured()) {
       return NextResponse.json(
         {
           error: "AI-сервис не настроен",
@@ -137,25 +136,54 @@ export async function POST(request: NextRequest) {
         [queueId]
       );
 
-      // Auto-cleanup: if ALL queue items for this article are done, publish the article
-      // and remove completed queue items
+      // Auto-cleanup: if ALL queue items for this article are done,
+      // check if content is real (not placeholder) before publishing
       const { rows: remainingItems } = await pool.query(
         `SELECT status FROM processing_queue WHERE "articleId" = $1`,
         [articleId]
       );
       const allDone = remainingItems.length > 0 && remainingItems.every((r: { status: string }) => r.status === "done");
+      let skippedPublish = false;
       if (allDone) {
-        // Publish the article (mark as done + published)
-        await pool.query(
-          `UPDATE articles SET status = 'done', "isPublished" = true, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+        // Check if article content is still a placeholder
+        const { rows: contentCheck } = await pool.query(
+          `SELECT content, "pdfUrl" FROM articles WHERE id = $1`,
           [articleId]
         );
+        const content = contentCheck[0]?.content || "";
+        const hasPdf = !!contentCheck[0]?.pdfUrl;
+        const isPlaceholder = content.includes("Содержимое будет добавлено после обработки") || content.length < 50;
+
+        if (isPlaceholder && hasPdf) {
+          skippedPublish = true;
+          // Don't publish — content is still placeholder and there's a PDF to extract from
+          console.log(`[AI] Article ${articleId} queue all done but content is placeholder — creating content_extract task`);
+          // Create a content_extract queue item so the user can trigger it
+          const contentQueueId = genId("pq_");
+          await pool.query(
+            `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt")
+             VALUES ($1, 'content_extract', 'pending', $2, $3, 0, NOW(), NOW())
+             ON CONFLICT DO NOTHING`,
+            [contentQueueId, articleId, JSON.stringify({ articleId, type: "content" })]
+          );
+          // Keep article as 'done' (processing worked) but don't publish yet
+          await pool.query(
+            `UPDATE articles SET status = 'done', "isPublished" = false, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+            [articleId]
+          );
+        } else {
+          // Publish the article (mark as done + published)
+          await pool.query(
+            `UPDATE articles SET status = 'done', "isPublished" = true, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+            [articleId]
+          );
+        }
         // Remove completed queue items for this article
         await pool.query(
           `DELETE FROM processing_queue WHERE "articleId" = $1 AND status = 'done'`,
           [articleId]
         );
-        console.log(`[AI] Article ${articleId} fully processed — published and queue cleaned up`);
+        console.log(`[AI] Article ${articleId} fully processed${skippedPublish ? " (not published — content placeholder)" : " — published and queue cleaned up"}`);
       }
 
       // Fetch and return the updated article
@@ -165,7 +193,7 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json({
-        message: allDone ? "AI-обработка завершена — статья опубликована" : "AI-обработка завершена успешно",
+        message: allDone && !skippedPublish ? "AI-обработка завершена — статья опубликована" : "AI-обработка завершена успешно",
         article: updatedRows[0],
         queueId,
       });
@@ -706,8 +734,20 @@ async function processContentExtraction(
     [queueId]
   );
 
-  const pdfUrl = (article.pdfUrl as string) || "";
+  let pdfUrl = (article.pdfUrl as string) || "";
   const title = (article.title as string) || "";
+
+  // If pdfUrl is not set on the article, check the media table for PDF files
+  if (!pdfUrl) {
+    const { rows: mediaRows } = await pool.query(
+      `SELECT url FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
+      [articleId]
+    );
+    if (mediaRows.length > 0 && mediaRows[0].url) {
+      pdfUrl = mediaRows[0].url;
+      console.log(`[Content] Using PDF from media table: ${pdfUrl.substring(0, 80)}...`);
+    }
+  }
 
   if (!pdfUrl) {
     throw new Error("У статьи нет прикреплённого PDF для извлечения контента");

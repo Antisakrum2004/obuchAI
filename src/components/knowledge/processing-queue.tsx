@@ -348,6 +348,29 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [fetchQueue, onQueueChange]);
 
+  /** Create content_extract queue items for articles that have PDF but placeholder content */
+  const handleCreateContentTasks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create-content-tasks" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.createdCount > 0) {
+          toast.success(data.message);
+        } else {
+          toast.info("Нет статей, которым нужно извлечь контент");
+        }
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось создать задачи извлечения");
+    }
+  }, [fetchQueue, onQueueChange]);
+
   // ── KEYBOARD SHORTCUTS (now all dependencies are declared above) ──
 
   // Keyboard shortcuts: Ctrl+L = process glossary, Ctrl+K = process all
@@ -436,6 +459,15 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
               Сбросить ошибки
             </Button>
           )}
+          {/* Create content tasks button */}
+          <Button
+            size="sm"
+            onClick={handleCreateContentTasks}
+            className="h-8 text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 gap-1.5"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Найти PDF
+          </Button>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="bg-white/5 border-white/10 h-8 w-[130px] text-xs">
               <SelectValue placeholder="Фильтр" />

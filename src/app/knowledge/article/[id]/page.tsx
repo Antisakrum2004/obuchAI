@@ -36,7 +36,7 @@ import {
   ChevronDown,
   Zap,
 } from "lucide-react";
-import { X, ZoomIn, Download } from "lucide-react";
+import { X, ZoomIn, Download, FileText, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { MediaUpload } from "@/components/knowledge/media-upload";
 import { MediaViewer } from "@/components/knowledge/media-viewer";
@@ -47,6 +47,7 @@ import { Paperclip } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface ArticleDetail {
   id: string;
@@ -135,6 +136,44 @@ export default function ArticlePage({
   }, [storeRole, sessionRole]);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt] = useState("");
+  const [extracting, setExtracting] = useState(false);
+
+  // Check if content is still a placeholder
+  const isPlaceholderContent = article?.content
+    ? article.content.includes("Содержимое будет добавлено после обработки") ||
+      article.content.includes("конкретное содержание еще не добавлено")
+    : true;
+
+  // Check if article has a PDF available (either pdfUrl or media with PDF)
+  const hasPdf = !!(article?.pdfUrl);
+
+  const handleExtractContent = async () => {
+    if (!article) return;
+    setExtracting(true);
+    try {
+      const res = await fetch("/api/knowledge/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleId: article.id, type: "content" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Re-fetch article to show updated content
+        const articleRes = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`);
+        if (articleRes.ok) {
+          const updated = await articleRes.json();
+          setArticle(updated);
+        }
+        toast.success("Контент успешно извлечён из PDF");
+      } else {
+        toast.error(data.details || data.error || "Ошибка извлечения контента");
+      }
+    } catch {
+      toast.error("Не удалось извлечь контент");
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   useEffect(() => {
     params.then((p) => setId(p.id));
@@ -438,6 +477,42 @@ export default function ArticlePage({
                 </div>
               )}
 
+              {/* Extract Content Banner — admin only, shown when content is placeholder and PDF exists */}
+              {isAdmin && isPlaceholderContent && hasPdf && (
+                <div className="mb-6">
+                  <div className="glass rounded-xl p-5 border-cyan-500/20 bg-cyan-500/[0.03]">
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-cyan-400" />
+                          Контент статьи ещё не извлечён
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Нажмите кнопку ниже, чтобы AI извлёк текст из PDF и сформировал статью
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleExtractContent}
+                        disabled={extracting}
+                        className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {extracting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Извлечение...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4" />
+                            Извлечь контент из PDF
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Markdown Content */}
               <div className="glass rounded-xl p-6 border-white/5">
                 <article className="prose-custom">
@@ -447,7 +522,7 @@ export default function ArticlePage({
                         <button
                           onClick={() => {
                             if (src) {
-                              setLightboxSrc(src);
+                              setLightboxSrc(typeof src === 'string' ? src : null);
                               setLightboxAlt(alt || "");
                             }
                           }}

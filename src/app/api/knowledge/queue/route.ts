@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { genId } from "@/lib/gen-id";
 
 // GET /api/knowledge/queue — List all processing queue items (admin only)
 export async function GET(request: NextRequest) {
@@ -101,8 +102,45 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === "create-content-tasks") {
+      // Find articles that have a PDF (pdfUrl or media) but content is still placeholder,
+      // and don't have a content_extract queue item yet
+      const { rows: placeholderArticles } = await pool.query(
+        `SELECT a.id, a.title, a."pdfUrl"
+         FROM articles a
+         WHERE (a.content LIKE '%Содержимое будет добавлено после обработки%' OR LENGTH(a.content) < 50)
+           AND (a."pdfUrl" IS NOT NULL AND a."pdfUrl" != ''
+                OR EXISTS (SELECT 1 FROM media m WHERE m."articleId" = a.id AND m."mimeType" LIKE 'application/pdf%'))
+           AND NOT EXISTS (
+             SELECT 1 FROM processing_queue pq
+             WHERE pq."articleId" = a.id AND pq.type = 'content_extract' AND pq.status IN ('pending', 'processing')
+           )`
+      );
+
+      let createdCount = 0;
+      for (const article of placeholderArticles) {
+        try {
+          const queueId = genId("pq_");
+          await pool.query(
+            `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt")
+             VALUES ($1, 'content_extract', 'pending', $2, $3, 0, NOW(), NOW())`,
+            [queueId, article.id, JSON.stringify({ articleId: article.id, type: "content" })]
+          );
+          createdCount++;
+        } catch {
+          // Skip if insert fails (e.g., duplicate)
+        }
+      }
+
+      return NextResponse.json({
+        message: `Создано ${createdCount} задач извлечения контента для статей с PDF`,
+        createdCount,
+        totalFound: placeholderArticles.length,
+      });
+    }
+
     return NextResponse.json(
-      { error: "Неизвестное действие. Доступные: reset-errors, clear-done" },
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, create-content-tasks" },
       { status: 400 }
     );
   } catch (error) {
