@@ -11,8 +11,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Cpu,
-  X,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -25,6 +35,7 @@ import {
   ArrowRight,
   Settings,
   FileText,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -96,12 +107,12 @@ const typeLabels: Record<string, { label: string; icon: React.ElementType; color
   graph_build: { label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
 };
 
-// AI processing types with icons
+// AI processing types with icons — THIS IS THE ORDER they run in
 const aiTypes = [
-  { type: "content", label: "Извлечь текст", icon: FileText, color: "text-cyan-400" },
-  { type: "metadata", label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
-  { type: "glossary", label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
-  { type: "graph", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
+  { type: "content", queueType: "content_extract", label: "Извлечь текст", icon: FileText, color: "text-cyan-400" },
+  { type: "metadata", queueType: "ai_metadata", label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
+  { type: "glossary", queueType: "glossary_extract", label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
+  { type: "graph", queueType: "graph_build", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
 ] as const;
 
 function computeOverallStatus(items: QueueItem[]): ArticleGroup["overallStatus"] {
@@ -164,9 +175,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     return () => clearInterval(interval);
   }, [items, fetchQueue, onQueueChange]);
 
-  // ── COMPUTED VALUES (declared BEFORE useEffect that references them) ──
+  // ── COMPUTED VALUES ──
 
-  // Group items by articleId
   const groups = useMemo<ArticleGroup[]>(() => {
     const result: ArticleGroup[] = [];
     const groupMap = new Map<string, ArticleGroup>();
@@ -206,7 +216,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     [items]
   );
 
-  // ── HANDLERS (declared BEFORE useEffect that references them) ──
+  // ── HANDLERS ──
 
   const handleStartProcessing = useCallback(async (articleId: string, type: string) => {
     if (aiAvailable === false) {
@@ -234,6 +244,13 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [aiAvailable, fetchQueue, onQueueChange]);
 
+  /**
+   * "Все" button — Process all 4 types for ONE article sequentially.
+   * Flow:
+   * 1. Ensure all queue items exist (create missing ones)
+   * 2. Process each type sequentially: content → metadata → glossary → graph
+   * 3. After all done, article auto-publishes with content, glossary, and graph
+   */
   const handleStartAllForArticle = useCallback(async (articleId: string) => {
     if (aiAvailable === false) {
       toast.error("AI-сервис не настроен. Добавьте OPENROUTER_API_KEY в Vercel Dashboard.");
@@ -241,6 +258,14 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
     setProcessing(`${articleId}-all`);
     try {
+      // Step 1: Ensure all queue items exist for this article
+      await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ensure-queue-items", articleId }),
+      });
+
+      // Step 2: Process each type sequentially
       for (const { type } of aiTypes) {
         const res = await fetch("/api/knowledge/ai", {
           method: "POST",
@@ -253,6 +278,12 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           setAiAvailable(false);
           break;
         }
+        // If a step fails, stop the chain
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.warn(`[Queue] Step '${type}' failed for ${articleId}:`, data.error);
+          break;
+        }
       }
       fetchQueue();
       onQueueChange?.();
@@ -263,7 +294,11 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [aiAvailable, fetchQueue, onQueueChange]);
 
-  /** Process ALL pending/error articles at once */
+  /**
+   * "Обработать всё" — Process ALL pending/error articles at once.
+   * For each article: ensure queue items → process all types sequentially.
+   * After processing, articles auto-publish with extracted content, glossary, and knowledge graph.
+   */
   const handleProcessAllPending = useCallback(async () => {
     if (aiAvailable === false) {
       toast.error("AI-сервис не настроен. Добавьте OPENROUTER_API_KEY в Vercel Dashboard.");
@@ -284,6 +319,14 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     for (const group of pendingArticles) {
       if (stopped) break;
       try {
+        // Ensure all queue items exist
+        await fetch("/api/knowledge/queue", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "ensure-queue-items", articleId: group.articleId }),
+        });
+
+        // Process each type sequentially
         for (const { type } of aiTypes) {
           const res = await fetch("/api/knowledge/ai", {
             method: "POST",
@@ -297,6 +340,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
             stopped = true;
             break;
           }
+          if (!res.ok) break; // Skip to next article on error
         }
         if (!stopped) successCount++;
       } catch {
@@ -311,23 +355,11 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     if (stopped) {
       toast.error("AI-сервис не настроен. Обработка остановлена.");
     } else if (errorCount === 0) {
-      toast.success(`Обработка запущена для ${successCount} статей`);
+      toast.success(`Обработано ${successCount} статей — статьи опубликованы в Базе знаний`);
     } else {
       toast.warning(`Обработано: ${successCount}, ошибок: ${errorCount}`);
     }
   }, [aiAvailable, groups, fetchQueue, onQueueChange]);
-
-  const handleCancel = useCallback(async (itemId: string) => {
-    try {
-      await fetch(`/api/knowledge/process/${itemId}`, {
-        method: "DELETE",
-      });
-      fetchQueue();
-      onQueueChange?.();
-    } catch {
-      // silently fail
-    }
-  }, [fetchQueue, onQueueChange]);
 
   /** Reset all error items back to pending */
   const handleResetErrors = useCallback(async () => {
@@ -371,9 +403,46 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [fetchQueue, onQueueChange]);
 
-  // ── KEYBOARD SHORTCUTS (now all dependencies are declared above) ──
+  /** Clear all pending items from the queue */
+  const handleClearPending = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear-pending" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось очистить очередь");
+    }
+  }, [fetchQueue, onQueueChange]);
 
-  // Keyboard shortcuts: Ctrl+L = process glossary, Ctrl+K = process all
+  /** Clear the entire queue (all statuses) */
+  const handleClearAll = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear-all" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось очистить очередь");
+    }
+  }, [fetchQueue, onQueueChange]);
+
+  // ── KEYBOARD SHORTCUTS ──
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -409,7 +478,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           <div className="flex-1">
             <p className="font-medium text-red-400">AI-сервис не настроен</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Для работы AI-обработки (метаданные, глоссарий, граф знаний) необходимо добавить переменные окружения в Vercel Dashboard:
+              Для работы AI-обработки необходимо добавить переменные окружения в Vercel Dashboard:
             </p>
             <div className="mt-2 p-2 rounded bg-black/30 text-xs font-mono space-y-0.5">
               <p className="text-amber-400">OPENROUTER_API_KEY=<span className="text-muted-foreground">ваш_ключ</span></p>
@@ -421,6 +490,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           </div>
         </div>
       )}
+
+      {/* Header with buttons */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2">
           <Cpu className="h-4 w-4 text-emerald-400" />
@@ -459,7 +530,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
               Сбросить ошибки
             </Button>
           )}
-          {/* Create content tasks button */}
+          {/* Find PDF button */}
           <Button
             size="sm"
             onClick={handleCreateContentTasks}
@@ -468,6 +539,39 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
             <FileText className="h-3.5 w-3.5" />
             Найти PDF
           </Button>
+          {/* Clear Queue — with confirmation */}
+          {items.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Очистить
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-[#111118] border-white/10">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-foreground">Очистить очередь?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-muted-foreground">
+                    Все ожидающие и ошибочные задачи будут удалены из очереди. Статьи не удаляются — только задачи обработки.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-white/5 border-white/10 text-foreground hover:bg-white/10">
+                    Отмена
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleClearAll}
+                    className="bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                  >
+                    Очистить всё
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="bg-white/5 border-white/10 h-8 w-[130px] text-xs">
               <SelectValue placeholder="Фильтр" />
@@ -491,6 +595,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
         </div>
       </div>
 
+      {/* Queue items */}
       {loading ? (
         <div className="flex items-center justify-center py-6">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
@@ -514,6 +619,8 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
             const avgProgress = Math.round(
               group.items.reduce((sum, i) => sum + (i.progress || 0), 0) / group.items.length
             );
+            const doneCount = group.items.filter((i) => i.status === "done").length;
+            const totalCount = group.items.length;
 
             return (
               <div
@@ -541,6 +648,9 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                   <span className="text-sm font-medium truncate flex-1">
                     {group.articleTitle}
                   </span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {doneCount}/{totalCount}
+                  </span>
                   <Badge
                     variant="outline"
                     className={cn("text-[9px] px-1.5 py-0 shrink-0", config.badgeColor)}
@@ -553,7 +663,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                 <div className="space-y-1.5 ml-6">
                   {group.items.map((item) => {
                     const typeInfo = typeLabels[item.type];
-                    const TypeIcon = typeInfo?.icon || Sparkles;
+                    const TypeIcon = typeInfo?.icon || Cpu;
                     const itemConfig = statusConfig[item.status] || statusConfig.pending;
                     const ItemIcon = itemConfig.icon;
 
@@ -615,11 +725,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                         if (!typeInfo) return null;
                         const TypeIcon = typeInfo.icon;
                         const aiType = aiTypes.find(
-                          (t) =>
-                            (item.type === "content_extract" && t.type === "content") ||
-                            (item.type === "ai_metadata" && t.type === "metadata") ||
-                            (item.type === "glossary_extract" && t.type === "glossary") ||
-                            (item.type === "graph_build" && t.type === "graph")
+                          (t) => t.queueType === item.type
                         );
                         const isItemError = item.status === "error";
 
@@ -662,16 +768,27 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
         </div>
       )}
 
-      {/* Guidance for pending items */}
-      {pendingGroupCount > 0 && !processingAll && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/10 text-xs text-muted-foreground">
-          <ArrowRight className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-          <span>
-            Нажмите <strong className="text-emerald-400">Обработать всё</strong> или горячие клавиши:{" "}
-            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+K</kbd> — обработать всё,{" "}
-            <kbd className="px-1 py-0.5 rounded bg-white/10 text-[10px] font-mono">Ctrl+L</kbd> — глоссарий.{" "}
-            Готовые статьи автоматически появятся в Базе знаний.
-          </span>
+      {/* Pipeline explanation */}
+      {items.length > 0 && !processingAll && (
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 text-xs text-muted-foreground space-y-1.5">
+          <p className="font-medium text-foreground/80 flex items-center gap-1.5">
+            <ArrowRight className="h-3.5 w-3.5 text-emerald-400" />
+            Как работает обработка:
+          </p>
+          <div className="flex flex-wrap items-center gap-1 ml-5">
+            <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">1. Извлечь текст</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+            <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">2. Метаданные</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+            <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">3. Глоссарий</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">4. Граф знаний</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Опубликована</span>
+          </div>
+          <p className="ml-5 text-muted-foreground/60">
+            После всех шагов статья автоматически появляется в Базе знаний с извлечённым контентом, глоссарием и связями.
+          </p>
         </div>
       )}
 

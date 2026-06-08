@@ -102,6 +102,92 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === "clear-pending") {
+      // Remove ALL pending items from the queue (with their article status reset)
+      const { rowCount } = await pool.query(
+        `DELETE FROM processing_queue WHERE status = 'pending'`
+      );
+
+      return NextResponse.json({
+        message: `Удалено ${rowCount} ожидающих элементов из очереди`,
+        deletedCount: rowCount,
+      });
+    }
+
+    if (action === "clear-all") {
+      // Remove ALL items from the queue (pending + error + done)
+      const { rowCount } = await pool.query(
+        `DELETE FROM processing_queue`
+      );
+
+      // Reset articles that were stuck in processing/error
+      await pool.query(
+        `UPDATE articles SET status = 'pending', "errorMessage" = NULL, "updatedAt" = NOW()
+         WHERE status IN ('processing', 'error')`
+      );
+
+      return NextResponse.json({
+        message: `Очередь полностью очищена (${rowCount} элементов)`,
+        deletedCount: rowCount,
+      });
+    }
+
+    if (action === "ensure-queue-items") {
+      // Ensure an article has all 4 processing queue items (content, metadata, glossary, graph)
+      // Creates missing items without touching existing ones
+      const { articleId } = body as { articleId?: string };
+      if (!articleId) {
+        return NextResponse.json({ error: "articleId обязателен" }, { status: 400 });
+      }
+
+      // Check if article has PDF (for content_extract)
+      const { rows: articleRows } = await pool.query(
+        `SELECT "pdfUrl" FROM articles WHERE id = $1`,
+        [articleId]
+      );
+      const hasPdf = articleRows.length > 0 && articleRows[0].pdfUrl;
+      // Also check media table for PDF
+      let hasMediaPdf = false;
+      if (!hasPdf) {
+        const { rows: mediaCheck } = await pool.query(
+          `SELECT id FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' LIMIT 1`,
+          [articleId]
+        );
+        hasMediaPdf = mediaCheck.length > 0;
+      }
+
+      const requiredTypes: string[] = [];
+      if (hasPdf || hasMediaPdf) requiredTypes.push("content_extract");
+      requiredTypes.push("ai_metadata", "glossary_extract", "graph_build");
+
+      // Get existing queue items for this article
+      const { rows: existingItems } = await pool.query(
+        `SELECT type, status FROM processing_queue WHERE "articleId" = $1`,
+        [articleId]
+      );
+      const existingTypes = new Set(existingItems.map((i: { type: string }) => i.type));
+
+      let createdCount = 0;
+      for (const type of requiredTypes) {
+        if (!existingTypes.has(type)) {
+          const queueId = genId("pq_");
+          await pool.query(
+            `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt")
+             VALUES ($1, $2, 'pending', $3, $4, 0, NOW(), NOW())`,
+            [queueId, type, articleId, JSON.stringify({ articleId, type: type.replace("_extract", "").replace("ai_", "").replace("graph_build", "graph") })]
+          );
+          createdCount++;
+        }
+      }
+
+      return NextResponse.json({
+        message: `Создано ${createdCount} задач для статьи`,
+        createdCount,
+        requiredTypes,
+        existingTypes: [...existingTypes],
+      });
+    }
+
     if (action === "create-content-tasks") {
       // Find articles that have a PDF (pdfUrl or media) but content is still placeholder,
       // and don't have a content_extract queue item yet
@@ -140,7 +226,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, create-content-tasks" },
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, ensure-queue-items, create-content-tasks" },
       { status: 400 }
     );
   } catch (error) {

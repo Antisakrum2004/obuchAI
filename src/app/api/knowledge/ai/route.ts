@@ -136,14 +136,16 @@ export async function POST(request: NextRequest) {
         [queueId]
       );
 
-      // Auto-cleanup: if ALL queue items for this article are done,
-      // check if content is real (not placeholder) before publishing
+      // Auto-publish: only if ALL queue items for this article are done
+      // (no pending/processing items left) AND content is not a placeholder
       const { rows: remainingItems } = await pool.query(
         `SELECT status FROM processing_queue WHERE "articleId" = $1`,
         [articleId]
       );
-      const allDone = remainingItems.length > 0 && remainingItems.every((r: { status: string }) => r.status === "done");
+      const hasPending = remainingItems.some((r: { status: string }) => r.status === "pending" || r.status === "processing");
+      const allDone = remainingItems.length > 0 && !hasPending && remainingItems.every((r: { status: string }) => r.status === "done");
       let skippedPublish = false;
+
       if (allDone) {
         // Check if article content is still a placeholder
         const { rows: contentCheck } = await pool.query(
@@ -156,19 +158,9 @@ export async function POST(request: NextRequest) {
 
         if (isPlaceholder && hasPdf) {
           skippedPublish = true;
-          // Don't publish — content is still placeholder and there's a PDF to extract from
-          console.log(`[AI] Article ${articleId} queue all done but content is placeholder — creating content_extract task`);
-          // Create a content_extract queue item so the user can trigger it
-          const contentQueueId = genId("pq_");
+          console.log(`[AI] Article ${articleId} all tasks done but content is placeholder — not publishing`);
           await pool.query(
-            `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt")
-             VALUES ($1, 'content_extract', 'pending', $2, $3, 0, NOW(), NOW())
-             ON CONFLICT DO NOTHING`,
-            [contentQueueId, articleId, JSON.stringify({ articleId, type: "content" })]
-          );
-          // Keep article as 'done' (processing worked) but don't publish yet
-          await pool.query(
-            `UPDATE articles SET status = 'done', "isPublished" = false, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+            `UPDATE articles SET status = 'done', "isPublished" = false, "updatedAt" = NOW() WHERE id = $1`,
             [articleId]
           );
         } else {
@@ -177,13 +169,15 @@ export async function POST(request: NextRequest) {
             `UPDATE articles SET status = 'done', "isPublished" = true, "processedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
             [articleId]
           );
+          console.log(`[AI] Article ${articleId} fully processed — published`);
         }
         // Remove completed queue items for this article
         await pool.query(
           `DELETE FROM processing_queue WHERE "articleId" = $1 AND status = 'done'`,
           [articleId]
         );
-        console.log(`[AI] Article ${articleId} fully processed${skippedPublish ? " (not published — content placeholder)" : " — published and queue cleaned up"}`);
+      } else {
+        console.log(`[AI] Article ${articleId} task '${type}' done — ${hasPending ? 'still has pending tasks' : 'no more tasks'}`);
       }
 
       // Fetch and return the updated article
