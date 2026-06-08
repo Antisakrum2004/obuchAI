@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validTypes = ["metadata", "glossary", "graph", "categorize"];
+    const validTypes = ["content", "metadata", "glossary", "graph", "categorize"];
     if (!type || !validTypes.includes(type)) {
       return NextResponse.json(
         { error: `type обязателен и должен быть одним из: ${validTypes.join(", ")}` },
@@ -31,8 +31,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check AI availability BEFORE doing anything
-    if (!isAIConfigured()) {
+    // Content extraction doesn't need AI — only metadata/glossary/graph do
+    const needsAI = type !== "content";
+    if (needsAI && !isAIConfigured()) {
       return NextResponse.json(
         {
           error: "AI-сервис не настроен",
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch the article
     const { rows: articleRows } = await pool.query(
-      `SELECT id, title, content, summary, tags, "keyTopics", "categoryId" FROM articles WHERE id = $1`,
+      `SELECT id, title, content, summary, tags, "keyTopics", "categoryId", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType" FROM articles WHERE id = $1`,
       [articleId]
     );
 
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
 
     // Find or create the processing queue entry
     const queueTypeMap: Record<string, string> = {
+      content: "content_extract",
       metadata: "ai_metadata",
       glossary: "glossary_extract",
       graph: "graph_build",
@@ -107,7 +109,9 @@ export async function POST(request: NextRequest) {
     );
 
     try {
-      if (type === "metadata" || type === "categorize") {
+      if (type === "content") {
+        await processContentExtraction(article, articleId, queueId);
+      } else if (type === "metadata" || type === "categorize") {
         // Check if we need auto-categorization (article has no categoryId)
         const needsCategorization = !article.categoryId;
         if (needsCategorization) {
@@ -685,5 +689,111 @@ ${JSON.stringify(articlesInfo, null, 2)}`,
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
     [JSON.stringify({ prerequisites: validPrerequisites, nextTopics: validNextTopics }), queueId]
+  );
+}
+
+/**
+ * Process content extraction: Download PDF, extract text, convert to Markdown article.
+ * Then use AI to structure the raw text into a well-formatted educational article.
+ */
+async function processContentExtraction(
+  article: Record<string, unknown>,
+  articleId: string,
+  queueId: string
+) {
+  await pool.query(
+    `UPDATE processing_queue SET progress = 10, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const pdfUrl = (article.pdfUrl as string) || "";
+  const title = (article.title as string) || "";
+
+  if (!pdfUrl) {
+    throw new Error("У статьи нет прикреплённого PDF для извлечения контента");
+  }
+
+  // Download the PDF
+  console.log(`[Content] Downloading PDF from: ${pdfUrl.substring(0, 80)}...`);
+  const pdfResponse = await fetch(pdfUrl);
+  if (!pdfResponse.ok) {
+    throw new Error(`Не удалось скачать PDF (${pdfResponse.status}): ${pdfUrl.substring(0, 100)}`);
+  }
+
+  const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+  console.log(`[Content] PDF downloaded, size: ${pdfBuffer.length} bytes`);
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 30, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // Extract text from PDF using pdf-parse
+  let rawText: string;
+  try {
+    const pdfParse = (await import("pdf-parse")).default;
+    const pdfData = await pdfParse(pdfBuffer);
+    rawText = pdfData.text || "";
+    console.log(`[Content] Extracted ${rawText.length} chars from PDF, ${pdfData.numpages} pages`);
+  } catch (pdfErr) {
+    throw new Error(`Не удалось извлечь текст из PDF: ${pdfErr instanceof Error ? pdfErr.message : "неизвестная ошибка"}`);
+  }
+
+  if (rawText.trim().length < 20) {
+    throw new Error("PDF не содержит извлекаемого текста (возможно сканированный документ)");
+  }
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 50, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // Use AI to convert raw PDF text into a well-structured Markdown article
+  const completion = await createChatCompletion([
+    {
+      role: "system",
+      content: `Ты — AI-ассистент для конвертации сырого текста из PDF в качественную Markdown-статью.
+
+Правила:
+1. Сохрани ВСЮ существенную информацию из исходного текста — не пропускай важные детали
+2. Структурируй текст с помощью заголовков (##, ###), списков, жирного текста
+3. Добавь введение (1-2 абзаца после заголовка)
+4. Если есть код — оформи в блоки \`\`\`
+5. Убери артефакты PDF: лишние пробелы, переносы строк внутри слов, повторяющиеся заголовки страниц, номера страниц
+6. Сохрани терминологию и язык оригинала
+7. НЕ добавляй несуществующую информацию — только переработай то, что есть в тексте
+8. Верни ТОЛЬКО Markdown-контент, без пояснений и мета-комментариев`,
+    },
+    {
+      role: "user",
+      content: `Название статьи: ${title}\n\nСырой текст из PDF:\n${rawText.substring(0, 16000)}`,
+    },
+  ], { temperature: 0.2, max_tokens: 8192 });
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 80, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const result = completion.choices[0]?.message?.content;
+  if (!result) {
+    throw new Error("AI не вернул результат для конвертации контента");
+  }
+
+  // Build final content: title heading + AI-structured content
+  const finalContent = `# ${title}\n\n${result}`;
+
+  // Update article with extracted content
+  await pool.query(
+    `UPDATE articles SET content = $1, "updatedAt" = NOW() WHERE id = $2`,
+    [finalContent, articleId]
+  );
+
+  console.log(`[Content] Article ${articleId} updated with ${finalContent.length} chars of content`);
+
+  // Update queue result
+  await pool.query(
+    `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
+    [JSON.stringify({ extractedChars: rawText.length, finalChars: finalContent.length, pages: 0 }), queueId]
   );
 }

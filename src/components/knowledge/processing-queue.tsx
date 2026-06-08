@@ -24,6 +24,7 @@ import {
   Zap,
   ArrowRight,
   Settings,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -89,6 +90,7 @@ const statusConfig: Record<
 
 const typeLabels: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   zip_import: { label: "ZIP импорт", icon: Cpu, color: "text-muted-foreground" },
+  content_extract: { label: "Извлечение", icon: FileText, color: "text-cyan-400" },
   ai_metadata: { label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
   glossary_extract: { label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
   graph_build: { label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
@@ -96,6 +98,7 @@ const typeLabels: Record<string, { label: string; icon: React.ElementType; color
 
 // AI processing types with icons
 const aiTypes = [
+  { type: "content", label: "Извлечь текст", icon: FileText, color: "text-cyan-400" },
   { type: "metadata", label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
   { type: "glossary", label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
   { type: "graph", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
@@ -581,6 +584,7 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
                         const TypeIcon = typeInfo.icon;
                         const aiType = aiTypes.find(
                           (t) =>
+                            (item.type === "content_extract" && t.type === "content") ||
                             (item.type === "ai_metadata" && t.type === "metadata") ||
                             (item.type === "glossary_extract" && t.type === "glossary") ||
                             (item.type === "graph_build" && t.type === "graph")

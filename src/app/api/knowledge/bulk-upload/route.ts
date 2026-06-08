@@ -212,10 +212,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Create processing queue entries
-        // Always add ai_metadata (it will also handle category assignment if autoCategorize)
+        // Always add content_extract for PDF files, and ai_metadata for categorization
         const queueTypes = ["ai_metadata"];
         if (autoProcess) {
           queueTypes.push("glossary_extract");
+        }
+        // Add content extraction for PDF files
+        if (fileCategory === "pdf") {
+          queueTypes.unshift("content_extract"); // first: extract content before metadata
         }
 
         for (const type of queueTypes) {
