@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
+import { extractS3Key } from "@/lib/storage/s3-key-parser";
 
 /**
  * GET /api/knowledge/video/[id]
@@ -22,40 +23,6 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
  */
 
 const s3Provider = new S3StorageProvider();
-
-/**
- * Извлечь S3-ключ из URL, хранящегося в БД.
- * Поддерживаемые форматы:
- *   - s3://bucket/key
- *   - https://endpoint/bucket/key
- *   - plain key (knowledge/...)
- */
-function extractS3Key(url: string): string | null {
-  const endpoint = process.env.S3_ENDPOINT || "";
-  const bucket = process.env.S3_BUCKET_NAME || "";
-  const prefix = `${endpoint}/${bucket}/`;
-
-  if (url.startsWith("s3://")) {
-    const withoutProtocol = url.slice(5);
-    const slashIndex = withoutProtocol.indexOf("/");
-    if (slashIndex > 0) {
-      return withoutProtocol.slice(slashIndex + 1);
-    }
-    return null;
-  }
-
-  if (url.startsWith(prefix)) {
-    return url.slice(prefix.length);
-  }
-
-  // Если это не URL (нет http), считаем что это уже ключ
-  if (!url.startsWith("http")) {
-    return url;
-  }
-
-  // URL не из нашего S3
-  return null;
-}
 
 export async function GET(
   request: NextRequest,
@@ -95,16 +62,19 @@ export async function GET(
 
     // ── 3. Определяем S3-ключ ──
     // Приоритет: fileKey из БД → извлечение из url
+    // extractS3Key жёстко парсит все форматы: s3://, https://, чистый ключ
     let s3Key: string | null = null;
 
     if (media.fileKey) {
-      s3Key = media.fileKey;
-    } else if (media.url) {
+      s3Key = extractS3Key(media.fileKey);
+    }
+
+    if (!s3Key && media.url) {
       s3Key = extractS3Key(media.url);
     }
 
     if (!s3Key) {
-      // URL не из нашего S3 — перенаправляем напрямую
+      // URL не из нашего S3 — перенаправляем напрямую (YouTube, Rutube и т.д.)
       if (media.url && media.url.startsWith("http")) {
         return NextResponse.redirect(media.url);
       }
@@ -113,6 +83,8 @@ export async function GET(
         { status: 500 }
       );
     }
+
+    console.log(`[video/${id}] S3 key resolved: "${s3Key}"`);
 
     // ── 4. Генерируем Signed URL (чистая криптография, без сети) ──
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 3600);

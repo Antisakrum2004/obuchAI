@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
+import { extractS3Key } from "@/lib/storage/s3-key-parser";
 
 /**
  * GET /api/knowledge/video/by-article/[articleId]
@@ -19,38 +20,6 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
  */
 
 const s3Provider = new S3StorageProvider();
-
-/**
- * Извлечь S3-ключ из URL, хранящегося в БД.
- * Поддерживаемые форматы:
- *   - s3://bucket/key
- *   - https://endpoint/bucket/key
- *   - plain key (knowledge/...)
- */
-function extractS3Key(url: string): string | null {
-  if (url.startsWith("s3://")) {
-    const withoutProtocol = url.slice(5);
-    const slashIndex = withoutProtocol.indexOf("/");
-    if (slashIndex > 0) {
-      return withoutProtocol.slice(slashIndex + 1);
-    }
-    return null;
-  }
-
-  const endpoint = process.env.S3_ENDPOINT || "";
-  const bucket = process.env.S3_BUCKET_NAME || "";
-  const prefix = `${endpoint}/${bucket}/`;
-
-  if (url.startsWith(prefix)) {
-    return url.slice(prefix.length);
-  }
-
-  if (!url.startsWith("http")) {
-    return url;
-  }
-
-  return null;
-}
 
 export async function GET(
   request: NextRequest,
@@ -88,15 +57,16 @@ export async function GET(
     if (mediaResult.rows && mediaResult.rows.length > 0) {
       const media = mediaResult.rows[0];
 
+      // extractS3Key жёстко парсит все форматы: s3://, https://, чистый ключ
       if (media.fileKey) {
-        s3Key = media.fileKey;
-      } else if (media.url) {
-        const extracted = extractS3Key(media.url);
-        if (extracted) {
-          s3Key = extracted;
-        } else {
-          directUrl = media.url;
-        }
+        s3Key = extractS3Key(media.fileKey);
+      }
+      if (!s3Key && media.url) {
+        s3Key = extractS3Key(media.url);
+      }
+      // Если extractS3Key вернул null — значит URL не наш S3 (YouTube и т.д.)
+      if (!s3Key && media.url) {
+        directUrl = media.url;
       }
     }
 
@@ -111,10 +81,8 @@ export async function GET(
         const article = articleResult.rows[0];
 
         if (article.videoUrl) {
-          const extracted = extractS3Key(article.videoUrl);
-          if (extracted) {
-            s3Key = extracted;
-          } else {
+          s3Key = extractS3Key(article.videoUrl);
+          if (!s3Key) {
             directUrl = article.videoUrl;
           }
         }
@@ -130,7 +98,7 @@ export async function GET(
     }
 
     // 6. For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
-    if (directUrl) {
+    if (directUrl && !s3Key) {
       const format = request.nextUrl.searchParams.get("format");
       if (format === "json") {
         return NextResponse.json({ url: directUrl });
@@ -139,6 +107,7 @@ export async function GET(
     }
 
     // 7. S3 video — generate signed URL (pure computation, NO S3 API calls)
+    console.log(`[video/by-article/${articleId}] S3 key resolved: "${s3Key}"`);
     const signedUrl = await s3Provider.getSignedUrl(s3Key!, 3600);
 
     // Return format
