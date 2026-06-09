@@ -348,7 +348,7 @@ export default function ArticlePage({
   useEffect(() => {
     if (!id) return;
 
-    fetch(`/api/knowledge/articles/${encodeURIComponent(id)}`)
+    fetch(`/api/knowledge/articles/${encodeURIComponent(id)}?all=true`)
       .then((r) => r.json())
       .then((data) => {
         setArticle(data);
@@ -1098,8 +1098,8 @@ export default function ArticlePage({
                           sourceType: article.sourceType || undefined,
                         }}
                         onSave={() => {
-                          // Re-fetch article to get updated URLs
-                          fetch(`/api/knowledge/articles/${encodeURIComponent(id)}`)
+                          // Re-fetch article to get updated URLs (all=true for admin to see unpublished)
+                          fetch(`/api/knowledge/articles/${encodeURIComponent(id)}?all=true`)
                             .then((r) => r.json())
                             .then((data) => setArticle(data))
                             .catch(() => {});

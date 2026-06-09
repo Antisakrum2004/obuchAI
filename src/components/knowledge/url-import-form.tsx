@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Check, Link as LinkIcon } from "lucide-react";
+import { Loader2, Save, Check, Link as LinkIcon, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface UrlImportFormProps {
@@ -66,10 +66,12 @@ export function UrlImportForm({ articleId, initialData, onSave }: UrlImportFormP
   const [sourceUrl, setSourceUrl] = useState(initialData?.sourceUrl || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
+    setError(null);
     try {
       // Auto-detect sourceType from videoUrl
       const detectedSourceType = detectSourceType(videoUrl) || detectSourceType(sourceUrl) || initialData?.sourceType || null;
@@ -90,9 +92,12 @@ export function UrlImportForm({ articleId, initialData, onSave }: UrlImportFormP
         setSaved(true);
         onSave?.();
         setTimeout(() => setSaved(false), 2000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || `Ошибка сохранения (${res.status})`);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
     } finally {
       setSaving(false);
     }
@@ -143,6 +148,13 @@ export function UrlImportForm({ articleId, initialData, onSave }: UrlImportFormP
         )}
         {saved ? "Сохранено" : "Сохранить ссылки"}
       </Button>
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </div>
+      )}
     </div>
   );
 }

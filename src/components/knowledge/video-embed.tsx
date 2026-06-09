@@ -72,6 +72,7 @@ const sourceTypeLabels: Record<string, string> = {
   rutube: "Rutube",
   vk: "VK Видео",
   yandex_disk: "Яндекс Диск",
+  s3: "S3 Хранилище",
   direct: "Видео",
   other: "Ссылка",
 };

@@ -134,7 +134,9 @@ export async function GET(
         const article = articleResult.rows[0];
 
         if (article.videoUrl) {
+          console.log(`[video/by-article] Article videoUrl: "${article.videoUrl}"`);
           const extracted = extractS3Key(article.videoUrl);
+          console.log(`[video/by-article] Extracted S3 key: "${extracted}"`);
           if (extracted) {
             s3Key = extracted;
           } else {
@@ -157,7 +159,9 @@ export async function GET(
     let videoUrl: string;
 
     if (s3Key) {
+      console.log(`[video/by-article] Generating signed URL for key: "${s3Key}"`);
       videoUrl = await s3Provider.getSignedUrl(s3Key, 900);
+      console.log(`[video/by-article] Signed URL generated (length: ${videoUrl.length})`);
     } else {
       videoUrl = directUrl!;
     }
