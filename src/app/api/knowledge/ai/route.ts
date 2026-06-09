@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch the article
     const { rows: articleRows } = await pool.query(
-      `SELECT id, title, content, summary, tags, "keyTopics", "categoryId", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType" FROM articles WHERE id = $1`,
+      `SELECT id, title, content, summary, tags, "keyTopics", "spaceId", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType" FROM articles WHERE id = $1`,
       [articleId]
     );
 
@@ -111,8 +111,8 @@ export async function POST(request: NextRequest) {
       if (type === "content") {
         await processContentExtraction(article, articleId, queueId);
       } else if (type === "metadata" || type === "categorize") {
-        // Check if we need auto-categorization (article has no categoryId)
-        const needsCategorization = !article.categoryId;
+        // Check if we need auto-categorization (article has no spaceId)
+        const needsCategorization = !article.spaceId;
         if (needsCategorization) {
           await processCategorization(article, articleId, queueId);
         }
@@ -223,8 +223,8 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Process categorization: AI determines the best category for an article.
- * If no matching category exists, creates a new one.
+ * Process categorization: AI determines the best space (section) for an article.
+ * If no matching space exists, creates a new one.
  */
 async function processCategorization(
   article: Record<string, unknown>,
@@ -239,29 +239,15 @@ async function processCategorization(
   const title = (article.title as string) || "";
   const content = (article.content as string) || "";
 
-  // Fetch all available spaces and categories
+  // Fetch all available spaces
   const { rows: spaces } = await pool.query(
     `SELECT id, name, slug, description FROM knowledge_spaces ORDER BY name`
-  );
-  const { rows: categories } = await pool.query(
-    `SELECT c.id, c.name, c.slug, c.description, c."spaceId", ks.name as "spaceName"
-     FROM categories c
-     JOIN knowledge_spaces ks ON c."spaceId" = ks.id
-     ORDER BY ks.name, c.name`
   );
 
   await pool.query(
     `UPDATE processing_queue SET progress = 25, "updatedAt" = NOW() WHERE id = $1`,
     [queueId]
   );
-
-  // Build category list for AI
-  const categoryList = categories.map((c: Record<string, unknown>) => ({
-    id: c.id,
-    name: c.name,
-    spaceName: c.spaceName,
-    description: c.description,
-  }));
 
   const spaceList = spaces.map((s: Record<string, unknown>) => ({
     id: s.id,
@@ -273,23 +259,18 @@ async function processCategorization(
     {
       role: "system",
       content: `Ты — AI-ассистент для классификации образовательных материалов. 
-На основе названия и содержания статьи, определи наиболее подходящую категорию.
+На основе названия и содержания статьи, определи наиболее подходящий раздел.
 
-Доступные категории:
-${JSON.stringify(categoryList, null, 2)}
-
-Доступные пространства:
+Доступные разделы:
 ${JSON.stringify(spaceList, null, 2)}
 
 Правила:
-1. Если есть подходящая категория — верни её ID в поле "categoryId"
-2. Если ни одна категория не подходит, но есть подходящее пространство — верни "createCategory" с названием новой категории и ID пространства
-3. Если нет подходящего пространства — верни "createSpace" с названием нового пространства и "createCategory" с названием категории
+1. Если есть подходящий раздел — верни его ID в поле "spaceId"
+2. Если нет подходящего раздела — верни "create_space" с названием нового раздела
 
 Верни ТОЛЬКО валидный JSON с одной из структур:
-- {"action": "assign", "categoryId": "existing-cat-id"}
-- {"action": "create_category", "spaceId": "existing-space-id", "categoryName": "Новая категория"}
-- {"action": "create_both", "spaceName": "Новое пространство", "categoryName": "Новая категория"}`,
+- {"action": "assign", "spaceId": "existing-space-id"}
+- {"action": "create_space", "spaceName": "Новый раздел"}`,
     },
     {
       role: "user",
@@ -317,48 +298,19 @@ ${JSON.stringify(spaceList, null, 2)}
     return;
   }
 
-  let assignedCategoryId: string | null = null;
+  let assignedSpaceId: string | null = null;
 
-  if (parsed.action === "assign" && parsed.categoryId) {
-    // Verify the category exists
-    const { rows: catCheck } = await pool.query(
-      `SELECT id FROM categories WHERE id = $1`,
-      [parsed.categoryId]
+  if (parsed.action === "assign" && parsed.spaceId) {
+    // Verify the space exists
+    const { rows: spaceCheck } = await pool.query(
+      `SELECT id FROM knowledge_spaces WHERE id = $1`,
+      [parsed.spaceId]
     );
-    if (catCheck.length > 0) {
-      assignedCategoryId = parsed.categoryId;
+    if (spaceCheck.length > 0) {
+      assignedSpaceId = parsed.spaceId;
     }
-  } else if (parsed.action === "create_category" && parsed.spaceId && parsed.categoryName) {
-    // Create new category in existing space (with duplicate slug handling)
-    const slug = parsed.categoryName
-      .toLowerCase()
-      .replace(/[^a-zа-яё0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .substring(0, 60) || `cat-${Date.now()}`;
-
-    // Check if category with this slug already exists in the space
-    const { rows: existingCat } = await pool.query(
-      `SELECT id FROM categories WHERE slug = $1 AND "spaceId" = $2`,
-      [slug, parsed.spaceId]
-    );
-
-    if (existingCat.length > 0) {
-      assignedCategoryId = existingCat[0].id;
-      console.log(`[AI] Reusing existing category "${parsed.categoryName}" (${assignedCategoryId})`);
-    } else {
-      const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-      const { rows: newCat } = await pool.query(
-        `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
-         ON CONFLICT DO NOTHING
-         RETURNING id`,
-        [newCatId, parsed.categoryName, slug, parsed.spaceId]
-      );
-      assignedCategoryId = newCat[0]?.id || null;
-    }
-  } else if (parsed.action === "create_both" && parsed.spaceName && parsed.categoryName) {
-    // Create new space and new category (with duplicate slug handling)
+  } else if (parsed.action === "create_space" && parsed.spaceName) {
+    // Create new space (with duplicate slug handling)
     const spaceSlug = parsed.spaceName
       .toLowerCase()
       .replace(/[^a-zа-яё0-9\s-]/g, "")
@@ -367,62 +319,31 @@ ${JSON.stringify(spaceList, null, 2)}
       .substring(0, 60) || `ks-${Date.now()}`;
 
     // Check if space with this slug already exists
-    let newSpaceId: string;
     const { rows: existingSpace } = await pool.query(
       `SELECT id FROM knowledge_spaces WHERE slug = $1`,
       [spaceSlug]
     );
 
     if (existingSpace.length > 0) {
-      // Reuse existing space
-      newSpaceId = existingSpace[0].id;
-      console.log(`[AI] Reusing existing space "${parsed.spaceName}" (${newSpaceId})`);
+      assignedSpaceId = existingSpace[0].id;
+      console.log(`[AI] Reusing existing space "${parsed.spaceName}" (${assignedSpaceId})`);
     } else {
-      // Create new space with ON CONFLICT safety
-      newSpaceId = 'ks_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+      const newSpaceId = 'ks_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
       const { rows: insertedSpace } = await pool.query(
         `INSERT INTO knowledge_spaces (id, name, slug, "order", "isPublished", "createdAt", "updatedAt")
          VALUES ($1, $2, $3, 0, true, NOW(), NOW())
          ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
         [newSpaceId, parsed.spaceName, spaceSlug]
       );
-      newSpaceId = insertedSpace[0]?.id || newSpaceId;
-    }
-
-    const catSlug = parsed.categoryName
-      .toLowerCase()
-      .replace(/[^a-zа-яё0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .substring(0, 60) || `cat-${Date.now()}`;
-
-    // Check if category with this slug already exists in the space
-    const { rows: existingCat } = await pool.query(
-      `SELECT id FROM categories WHERE slug = $1 AND "spaceId" = $2`,
-      [catSlug, newSpaceId]
-    );
-
-    if (existingCat.length > 0) {
-      assignedCategoryId = existingCat[0].id;
-      console.log(`[AI] Reusing existing category "${parsed.categoryName}" (${assignedCategoryId})`);
-    } else {
-      const newCatId = 'cat_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-      const { rows: newCat } = await pool.query(
-        `INSERT INTO categories (id, name, slug, "spaceId", icon, "order", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, '📁', 0, NOW(), NOW())
-         ON CONFLICT DO NOTHING
-         RETURNING id`,
-        [newCatId, parsed.categoryName, catSlug, newSpaceId]
-      );
-      assignedCategoryId = newCat[0]?.id || null;
+      assignedSpaceId = insertedSpace[0]?.id || newSpaceId;
     }
   }
 
-  // Assign the category to the article
-  if (assignedCategoryId) {
+  // Assign the space to the article
+  if (assignedSpaceId) {
     await pool.query(
-      `UPDATE articles SET "categoryId" = $1, "updatedAt" = NOW() WHERE id = $2`,
-      [assignedCategoryId, articleId]
+      `UPDATE articles SET "spaceId" = $1, "updatedAt" = NOW() WHERE id = $2`,
+      [assignedSpaceId, articleId]
     );
   }
 }

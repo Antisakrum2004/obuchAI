@@ -20,18 +20,12 @@ export async function GET(
               a."processedAt", a."errorMessage", a."keyConcepts",
               a.prerequisites, a."nextTopics",
               json_build_object(
-                'id', c.id,
-                'name', c.name,
-                'slug', c.slug,
-                'space', json_build_object(
-                  'id', s.id,
-                  'name', s.name,
-                  'slug', s.slug
-                )
-              ) AS category
+                'id', ks.id,
+                'name', ks.name,
+                'slug', ks.slug
+              ) AS space
        FROM articles a
-       JOIN categories c ON a."categoryId" = c.id
-       JOIN knowledge_spaces s ON c."spaceId" = s.id
+       JOIN knowledge_spaces ks ON a."spaceId" = ks.id
        WHERE a.id = $1 ${all !== "true" ? 'AND a."isPublished" = true' : ""}`,
       [id]
     );
@@ -80,11 +74,11 @@ export async function GET(
         likeParams
       );
 
-      relatedGlossary = glossaryRows.map((g: Record<string, unknown>) => ({
-        id: g.id,
-        term: g.term,
-        shortDefinition: g.shortDefinition,
-        category: g.category,
+      relatedGlossary = glossaryRows.map((g: any) => ({
+        id: g.id as string,
+        term: g.term as string,
+        shortDefinition: g.shortDefinition as string | null,
+        category: g.category as string | null,
       }));
 
       // If no matches by tag, return some general glossary terms
@@ -96,11 +90,11 @@ export async function GET(
            LIMIT 5`
         );
 
-        relatedGlossary = fallbackRows.map((g: Record<string, unknown>) => ({
-          id: g.id,
-          term: g.term,
-          shortDefinition: g.shortDefinition,
-          category: g.category,
+        relatedGlossary = fallbackRows.map((g: any) => ({
+          id: g.id as string,
+          term: g.term as string,
+          shortDefinition: g.shortDefinition as string | null,
+          category: g.category as string | null,
         }));
       }
     }
@@ -127,7 +121,7 @@ export async function GET(
       viewCount: article.viewCount,
       createdAt: new Date(article.createdAt).toISOString(),
       updatedAt: new Date(article.updatedAt).toISOString(),
-      category: article.category,
+      space: article.space,
       relatedGlossary,
       // Sprint 6: new fields
       videoUrl: article.videoUrl,
@@ -172,7 +166,7 @@ export async function PUT(
     const body = await request.json();
 
     const allowedFields = [
-      "title", "slug", "content", "summary", "categoryId", "isPublished",
+      "title", "slug", "content", "summary", "spaceId", "isPublished",
       // Sprint 6: new fields
       "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType",
       "difficulty", "estimatedTime", "status", "aiGenerated",

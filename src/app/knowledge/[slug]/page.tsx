@@ -16,29 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   BookOpen,
-  ChevronDown,
   FileText,
-  FolderOpen,
   ArrowRight,
   Video,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-interface CategoryData {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  icon: string | null;
-  order: number;
-  articles: ArticleData[];
-}
 
 interface ArticleData {
   id: string;
@@ -47,9 +29,11 @@ interface ArticleData {
   summary: string | null;
   tags: string | null;
   viewCount: number;
-  categoryId: string;
+  spaceId: string;
   videoUrl?: string | null;
   sourceType?: string | null;
+  isPublished: boolean;
+  createdAt: string;
 }
 
 interface SpaceData {
@@ -58,6 +42,7 @@ interface SpaceData {
   slug: string;
   description: string | null;
   icon: string | null;
+  articleCount: number;
 }
 
 export default function KnowledgeSpacePage({
@@ -67,13 +52,11 @@ export default function KnowledgeSpacePage({
 }) {
   const [slug, setSlug] = useState<string>("");
   const [space, setSpace] = useState<SpaceData | null>(null);
-  const [categories, setCategories] = useState<CategoryData[]>([]);
+  const [articles, setArticles] = useState<ArticleData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     params.then((p) => {
-      // Next.js may return URL-encoded slug; decode it to get the actual slug value
       const decoded = decodeURIComponent(p.slug);
       setSlug(decoded);
     });
@@ -97,31 +80,12 @@ export default function KnowledgeSpacePage({
 
         setSpace(spaceData);
 
-        // Fetch categories and articles for this space
-        const [catRes, artRes] = await Promise.all([
-          fetch(
-            `/api/knowledge/categories?spaceId=${encodeURIComponent(spaceData.id)}`
-          ),
-          fetch(
-            `/api/knowledge/articles?spaceId=${encodeURIComponent(spaceData.id)}`
-          ),
-        ]);
-
-        const cats: CategoryData[] = await catRes.json();
+        // Fetch articles for this space
+        const artRes = await fetch(
+          `/api/knowledge/articles?spaceId=${encodeURIComponent(spaceData.id)}`
+        );
         const arts: ArticleData[] = await artRes.json();
-
-        // Group articles by category
-        const categoriesWithArticles = cats.map((cat) => ({
-          ...cat,
-          articles: arts.filter((a) => a.categoryId === cat.id),
-        }));
-
-        setCategories(categoriesWithArticles);
-
-        // Auto-open first category
-        if (categoriesWithArticles.length > 0) {
-          setOpenCategories(new Set([categoriesWithArticles[0].id]));
-        }
+        setArticles(arts);
       } catch {
         // handle error
       } finally {
@@ -131,18 +95,6 @@ export default function KnowledgeSpacePage({
 
     fetchData();
   }, [slug]);
-
-  const toggleCategory = (id: string) => {
-    setOpenCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
 
   return (
     <AppLayout>
@@ -229,122 +181,73 @@ export default function KnowledgeSpacePage({
               </div>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/5 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <FolderOpen className="h-4 w-4" />
-                  {categories.length}{" "}
-                  {pluralize(
-                    categories.length,
-                    "категория",
-                    "категории",
-                    "категорий"
-                  )}
-                </span>
-                <span className="flex items-center gap-1.5">
                   <FileText className="h-4 w-4" />
-                  {categories.reduce((s, c) => s + c.articles.length, 0)}{" "}
-                  {pluralizeR(
-                    categories.reduce((s, c) => s + c.articles.length, 0)
-                  )}
+                  {articles.length}{" "}
+                  {pluralizeR(articles.length)}
                 </span>
               </div>
             </motion.div>
 
-            {/* Categories with Articles */}
+            {/* Articles List */}
             <div className="space-y-3">
-              {categories.map((category, idx) => (
-                <motion.div
-                  key={category.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: idx * 0.08 }}
-                >
-                  <Collapsible
-                    open={openCategories.has(category.id)}
-                    onOpenChange={() => toggleCategory(category.id)}
-                  >
-                    <CollapsibleTrigger className="w-full">
-                      <div className="glass rounded-xl p-4 border-white/5 hover:border-white/10 transition-colors flex items-center gap-3 w-full text-left">
-                        <FolderOpen className="h-5 w-5 text-emerald-400 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-foreground">
-                            {category.name}
-                          </h3>
-                          {category.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                              {category.description}
-                            </p>
-                          )}
-                        </div>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] bg-secondary/50 shrink-0"
+              {articles.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">
+                    Статьи пока не добавлены
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="max-h-[600px]">
+                  <div className="space-y-2 pr-2">
+                    {articles.map((article, idx) => (
+                      <motion.div
+                        key={article.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: idx * 0.05 }}
+                      >
+                        <Link
+                          href={`/knowledge/article/${article.id}`}
+                          className="block group"
                         >
-                          {category.articles.length}{" "}
-                          {pluralizeR(category.articles.length)}
-                        </Badge>
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200",
-                            openCategories.has(category.id) && "rotate-180"
-                          )}
-                        />
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="mt-2 ml-4 space-y-2">
-                        {category.articles.length === 0 ? (
-                          <p className="text-sm text-muted-foreground/50 py-3 px-4">
-                            Статьи пока не добавлены
-                          </p>
-                        ) : (
-                          <ScrollArea className="max-h-96">
-                            <div className="space-y-2 pr-2">
-                              {category.articles.map((article) => (
-                                <Link
-                                  key={article.id}
-                                  href={`/knowledge/article/${article.id}`}
-                                  className="block group"
+                          <div className="glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all flex items-center gap-3">
+                            <FileText className="h-5 w-5 text-emerald-400 group-hover:text-emerald-300 shrink-0 transition-colors" />
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-medium text-foreground group-hover:text-emerald-400 transition-colors">
+                                {article.title}
+                              </h3>
+                              {article.summary && (
+                                <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                  {article.summary}
+                                </p>
+                              )}
+                            </div>
+                            <div className="hidden sm:flex items-center gap-1 shrink-0">
+                              {article.videoUrl && (
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
+                                  <Video className="h-2.5 w-2.5 mr-0.5" />
+                                  Видео
+                                </Badge>
+                              )}
+                              {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
+                                <Badge
+                                  key={tag}
+                                  variant="outline"
+                                  className="text-[9px] px-1.5 py-0 border-white/10"
                                 >
-                                  <div className="glass rounded-lg p-3 border-white/5 hover:border-emerald-500/20 transition-all flex items-center gap-3">
-                                    <FileText className="h-4 w-4 text-muted-foreground/50 group-hover:text-emerald-400 shrink-0 transition-colors" />
-                                    <div className="flex-1 min-w-0">
-                                      <h4 className="text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
-                                        {article.title}
-                                      </h4>
-                                      {article.summary && (
-                                        <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                                          {article.summary}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div className="hidden sm:flex items-center gap-1 shrink-0">
-                                      {article.videoUrl && (
-                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
-                                          <Video className="h-2.5 w-2.5 mr-0.5" />
-                                          Видео
-                                        </Badge>
-                                      )}
-                                      {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
-                                        <Badge
-                                          key={tag}
-                                          variant="outline"
-                                          className="text-[9px] px-1.5 py-0 border-white/10"
-                                        >
-                                          {tag}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-emerald-400 shrink-0 transition-colors" />
-                                  </div>
-                                </Link>
+                                  {tag}
+                                </Badge>
                               ))}
                             </div>
-                          </ScrollArea>
-                        )}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </motion.div>
-              ))}
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-emerald-400 shrink-0 transition-colors" />
+                          </div>
+                        </Link>
+                      </motion.div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           </>
         )}
@@ -374,12 +277,7 @@ function getAbbrev(label: string): string {
   return label.slice(0, 2).toUpperCase();
 }
 
-function pluralize(
-  n: number,
-  one: string,
-  few: string,
-  many: string
-): string {
+function pluralize(n: number, one: string, few: string, many: string): string {
   const abs = Math.abs(n) % 100;
   const last = abs % 10;
   if (abs > 10 && abs < 20) return many;

@@ -13,8 +13,7 @@ export async function GET(request: NextRequest) {
       // Find single space by slug
       const result = await pool.query(
         `SELECT ks.id, ks.name, ks.slug, ks.description, ks.icon, ks."order", ks."isPublished",
-          (SELECT COUNT(*) FROM categories c WHERE c."spaceId" = ks.id) as "categoryCount",
-          (SELECT COUNT(*) FROM articles a JOIN categories cat ON a."categoryId" = cat.id WHERE cat."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
+          (SELECT COUNT(*) FROM articles a WHERE a."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
          FROM knowledge_spaces ks
          WHERE ks.slug = $1 ${all !== "true" ? 'AND ks."isPublished" = true' : ""}`,
         [slug]
@@ -22,7 +21,7 @@ export async function GET(request: NextRequest) {
 
       if (result.rows.length === 0) {
         return NextResponse.json(
-          { error: "Пространство не найдено" },
+          { error: "Раздел не найден" },
           { status: 404 }
         );
       }
@@ -36,7 +35,6 @@ export async function GET(request: NextRequest) {
         icon: space.icon,
         order: space.order,
         isPublished: space.isPublished,
-        categoryCount: parseInt(space.categoryCount),
         articleCount: parseInt(space.articleCount),
       });
     }
@@ -44,8 +42,7 @@ export async function GET(request: NextRequest) {
     // List all spaces with counts
     const result = await pool.query(
       `SELECT ks.id, ks.name, ks.slug, ks.description, ks.icon, ks."order", ks."isPublished",
-        (SELECT COUNT(*) FROM categories c WHERE c."spaceId" = ks.id) as "categoryCount",
-        (SELECT COUNT(*) FROM articles a JOIN categories cat ON a."categoryId" = cat.id WHERE cat."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
+        (SELECT COUNT(*) FROM articles a WHERE a."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
        FROM knowledge_spaces ks
        ${all !== "true" ? 'WHERE ks."isPublished" = true' : ""}
        ORDER BY ks."order" ASC`
@@ -59,7 +56,6 @@ export async function GET(request: NextRequest) {
       icon: row.icon,
       order: row.order,
       isPublished: row.isPublished,
-      categoryCount: parseInt(row.categoryCount as string),
       articleCount: parseInt(row.articleCount as string),
     }));
 
@@ -96,7 +92,7 @@ export async function POST(request: NextRequest) {
     );
     if (existing.rows.length > 0) {
       return NextResponse.json(
-        { error: "Пространство с таким slug уже существует" },
+        { error: "Раздел с таким slug уже существует" },
         { status: 409 }
       );
     }
@@ -122,7 +118,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating knowledge space:", error);
     return NextResponse.json(
-      { error: "Ошибка создания пространства" },
+      { error: "Ошибка создания раздела" },
       { status: 500 }
     );
   }

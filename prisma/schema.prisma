@@ -275,7 +275,7 @@ model KnowledgeSpace {
   icon        String?
   order       Int        @default(0)
   isPublished Boolean    @default(false)
-  categories  Category[]
+  articles    Article[]
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -291,11 +291,7 @@ model Category {
   icon        String?
   order       Int        @default(0)
   spaceId     String
-  space       KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   parentId    String?
-  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children    Category[] @relation("CategoryTree")
-  articles    Article[]
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -311,8 +307,8 @@ model Article {
   summary       String?    // AI-generated short summary
   tags          String?    // JSON array of tags ["prompt", "mcp"]
   keyTopics     String?    // JSON array of key topics
-  categoryId    String
-  category      Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  spaceId       String
+  space         KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   authorId      String?
   media         Media[]
   isPublished   Boolean    @default(false)
@@ -367,6 +363,7 @@ model GlossaryTerm {
   definition      String
   shortDefinition String?  // Brief definition for tooltip/popup
   category        String?  // "AI" | "Tools" | "1C" | "General"
+  aliases         String?  // JSON array of synonyms/alternate names (e.g. ["МСП","msp","Model Context Protocol"])
   relatedTerms    String?  // JSON array of related term slugs
   sourceArticleId String?  // Link back to article if auto-extracted
   order           Int      @default(0)

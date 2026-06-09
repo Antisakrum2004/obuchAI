@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Allowed fields for update (whitelist to prevent SQL injection)
 const ALLOWED_FIELDS = new Set(["name", "slug", "description", "icon", "order", "isPublished"]);
 
-// GET /api/knowledge/spaces/[id] — Get single space with categories and article counts
+// GET /api/knowledge/spaces/[id] — Get single space with article count
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -17,31 +17,18 @@ export async function GET(
     const { id } = await params;
 
     const spaceResult = await pool.query(
-      `SELECT ks.*, 
-        (SELECT COUNT(*) FROM categories WHERE "spaceId" = ks.id) as "categoryCount",
-        (SELECT COUNT(*) FROM articles a JOIN categories c ON a."categoryId" = c.id WHERE c."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
+      `SELECT ks.*,
+        (SELECT COUNT(*) FROM articles a WHERE a."spaceId" = ks.id AND a."isPublished" = true) as "articleCount"
       FROM knowledge_spaces ks
       WHERE ks.id = $1`,
       [id],
     );
 
     if (spaceResult.rows.length === 0) {
-      return NextResponse.json({ error: "Пространство знаний не найдено" }, { status: 404 });
+      return NextResponse.json({ error: "Раздел знаний не найден" }, { status: 404 });
     }
 
-    const categoriesResult = await pool.query(
-      `SELECT c.*, 
-        (SELECT COUNT(*) FROM articles a WHERE a."categoryId" = c.id AND a."isPublished" = true) as "articleCount"
-      FROM categories c
-      WHERE c."spaceId" = $1
-      ORDER BY c."order"`,
-      [id],
-    );
-
-    return NextResponse.json({
-      ...spaceResult.rows[0],
-      categories: categoriesResult.rows,
-    });
+    return NextResponse.json(spaceResult.rows[0]);
   } catch (error) {
     console.error("Knowledge space get error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
@@ -87,7 +74,7 @@ export async function PUT(
     );
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Пространство знаний не найдено" }, { status: 404 });
+      return NextResponse.json({ error: "Раздел знаний не найден" }, { status: 404 });
     }
 
     return NextResponse.json(result.rows[0]);
@@ -110,13 +97,17 @@ export async function DELETE(
 
     const { id } = await params;
 
+    // Delete media first, then articles, then space
+    await pool.query(`DELETE FROM media WHERE "articleId" IN (SELECT id FROM articles WHERE "spaceId" = $1)`, [id]);
+    await pool.query(`DELETE FROM articles WHERE "spaceId" = $1`, [id]);
+
     const result = await pool.query(
       `DELETE FROM knowledge_spaces WHERE id = $1 RETURNING id`,
       [id],
     );
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Пространство знаний не найдено" }, { status: 404 });
+      return NextResponse.json({ error: "Раздел знаний не найден" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });

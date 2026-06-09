@@ -6,7 +6,7 @@ import { pool } from "@/lib/db";
 export async function GET() {
   try {
     const result = await pool.query(
-      `SELECT id, term, definition, "shortDefinition", category, "relatedTerms"
+      `SELECT id, term, definition, "shortDefinition", category, aliases, "relatedTerms"
        FROM glossary_terms
        ORDER BY category ASC, term ASC`
     );
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { term, definition, shortDefinition, category, relatedTerms, sourceArticleId, order } = body;
+    const { term, definition, shortDefinition, category, aliases, relatedTerms, sourceArticleId, order } = body;
 
     if (!term || !definition) {
       return NextResponse.json(
@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
     const id = 'gt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 
     const result = await pool.query(
-      `INSERT INTO glossary_terms (id, term, definition, "shortDefinition", category, "relatedTerms", "sourceArticleId", "order", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      `INSERT INTO glossary_terms (id, term, definition, "shortDefinition", category, aliases, "relatedTerms", "sourceArticleId", "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
        RETURNING *`,
       [
         id,
@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
         definition,
         shortDefinition || null,
         category || null,
+        aliases ? JSON.stringify(aliases) : null,
         relatedTerms ? JSON.stringify(relatedTerms) : null,
         sourceArticleId || null,
         order || 0,

@@ -14,7 +14,6 @@ import {
   X,
   Check,
   BookOpen,
-  FolderOpen,
   FileText,
   BookA,
   ToggleLeft,
@@ -40,19 +39,6 @@ interface SpaceData {
   icon: string | null;
   order: number;
   isPublished: boolean;
-  categoryCount: number;
-  articleCount: number;
-}
-
-interface CategoryData {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  icon: string | null;
-  order: number;
-  parentId: string | null;
-  spaceId: string;
   articleCount: number;
 }
 
@@ -63,7 +49,7 @@ interface ArticleData {
   summary: string | null;
   tags: string | null;
   viewCount: number;
-  categoryId: string;
+  spaceId: string;
   isPublished: boolean;
   createdAt: string;
   videoUrl?: string | null;
@@ -79,10 +65,11 @@ interface GlossaryData {
   definition: string;
   shortDefinition: string | null;
   category: string | null;
+  aliases: string | null;
   relatedTerms: string | null;
 }
 
-type SubTab = "spaces" | "categories" | "articles" | "glossary";
+type SubTab = "spaces" | "articles" | "glossary";
 
 // ── Component ──────────────────────────────────────────────────
 
@@ -92,7 +79,6 @@ export function KnowledgeAdmin() {
 
   // Data
   const [spaces, setSpaces] = useState<SpaceData[]>([]);
-  const [categories, setCategories] = useState<CategoryData[]>([]);
   const [articles, setArticles] = useState<ArticleData[]>([]);
   const [glossary, setGlossary] = useState<GlossaryData[]>([]);
 
@@ -116,22 +102,6 @@ export function KnowledgeAdmin() {
       }
     } catch {}
   }, []);
-
-  const fetchCategories = useCallback(async () => {
-    if (spaces.length === 0) return;
-    try {
-      // Fetch categories for all spaces
-      const allCats: CategoryData[] = [];
-      for (const space of spaces) {
-        const res = await fetch(`/api/knowledge/categories?spaceId=${space.id}&all=true`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) allCats.push(...data);
-        }
-      }
-      setCategories(allCats);
-    } catch {}
-  }, [spaces]);
 
   const fetchArticles = useCallback(async () => {
     if (spaces.length === 0) return;
@@ -170,10 +140,9 @@ export function KnowledgeAdmin() {
 
   useEffect(() => {
     if (spaces.length > 0) {
-      fetchCategories();
       fetchArticles();
     }
-  }, [spaces, fetchCategories, fetchArticles]);
+  }, [spaces, fetchArticles]);
 
   useEffect(() => {
     fetchGlossary();
@@ -196,7 +165,7 @@ export function KnowledgeAdmin() {
         body: JSON.stringify(spaceForm),
       });
       if (res.ok) {
-        showToast("Пространство создано");
+        showToast("Раздел создан");
         setSpaceForm(emptySpaceForm);
         fetchSpaces();
       } else {
@@ -226,7 +195,7 @@ export function KnowledgeAdmin() {
   };
 
   const deleteSpace = async (id: string) => {
-    if (!confirm("Удалить пространство и все его категории/статьи?")) return;
+    if (!confirm("Удалить раздел и все его статьи?")) return;
     try {
       const res = await fetch(`/api/knowledge/spaces/${id}`, { method: "DELETE" });
       if (res.ok) { showToast("Удалено"); fetchSpaces(); }
@@ -245,75 +214,16 @@ export function KnowledgeAdmin() {
     } catch {}
   };
 
-  // ── Categories CRUD ──────────────────────────────────────────
-
-  const emptyCatForm = { name: "", slug: "", description: "", icon: "", order: 0, spaceId: "__none__", parentId: "__none__" };
-  const [catForm, setCatForm] = useState(emptyCatForm);
-  const [editingCatId, setEditingCatId] = useState<string | null>(null);
-  const [editCatForm, setEditCatForm] = useState<Partial<CategoryData>>({});
-
-  const createCategory = async () => {
-    if (!catForm.name || !catForm.slug || !catForm.spaceId || catForm.spaceId === "__none__") { showToast("name, slug и spaceId обязательны", "err"); return; }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/knowledge/categories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...catForm,
-          spaceId: catForm.spaceId === "__none__" ? null : catForm.spaceId,
-          parentId: catForm.parentId === "__none__" ? null : catForm.parentId,
-        }),
-      });
-      if (res.ok) {
-        showToast("Категория создана");
-        setCatForm(emptyCatForm);
-        fetchCategories();
-      } else {
-        const err = await res.json();
-        showToast(err.error || "Ошибка", "err");
-      }
-    } catch { showToast("Ошибка сети", "err"); }
-    finally { setSaving(false); }
-  };
-
-  const updateCategory = async (id: string) => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/knowledge/categories/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editCatForm),
-      });
-      if (res.ok) {
-        showToast("Обновлено");
-        setEditingCatId(null);
-        setEditCatForm({});
-        fetchCategories();
-      } else { showToast("Ошибка", "err"); }
-    } catch { showToast("Ошибка сети", "err"); }
-    finally { setSaving(false); }
-  };
-
-  const deleteCategory = async (id: string) => {
-    if (!confirm("Удалить категорию и все её статьи?")) return;
-    try {
-      const res = await fetch(`/api/knowledge/categories/${id}`, { method: "DELETE" });
-      if (res.ok) { showToast("Удалено"); fetchCategories(); fetchArticles(); }
-      else { showToast("Ошибка", "err"); }
-    } catch { showToast("Ошибка сети", "err"); }
-  };
-
   // ── Articles CRUD ────────────────────────────────────────────
 
-  const emptyArtForm = { title: "", slug: "", content: "", summary: "", categoryId: "__none__", isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
+  const emptyArtForm = { title: "", slug: "", content: "", summary: "", spaceId: "__none__", isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
   const [artForm, setArtForm] = useState(emptyArtForm);
   const [editingArtId, setEditingArtId] = useState<string | null>(null);
   const [editArtForm, setEditArtForm] = useState<Record<string, unknown>>({});
   const [showPreview, setShowPreview] = useState(false);
 
   const createArticle = async () => {
-    if (!artForm.title || !artForm.slug || !artForm.categoryId || artForm.categoryId === "__none__") { showToast("title, slug и categoryId обязательны", "err"); return; }
+    if (!artForm.title || !artForm.slug || !artForm.spaceId || artForm.spaceId === "__none__") { showToast("title, slug и spaceId обязательны", "err"); return; }
     setSaving(true);
     try {
       const tags = artForm.tags ? artForm.tags.split(",").map((t) => t.trim()).filter(Boolean) : null;
@@ -326,7 +236,7 @@ export function KnowledgeAdmin() {
           slug: artForm.slug,
           content: artForm.content,
           summary: artForm.summary || null,
-          categoryId: artForm.categoryId,
+          spaceId: artForm.spaceId,
           isPublished: artForm.isPublished,
           tags,
           keyTopics,
@@ -396,7 +306,7 @@ export function KnowledgeAdmin() {
 
   // ── Glossary CRUD ────────────────────────────────────────────
 
-  const emptyGlossaryForm = { term: "", definition: "", shortDefinition: "", category: "", relatedTerms: "" };
+  const emptyGlossaryForm = { term: "", definition: "", shortDefinition: "", category: "", aliases: "", relatedTerms: "" };
   const [glossaryForm, setGlossaryForm] = useState(emptyGlossaryForm);
   const [editingGlossaryId, setEditingGlossaryId] = useState<string | null>(null);
   const [editGlossaryForm, setEditGlossaryForm] = useState<Record<string, unknown>>({});
@@ -406,6 +316,7 @@ export function KnowledgeAdmin() {
     setSaving(true);
     try {
       const relatedTerms = glossaryForm.relatedTerms ? glossaryForm.relatedTerms.split(",").map((t) => t.trim()).filter(Boolean) : null;
+      const aliases = glossaryForm.aliases ? glossaryForm.aliases.split(",").map((t) => t.trim()).filter(Boolean) : null;
       const res = await fetch("/api/knowledge/glossary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -414,6 +325,7 @@ export function KnowledgeAdmin() {
           definition: glossaryForm.definition,
           shortDefinition: glossaryForm.shortDefinition || null,
           category: glossaryForm.category || null,
+          aliases,
           relatedTerms,
         }),
       });
@@ -435,6 +347,9 @@ export function KnowledgeAdmin() {
       const body = { ...editGlossaryForm };
       if (typeof body.relatedTerms === "string") {
         body.relatedTerms = (body.relatedTerms as string).split(",").map((t) => t.trim()).filter(Boolean);
+      }
+      if (typeof body.aliases === "string") {
+        body.aliases = (body.aliases as string).split(",").map((t) => t.trim()).filter(Boolean);
       }
       const res = await fetch(`/api/knowledge/glossary/${id}`, {
         method: "PUT",
@@ -460,9 +375,8 @@ export function KnowledgeAdmin() {
     } catch { showToast("Ошибка сети", "err"); }
   };
 
-  // ── Helper: category name by ID ────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────
 
-  const catName = (id: string) => categories.find((c) => c.id === id)?.name || id.slice(0, 8);
   const spaceName = (id: string) => spaces.find((s) => s.id === id)?.name || id.slice(0, 8);
   const spaceSlug = (id: string) => spaces.find((s) => s.id === id)?.slug || "";
 
@@ -491,8 +405,7 @@ export function KnowledgeAdmin() {
       {/* Sub-tab navigation */}
       <div className="flex gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
         {([
-          { key: "spaces", label: "Пространства", icon: BookOpen, count: spaces.length },
-          { key: "categories", label: "Категории", icon: FolderOpen, count: categories.length },
+          { key: "spaces", label: "Разделы", icon: BookOpen, count: spaces.length },
           { key: "articles", label: "Статьи", icon: FileText, count: articles.length },
           { key: "glossary", label: "Глоссарий", icon: BookA, count: glossary.length },
         ] as const).map(({ key, label, icon: Icon, count }) => (
@@ -520,7 +433,7 @@ export function KnowledgeAdmin() {
           <div className="glass rounded-xl p-5">
             <h3 className="font-semibold mb-4 flex items-center gap-2">
               <Plus className="h-4 w-4 text-emerald-400" />
-              Новое пространство
+              Новый раздел
             </h3>
             <div className="grid gap-3 md:grid-cols-2">
               <Input placeholder="Название" value={spaceForm.name} onChange={(e) => setSpaceForm({ ...spaceForm, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-а-яё]/gi, "") })} className="bg-white/5 border-white/10" />
@@ -540,10 +453,10 @@ export function KnowledgeAdmin() {
           {/* Spaces list */}
           <div className="glass rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-white/5">
-              <h3 className="font-semibold text-sm">Все пространства ({spaces.length})</h3>
+              <h3 className="font-semibold text-sm">Все разделы ({spaces.length})</h3>
             </div>
             {spaces.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">Нет пространств</div>
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">Нет разделов</div>
             ) : spaces.map((space) => (
               <div key={space.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
                 {editingSpaceId === space.id ? (
@@ -566,7 +479,7 @@ export function KnowledgeAdmin() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{space.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        /{space.slug} · {space.categoryCount} кат. · {space.articleCount} ст.
+                        /{space.slug} · {space.articleCount} ст.
                       </p>
                     </div>
                     <Badge variant="outline" className={cn("text-[10px] bg-white/5 border-white/5", space.isPublished ? "text-emerald-400" : "text-muted-foreground")}>
@@ -579,82 +492,6 @@ export function KnowledgeAdmin() {
                       <Edit className="h-3.5 w-3.5" />
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => deleteSpace(space.id)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ─── CATEGORIES ──────────────────────────────────── */}
-      {subTab === "categories" && (
-        <div className="space-y-4">
-          {/* Create form */}
-          <div className="glass rounded-xl p-5">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Plus className="h-4 w-4 text-emerald-400" />
-              Новая категория
-            </h3>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Input placeholder="Название" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-а-яё]/gi, "") })} className="bg-white/5 border-white/10" />
-              <Input placeholder="slug (авто)" value={catForm.slug} onChange={(e) => setCatForm({ ...catForm, slug: e.target.value })} className="bg-white/5 border-white/10" />
-              <Input placeholder="Описание" value={catForm.description} onChange={(e) => setCatForm({ ...catForm, description: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2" />
-              <div className="flex gap-2 items-end flex-wrap">
-                <Select value={catForm.spaceId} onValueChange={(v) => setCatForm({ ...catForm, spaceId: v })}>
-                  <SelectTrigger className="bg-white/5 border-white/10 w-48"><SelectValue placeholder="Пространство" /></SelectTrigger>
-                  <SelectContent className="bg-[#111118] border-white/10">
-                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите пространство</SelectItem>
-                    {spaces.map((s) => (<SelectItem key={s.id} value={s.id}>{s.icon || "📚"} {s.name}</SelectItem>))}
-                  </SelectContent>
-                </Select>
-                <Input placeholder="Иконка" value={catForm.icon} onChange={(e) => setCatForm({ ...catForm, icon: e.target.value })} className="bg-white/5 border-white/10 w-24 text-center" />
-                <Input type="number" placeholder="Порядок" value={catForm.order} onChange={(e) => setCatForm({ ...catForm, order: Number(e.target.value) })} className="bg-white/5 border-white/10 w-24" />
-                <Button onClick={createCategory} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                  Создать
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* Categories list */}
-          <div className="glass rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-white/5">
-              <h3 className="font-semibold text-sm">Все категории ({categories.length})</h3>
-            </div>
-            {categories.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">Нет категорий. Сначала создайте пространство.</div>
-            ) : categories.map((cat) => (
-              <div key={cat.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
-                {editingCatId === cat.id ? (
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <Input value={editCatForm.name || ""} onChange={(e) => setEditCatForm({ ...editCatForm, name: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Название" />
-                    <Input value={editCatForm.description || ""} onChange={(e) => setEditCatForm({ ...editCatForm, description: e.target.value as string | null })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Описание" />
-                    <div className="flex gap-2 items-center md:col-span-2">
-                      <Button size="sm" onClick={() => updateCategory(cat.id)} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8">
-                        <Check className="h-3.5 w-3.5 mr-1" /> Сохранить
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setEditingCatId(null); setEditCatForm({}); }} className="h-8 text-muted-foreground">
-                        <X className="h-3.5 w-3.5 mr-1" /> Отмена
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <span className="text-base">{cat.icon || "📁"}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{cat.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        /{cat.slug} · {spaceName(cat.spaceId)} · {cat.articleCount} ст.
-                      </p>
-                    </div>
-                    <Button size="sm" variant="ghost" onClick={() => { setEditingCatId(cat.id); setEditCatForm({ name: cat.name, description: cat.description, icon: cat.icon || "" }); }} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteCategory(cat.id)} className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -681,18 +518,13 @@ export function KnowledgeAdmin() {
               </div>
               <Input placeholder="Краткое описание" value={artForm.summary} onChange={(e) => setArtForm({ ...artForm, summary: e.target.value })} className="bg-white/5 border-white/10" />
               <div className="grid gap-3 md:grid-cols-2">
-                <Select value={artForm.categoryId} onValueChange={(v) => setArtForm({ ...artForm, categoryId: v })}>
-                  <SelectTrigger className="bg-white/5 border-white/10"><SelectValue placeholder="Категория" /></SelectTrigger>
+                <Select value={artForm.spaceId} onValueChange={(v) => setArtForm({ ...artForm, spaceId: v })}>
+                  <SelectTrigger className="bg-white/5 border-white/10"><SelectValue placeholder="Раздел" /></SelectTrigger>
                   <SelectContent className="bg-[#111118] border-white/10">
-                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите категорию</SelectItem>
+                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите раздел</SelectItem>
                     {spaces.map((s) => (
-                      <SelectItem key={s.id} value={s.id} disabled className="font-semibold text-emerald-400">
+                      <SelectItem key={s.id} value={s.id}>
                         {s.icon || "📚"} {s.name}
-                      </SelectItem>
-                    ))}
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        ├ {c.icon || "📁"} {c.name} ({spaceName(c.spaceId)})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -751,7 +583,7 @@ export function KnowledgeAdmin() {
               <h3 className="font-semibold text-sm">Все статьи ({articles.length})</h3>
             </div>
             {articles.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">Нет статей. Сначала создайте пространство и категорию.</div>
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">Нет статей. Сначала создайте раздел.</div>
             ) : articles.map((art) => (
               <div key={art.id} className="px-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
                 {editingArtId === art.id ? (
@@ -788,7 +620,7 @@ export function KnowledgeAdmin() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{art.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {catName(art.categoryId)} · {art.viewCount} просм.
+                        {spaceName(art.spaceId)} · {art.viewCount} просм.
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -850,6 +682,7 @@ export function KnowledgeAdmin() {
               <Input placeholder="Категория" value={glossaryForm.category} onChange={(e) => setGlossaryForm({ ...glossaryForm, category: e.target.value })} className="bg-white/5 border-white/10" />
               <Textarea placeholder="Определение (полное)" value={glossaryForm.definition} onChange={(e) => setGlossaryForm({ ...glossaryForm, definition: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2 min-h-[80px]" />
               <Textarea placeholder="Краткое определение" value={glossaryForm.shortDefinition} onChange={(e) => setGlossaryForm({ ...glossaryForm, shortDefinition: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2 min-h-[50px]" />
+              <Input placeholder="Синонимы (через запятую, напр. МСП, msp)" value={glossaryForm.aliases} onChange={(e) => setGlossaryForm({ ...glossaryForm, aliases: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2" />
               <Input placeholder="Связанные термины (через запятую)" value={glossaryForm.relatedTerms} onChange={(e) => setGlossaryForm({ ...glossaryForm, relatedTerms: e.target.value })} className="bg-white/5 border-white/10 md:col-span-2" />
               <Button onClick={createGlossaryTerm} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 w-fit">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
@@ -875,6 +708,7 @@ export function KnowledgeAdmin() {
                     </div>
                     <Textarea value={(editGlossaryForm.definition as string) || ""} onChange={(e) => setEditGlossaryForm({ ...editGlossaryForm, definition: e.target.value })} className="bg-white/5 border-white/10 min-h-[60px] text-sm" placeholder="Определение" />
                     <Textarea value={(editGlossaryForm.shortDefinition as string) || ""} onChange={(e) => setEditGlossaryForm({ ...editGlossaryForm, shortDefinition: e.target.value })} className="bg-white/5 border-white/10 min-h-[40px] text-sm" placeholder="Краткое определение" />
+                    <Input placeholder="Синонимы (через запятую)" value={typeof editGlossaryForm.aliases === "string" ? editGlossaryForm.aliases : (Array.isArray(editGlossaryForm.aliases) ? editGlossaryForm.aliases.join(", ") : "")} onChange={(e) => setEditGlossaryForm({ ...editGlossaryForm, aliases: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" />
                     <Input value={typeof editGlossaryForm.relatedTerms === "string" ? editGlossaryForm.relatedTerms : (Array.isArray(editGlossaryForm.relatedTerms) ? editGlossaryForm.relatedTerms.join(", ") : "")} onChange={(e) => setEditGlossaryForm({ ...editGlossaryForm, relatedTerms: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Связанные термины" />
                     <div className="flex gap-2 items-center">
                       <Button size="sm" onClick={() => updateGlossaryTerm(term.id)} disabled={saving} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8">
@@ -889,7 +723,18 @@ export function KnowledgeAdmin() {
                   <div className="flex items-start gap-3">
                     <BookA className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{term.term}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-sm font-medium">{term.term}</p>
+                        {term.aliases && (
+                          <>
+                            {(typeof term.aliases === "string" ? JSON.parse(term.aliases) : term.aliases).map((alias: string, i: number) => (
+                              <Badge key={i} variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/20 text-emerald-400 bg-emerald-500/10">
+                                {alias}
+                              </Badge>
+                            ))}
+                          </>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
                         {term.shortDefinition || term.definition}
                       </p>
@@ -906,6 +751,7 @@ export function KnowledgeAdmin() {
                         definition: term.definition,
                         shortDefinition: term.shortDefinition || "",
                         category: term.category || "",
+                        aliases: term.aliases ? (typeof term.aliases === "string" ? JSON.parse(term.aliases).join(", ") : "") : "",
                         relatedTerms: term.relatedTerms ? (typeof term.relatedTerms === "string" ? JSON.parse(term.relatedTerms).join(", ") : "") : "",
                       });
                     }} className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0">

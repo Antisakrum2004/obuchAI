@@ -79,16 +79,11 @@ interface ArticleDetail {
   viewCount: number;
   createdAt: string;
   updatedAt: string;
-  category: {
+  space: {
     id: string;
     name: string;
     slug: string;
-    space: {
-      id: string;
-      name: string;
-      slug: string;
-    } | null;
-  };
+  } | null;
   relatedGlossary: GlossaryItem[];
   difficulty: string | null;
   prerequisites: string | null;
@@ -411,33 +406,15 @@ export default function ArticlePage({
                   <Link href="/knowledge">База знаний</Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              {article?.category?.space && (
+              {article?.space && (
                 <>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
                     <BreadcrumbLink asChild>
                       <Link
-                        href={`/knowledge/${article.category.space.slug}`}
+                        href={`/knowledge/${article.space.slug}`}
                       >
-                        {article.category.space.name}
-                      </Link>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                </>
-              )}
-              {article?.category && (
-                <>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbLink asChild>
-                      <Link
-                        href={
-                          article.category.space
-                            ? `/knowledge/${article.category.space.slug}`
-                            : "/knowledge"
-                        }
-                      >
-                        {article.category.name}
+                        {article.space.name}
                       </Link>
                     </BreadcrumbLink>
                   </BreadcrumbItem>
@@ -1112,13 +1089,13 @@ export default function ArticlePage({
 
               {/* Back Link */}
               <div className="mt-6">
-                {article.category?.space ? (
+                {article.space ? (
                   <Link
-                    href={`/knowledge/${article.category.space.slug}`}
+                    href={`/knowledge/${article.space.slug}`}
                     className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-emerald-400 transition-colors"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    Назад к {article.category.space.name}
+                    Назад к {article.space.name}
                   </Link>
                 ) : (
                   <Link

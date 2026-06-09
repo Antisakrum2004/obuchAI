@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, FolderOpen, FileText, ArrowRight, Clock, Eye, Search, Video } from "lucide-react";
+import { BookOpen, FileText, ArrowRight, Clock, Eye, Search, Video } from "lucide-react";
 import { useGlossaryOpen } from "@/components/knowledge/glossary-command";
 
 interface KnowledgeSpaceData {
@@ -17,7 +17,6 @@ interface KnowledgeSpaceData {
   description: string | null;
   icon: string | null;
   order: number;
-  categoryCount: number;
   articleCount: number;
 }
 
@@ -28,11 +27,9 @@ interface RecentArticle {
   summary: string | null;
   tags: string | null;
   viewCount: number;
-  categoryId: string;
+  spaceId: string;
   isPublished: boolean;
   createdAt: string;
-  categoryName: string;
-  spaceId: string;
   spaceName: string;
   spaceSlug: string;
   spaceIcon: string | null;
@@ -59,7 +56,7 @@ export default function KnowledgePage() {
   const [recentArticles, setRecentArticles] = useState<RecentArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [glossarySearch, setGlossarySearch] = useState("");
-  const [glossaryTerms, setGlossaryTerms] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null}[]>([]);
+  const [glossaryTerms, setGlossaryTerms] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null;aliases:string|null}[]>([]);
   const [glossaryResults, setGlossaryResults] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null}[]>([]);
 
   useEffect(() => {
@@ -91,7 +88,7 @@ export default function KnowledgePage() {
     }
   };
 
-  // Filter glossary on search
+  // Filter glossary on search (with aliases support)
   useEffect(() => {
     if (!glossarySearch.trim()) {
       setGlossaryResults([]);
@@ -99,11 +96,19 @@ export default function KnowledgePage() {
     }
     const q = glossarySearch.toLowerCase();
     const results = glossaryTerms
-      .filter((t) =>
-        t.term.toLowerCase().includes(q) ||
-        (t.shortDefinition && t.shortDefinition.toLowerCase().includes(q)) ||
-        (t.category && t.category.toLowerCase().includes(q))
-      )
+      .filter((t) => {
+        const termMatch = t.term.toLowerCase().includes(q);
+        const defMatch = t.shortDefinition && t.shortDefinition.toLowerCase().includes(q);
+        const catMatch = t.category && t.category.toLowerCase().includes(q);
+        let aliasMatch = false;
+        if (t.aliases) {
+          try {
+            const aliases: string[] = JSON.parse(t.aliases);
+            aliasMatch = aliases.some((a) => a.toLowerCase().includes(q));
+          } catch {}
+        }
+        return termMatch || defMatch || catMatch || aliasMatch;
+      })
       .slice(0, 8);
     setGlossaryResults(results);
   }, [glossarySearch, glossaryTerms]);
@@ -145,7 +150,7 @@ export default function KnowledgePage() {
                 value={glossarySearch}
                 onChange={(e) => setGlossarySearch(e.target.value)}
                 onFocus={handleGlossaryFocus}
-                placeholder="Поиск по глоссарию..."
+                placeholder="Поиск по глоссарию... (MCP, МСП — найдёт)"
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 outline-none"
               />
               <span className="text-[10px] text-muted-foreground/40 hidden sm:inline">
@@ -211,7 +216,7 @@ export default function KnowledgePage() {
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm">{article.spaceIcon || "📚"}</span>
                           <Badge variant="secondary" className="text-[9px] bg-secondary/50">
-                            {article.categoryName}
+                            {article.spaceName}
                           </Badge>
                           {article.videoUrl && (
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80 ml-auto">
@@ -261,7 +266,6 @@ export default function KnowledgePage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Skeleton className="h-5 w-20 rounded-full" />
                   <Skeleton className="h-5 w-20 rounded-full" />
                 </div>
               </div>
@@ -328,14 +332,6 @@ export default function KnowledgePage() {
                             variant="secondary"
                             className="text-[10px] gap-1 bg-secondary/50"
                           >
-                            <FolderOpen className="h-3 w-3" />
-                            {space.categoryCount}{" "}
-                            {pluralize(space.categoryCount, "кат.", "кат.", "кат.")}
-                          </Badge>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] gap-1 bg-secondary/50"
-                          >
                             <FileText className="h-3 w-3" />
                             {space.articleCount}{" "}
                             {pluralize(space.articleCount, "ст.", "ст.", "ст.")}
@@ -361,7 +357,7 @@ export default function KnowledgePage() {
             <span className="text-lg">💡</span>
             <span>
               Нажмите <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+K</kbd>{" "}
-              или <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+Л</kbd> для поиска по глоссарию
+              или <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Ctrl+Л</kbd> для поиска по глоссарию. Работает на любой раскладке!
             </span>
           </div>
         </motion.div>
@@ -381,8 +377,6 @@ function pluralize(n: number, one: string, few: string, many: string): string {
 
 /** Check if a string is an emoji (short unicode glyph) vs text label */
 function isEmoji(str: string): boolean {
-  // Emoji are typically 1-2 JS chars; text labels like "Prompting" are longer
-  // Also check: if spreading gives 1 or 2 graphemes, it's likely emoji/symbol
   const graphemes = [...str];
   return graphemes.length <= 2 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(str);
 }

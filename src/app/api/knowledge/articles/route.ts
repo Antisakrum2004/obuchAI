@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
-    const categoryId = searchParams.get("categoryId");
     const recent = searchParams.get("recent");
     const all = searchParams.get("all"); // admin: include unpublished
 
@@ -15,12 +14,11 @@ export async function GET(request: NextRequest) {
     if (recent) {
       const limit = parseInt(recent) || 10;
       const { rows } = await pool.query(
-        `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt",
+        `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."spaceId", a."isPublished", a."createdAt",
                 a."videoUrl", a."sourceType",
-                c.name as "categoryName", c."spaceId", ks.name as "spaceName", ks.slug as "spaceSlug", ks.icon as "spaceIcon"
+                ks.name as "spaceName", ks.slug as "spaceSlug", ks.icon as "spaceIcon"
          FROM articles a
-         JOIN categories c ON a."categoryId" = c.id
-         JOIN knowledge_spaces ks ON c."spaceId" = ks.id
+         JOIN knowledge_spaces ks ON a."spaceId" = ks.id
          ${all !== "true" ? 'WHERE a."isPublished" = true' : ""}
          ORDER BY a."createdAt" DESC
          LIMIT $1`,
@@ -34,11 +32,9 @@ export async function GET(request: NextRequest) {
         summary: article.summary,
         tags: article.tags,
         viewCount: article.viewCount,
-        categoryId: article.categoryId,
+        spaceId: article.spaceId,
         isPublished: article.isPublished,
         createdAt: new Date(article.createdAt).toISOString(),
-        categoryName: article.categoryName,
-        spaceId: article.spaceId,
         spaceName: article.spaceName,
         spaceSlug: article.spaceSlug,
         spaceIcon: article.spaceIcon,
@@ -49,32 +45,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    if (!spaceId && !categoryId) {
+    if (!spaceId) {
       return NextResponse.json(
-        { error: "Не указан spaceId или categoryId" },
+        { error: "Не указан spaceId" },
         { status: 400 }
       );
     }
 
-    let query: string;
-    let params: unknown[];
-
-    if (categoryId) {
-      query = `SELECT id, title, slug, summary, tags, "viewCount", "categoryId", "isPublished", "createdAt", "videoUrl", "sourceType"
-               FROM articles
-               ${all !== "true" ? 'WHERE "isPublished" = true AND' : "WHERE"} "categoryId" = $1
-               ORDER BY "createdAt" DESC`;
-      params = [categoryId];
-    } else {
-      query = `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."categoryId", a."isPublished", a."createdAt", a."videoUrl", a."sourceType"
-               FROM articles a
-               JOIN categories c ON a."categoryId" = c.id
-               ${all !== "true" ? 'WHERE a."isPublished" = true AND' : "WHERE"} c."spaceId" = $1
-               ORDER BY a."createdAt" DESC`;
-      params = [spaceId];
-    }
-
-    const { rows } = await pool.query(query, params);
+    // Articles by space
+    const { rows } = await pool.query(
+      `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."spaceId", a."isPublished", a."createdAt", a."videoUrl", a."sourceType"
+       FROM articles a
+       ${all !== "true" ? 'WHERE a."isPublished" = true AND' : "WHERE"} a."spaceId" = $1
+       ORDER BY a."createdAt" DESC`,
+      [spaceId]
+    );
 
     const result = rows.map((article) => ({
       id: article.id,
@@ -83,7 +68,7 @@ export async function GET(request: NextRequest) {
       summary: article.summary,
       tags: article.tags,
       viewCount: article.viewCount,
-      categoryId: article.categoryId,
+      spaceId: article.spaceId,
       isPublished: article.isPublished,
       createdAt: new Date(article.createdAt).toISOString(),
       videoUrl: article.videoUrl,
@@ -113,7 +98,7 @@ export async function POST(request: NextRequest) {
       summary,
       tags,
       keyTopics,
-      categoryId,
+      spaceId,
       isPublished,
       // Sprint 6: new fields
       videoUrl,
@@ -127,9 +112,9 @@ export async function POST(request: NextRequest) {
       aiGenerated,
     } = body;
 
-    if (!title || !slug || !categoryId) {
+    if (!title || !slug || !spaceId) {
       return NextResponse.json(
-        { error: "title, slug и categoryId обязательны" },
+        { error: "title, slug и spaceId обязательны" },
         { status: 400 }
       );
     }
@@ -150,7 +135,7 @@ export async function POST(request: NextRequest) {
     const authorId = (session.user as Record<string, unknown>).id as string;
 
     const result = await pool.query(
-      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "categoryId", "authorId", "isPublished", "viewCount",
+      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "spaceId", "authorId", "isPublished", "viewCount",
          "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType", difficulty, "estimatedTime", status, "aiGenerated",
          "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0,
@@ -165,7 +150,7 @@ export async function POST(request: NextRequest) {
         summary || null,
         tags ? JSON.stringify(tags) : null,
         keyTopics ? JSON.stringify(keyTopics) : null,
-        categoryId,
+        spaceId,
         authorId,
         isPublished !== undefined ? isPublished : true,
         // Sprint 6 fields

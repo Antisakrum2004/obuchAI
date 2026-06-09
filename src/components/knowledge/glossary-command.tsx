@@ -20,6 +20,7 @@ interface GlossaryTerm {
   shortDefinition: string | null;
   category: string | null;
   relatedTerms: string | null;
+  aliases: string | null; // JSON array of aliases/synonyms
 }
 
 // Shared state between GlossaryCommand and GlossaryTrigger
@@ -29,11 +30,44 @@ export function useGlossaryOpen() {
   return openGlossaryFn;
 }
 
+// ── Keyboard layout switch (EN ↔ RU) ──
+// Maps Russian keys to their English equivalents on the same physical key
+const RU_TO_EN: Record<string, string> = {
+  'й':'q','ц':'w','у':'e','к':'r','е':'t','н':'y','г':'u','ш':'i','щ':'o','з':'p',
+  'х':'[','ъ':']',
+  'ф':'a','ы':'s','в':'d','а':'f','п':'g','р':'h','о':'j','л':'k','д':'l',
+  'ж':';','э':"'",
+  'я':'z','ч':'x','с':'c','м':'v','и':'b','т':'n','ь':'m','б':',','ю':'.',
+};
+const EN_TO_RU: Record<string, string> = Object.fromEntries(
+  Object.entries(RU_TO_EN).map(([k, v]) => [v, k])
+);
+
+/** Convert a string typed on the wrong keyboard layout */
+function switchLayout(str: string, map: Record<string, string>): string {
+  return str
+    .split("")
+    .map((ch) => map[ch.toLowerCase()] || ch)
+    .join("");
+}
+
+/** Parse aliases JSON field into a string array */
+function parseAliases(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.filter((a: unknown) => typeof a === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function GlossaryCommand() {
   const [open, setOpen] = useState(false);
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   const [search, setSearch] = useState("");
   const [selectedTerm, setSelectedTerm] = useState<GlossaryTerm | null>(null);
+  const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Register the open function for external triggers
@@ -44,6 +78,18 @@ export function GlossaryCommand() {
     };
   }, []);
 
+  // Always fetch fresh terms when dialog opens
+  const loadTerms = useCallback(() => {
+    setLoading(true);
+    fetch("/api/knowledge/glossary")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setTerms(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
   // Global keyboard shortcut: Ctrl+K / Cmd+K (also Ctrl+Л for Russian layout)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -52,15 +98,7 @@ export function GlossaryCommand() {
         setOpen((prev) => {
           const next = !prev;
           if (next) {
-            // Fetch terms when opening via keyboard
-            if (terms.length === 0) {
-              fetch("/api/knowledge/glossary")
-                .then((r) => r.json())
-                .then((data) => {
-                  if (Array.isArray(data)) setTerms(data);
-                })
-                .catch(() => {});
-            }
+            loadTerms();
           } else {
             setSearch("");
             setSelectedTerm(null);
@@ -71,19 +109,7 @@ export function GlossaryCommand() {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [terms.length]);
-
-  // Fetch glossary terms (called from event handlers, not effects)
-  const loadTerms = useCallback(() => {
-    if (terms.length === 0) {
-      fetch("/api/knowledge/glossary")
-        .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) setTerms(data);
-        })
-        .catch(() => {});
-    }
-  }, [terms.length]);
+  }, [loadTerms]);
 
   // Handle open/close + fetch on open
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -96,15 +122,47 @@ export function GlossaryCommand() {
     }
   }, [loadTerms]);
 
-  // Filter terms based on search
+  // Filter terms based on search with aliases + keyboard layout switching
   const filteredTerms = terms.filter((t) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
-    return (
+
+    // Generate alternative query in case user typed on wrong keyboard layout
+    const qAltRu = switchLayout(q, EN_TO_RU); // EN keys → RU letters
+    const qAltEn = switchLayout(q, RU_TO_EN); // RU keys → EN letters
+
+    // Check term name
+    const termMatch =
       t.term.toLowerCase().includes(q) ||
-      (t.shortDefinition && t.shortDefinition.toLowerCase().includes(q)) ||
-      (t.category && t.category.toLowerCase().includes(q))
+      t.term.toLowerCase().includes(qAltRu) ||
+      t.term.toLowerCase().includes(qAltEn);
+
+    // Check short definition
+    const defMatch =
+      t.shortDefinition && (
+        t.shortDefinition.toLowerCase().includes(q) ||
+        t.shortDefinition.toLowerCase().includes(qAltRu) ||
+        t.shortDefinition.toLowerCase().includes(qAltEn)
+      );
+
+    // Check category
+    const catMatch =
+      t.category && (
+        t.category.toLowerCase().includes(q) ||
+        t.category.toLowerCase().includes(qAltRu) ||
+        t.category.toLowerCase().includes(qAltEn)
+      );
+
+    // Check aliases
+    const aliases = parseAliases(t.aliases);
+    const aliasMatch = aliases.some(
+      (alias) =>
+        alias.toLowerCase().includes(q) ||
+        alias.toLowerCase().includes(qAltRu) ||
+        alias.toLowerCase().includes(qAltEn)
     );
+
+    return termMatch || defMatch || catMatch || aliasMatch;
   });
 
   // Debounced search handler
@@ -156,11 +214,18 @@ export function GlossaryCommand() {
       className="sm:max-w-xl"
     >
       <CommandInput
-        placeholder="Поиск терминов..."
+        placeholder="Поиск терминов... (MCP, МСП, мсп — найдёт)"
         onValueChange={handleSearch}
       />
       <CommandList>
-        <CommandEmpty>Ничего не найдено</CommandEmpty>
+        {loading ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent mx-auto mb-2" />
+            Загрузка...
+          </div>
+        ) : (
+          <CommandEmpty>Ничего не найдено</CommandEmpty>
+        )}
 
         {!selectedTerm ? (
           <CommandGroup heading="Термины">
@@ -192,6 +257,15 @@ export function GlossaryCommand() {
                       {term.shortDefinition}
                     </p>
                   )}
+                  {parseAliases(term.aliases).length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {parseAliases(term.aliases).slice(0, 3).map((alias) => (
+                        <span key={alias} className="text-[9px] text-muted-foreground/60 bg-white/5 px-1.5 py-0 rounded">
+                          {alias}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0 mt-1" />
               </CommandItem>
@@ -214,6 +288,15 @@ export function GlossaryCommand() {
                   >
                     {selectedTerm.category}
                   </Badge>
+                )}
+                {parseAliases(selectedTerm.aliases).length > 0 && (
+                  <div className="flex gap-1 mt-1.5 flex-wrap">
+                    {parseAliases(selectedTerm.aliases).map((alias) => (
+                      <span key={alias} className="text-[10px] text-muted-foreground/70 bg-white/5 px-1.5 py-0.5 rounded">
+                        {alias}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
               <button
@@ -277,7 +360,7 @@ export function GlossaryCommand() {
             <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono border border-white/10">
               Esc
             </kbd>{" "}
-            для закрытия • Выберите термин для подробностей
+            для закрытия • Поддерживается поиск на обоих раскладках
           </p>
         </div>
       )}

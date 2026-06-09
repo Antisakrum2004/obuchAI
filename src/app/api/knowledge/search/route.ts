@@ -15,11 +15,11 @@ export async function GET(request: Request) {
 
     const searchTerm = `%${q.trim()}%`;
 
-    // Search articles by title, summary, tags (ILIKE)
+    // Search articles by title, summary, tags (ILIKE) — now using spaceId instead of categoryId
     const articlesResult = await pool.query(
-      `SELECT a.id, a.title, a.summary, a.tags, a."categoryId", c.name as "categoryName"
+      `SELECT a.id, a.title, a.summary, a.tags, a."spaceId", ks.name as "spaceName"
       FROM articles a
-      LEFT JOIN categories c ON a."categoryId" = c.id
+      LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
       WHERE a."isPublished" = true
         AND (a.title ILIKE $1 OR a.summary ILIKE $1 OR a.tags::text ILIKE $1)
       ORDER BY a."order"
@@ -27,11 +27,11 @@ export async function GET(request: Request) {
       [searchTerm],
     );
 
-    // Search glossary by term, definition (ILIKE)
+    // Search glossary by term, definition, aliases (ILIKE)
     const glossaryResult = await pool.query(
-      `SELECT id, term, definition, category
+      `SELECT id, term, definition, category, aliases
       FROM glossary_terms
-      WHERE term ILIKE $1 OR definition ILIKE $1
+      WHERE term ILIKE $1 OR definition ILIKE $1 OR aliases::text ILIKE $1
       ORDER BY "order"
       LIMIT 20`,
       [searchTerm],

@@ -6,7 +6,8 @@ import { pool } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 // Allowed fields for update (whitelist to prevent SQL injection)
-const ALLOWED_FIELDS = new Set(["term", "definition", "shortDefinition", "category", "relatedTerms", "sourceArticleId", "order", "aiGenerated"]);
+const ALLOWED_FIELDS = new Set(["term", "definition", "shortDefinition", "category", "aliases", "relatedTerms", "sourceArticleId", "order", "aiGenerated"]);
+const JSON_FIELDS = new Set(["aliases", "relatedTerms"]);
 
 // GET /api/knowledge/glossary/[id] — Get single term by ID
 export async function GET(
@@ -54,7 +55,12 @@ export async function PUT(
     for (const [key, value] of Object.entries(body)) {
       if (ALLOWED_FIELDS.has(key)) {
         fields.push(`"${key}" = $${idx++}`);
-        values.push(value);
+        // JSON fields need to be stringified if they're arrays
+        if (JSON_FIELDS.has(key) && Array.isArray(value)) {
+          values.push(JSON.stringify(value));
+        } else {
+          values.push(value);
+        }
       }
     }
 
