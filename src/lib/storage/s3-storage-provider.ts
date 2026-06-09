@@ -12,6 +12,7 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -188,20 +189,148 @@ export class S3StorageProvider implements StorageProvider {
    * Генерация Signed URL для приватного доступа к файлу.
    * Ссылка истекает через expiresIn секунд.
    * Используется для стриминга видео через HTML5 <video>.
+   *
+   * Для больших файлов (видео 500МБ+) браузер делает много range-запросов,
+   * поэтому нужно больше времени (1 час вместо 15 мин).
    */
   async getSignedUrl(
     key: string,
-    expiresIn: number = 900 // 15 минут по умолчанию
+    expiresIn: number = 3600 // 1 час по умолчанию (было 15 мин — мало для больших видео)
   ): Promise<string> {
     const { client, bucket } = getS3Client();
 
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
+      // Для видео: указываем ResponseContentType чтобы браузер правильно определял тип
+      ResponseContentType: key.endsWith('.mp4') ? 'video/mp4'
+        : key.endsWith('.webm') ? 'video/webm'
+        : key.endsWith('.mov') ? 'video/quicktime'
+        : undefined,
     });
 
     const signedUrl = await getSignedUrl(client, command, { expiresIn });
     return signedUrl;
+  }
+
+  /**
+   * Проверить существование файла в S3 и получить его метаданные.
+   * Если ключ не найден, пытается найти файл через ListObjectsV2
+   * (полезно когда ключ содержит кириллицу/пробелы и может не совпадать).
+   *
+   * Возвращает реальный ключ объекта или null если файл не найден.
+   */
+  async resolveKey(s3Key: string): Promise<{ key: string; size: number; contentType: string } | null> {
+    const { client, bucket } = getS3Client();
+
+    // 1. Сначала пробуем HeadObject с ключом как есть
+    try {
+      const headResult = await client.send(new HeadObjectCommand({
+        Bucket: bucket,
+        Key: s3Key,
+      }));
+      return {
+        key: s3Key,
+        size: headResult.ContentLength ?? 0,
+        contentType: headResult.ContentType ?? 'application/octet-stream',
+      };
+    } catch {
+      // Key not found with exact match — try alternatives
+    }
+
+    // 2. Пробуем URL-декодированный ключ (если ключ был закодирован при сохранении)
+    try {
+      const decodedKey = decodeURIComponent(s3Key);
+      if (decodedKey !== s3Key) {
+        const headResult = await client.send(new HeadObjectCommand({
+          Bucket: bucket,
+          Key: decodedKey,
+        }));
+        return {
+          key: decodedKey,
+          size: headResult.ContentLength ?? 0,
+          contentType: headResult.ContentType ?? 'application/octet-stream',
+        };
+      }
+    } catch {
+      // Decoded key not found either
+    }
+
+    // 3. Пробуем URL-кодированный ключ (если ключ содержит кириллицу/пробелы)
+    try {
+      const encodedKey = s3Key.split('/').map(segment => encodeURIComponent(segment)).join('/');
+      if (encodedKey !== s3Key) {
+        const headResult = await client.send(new HeadObjectCommand({
+          Bucket: bucket,
+          Key: encodedKey,
+        }));
+        return {
+          key: encodedKey,
+          size: headResult.ContentLength ?? 0,
+          contentType: headResult.ContentType ?? 'application/octet-stream',
+        };
+      }
+    } catch {
+      // Encoded key not found either
+    }
+
+    // 4. Fallback: ListObjectsV2 с префиксом — ищем файл по началу ключа
+    // Это полезно когда кириллица или спецсимволы в ключе не совпадают
+    try {
+      // Берём префикс — всё до последнего /
+      const lastSlash = s3Key.lastIndexOf('/');
+      const prefix = lastSlash > 0 ? s3Key.substring(0, lastSlash + 1) : '';
+      const fileName = lastSlash > 0 ? s3Key.substring(lastSlash + 1) : s3Key;
+
+      if (prefix && fileName) {
+        const listResult = await client.send(new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          MaxKeys: 100,
+        }));
+
+        if (listResult.Contents) {
+          // Ищем файл с похожим именем (нечувствительно к кодировке)
+          const fileNameLower = fileName.toLowerCase().replace(/\+/g, ' ');
+          for (const obj of listResult.Contents) {
+            if (!obj.Key) continue;
+            const objFileName = obj.Key.substring(obj.Key.lastIndexOf('/') + 1).toLowerCase();
+            // Точное совпадение имени файла (после нормализации)
+            if (objFileName === fileNameLower ||
+                objFileName.replace(/%20/g, ' ') === fileNameLower ||
+                decodeURIComponent(objFileName) === fileNameLower ||
+                objFileName === fileName.toLowerCase()) {
+              return {
+                key: obj.Key,
+                size: obj.Size ?? 0,
+                contentType: 'application/octet-stream',
+              };
+            }
+          }
+
+          // Если точного совпадения нет — ищем файл который заканчивается похожим образом
+          const baseName = fileNameLower.replace(/\s*\(\d+p\)\s*\.\w+$/, '').replace(/[()\s+]/g, '');
+          for (const obj of listResult.Contents) {
+            if (!obj.Key) continue;
+            const objBaseName = obj.Key.substring(obj.Key.lastIndexOf('/') + 1)
+              .toLowerCase()
+              .replace(/\s*\(\d+p\)\s*\.\w+$/, '')
+              .replace(/[()\s+]/g, '');
+            if (baseName && objBaseName === baseName) {
+              return {
+                key: obj.Key,
+                size: obj.Size ?? 0,
+                contentType: 'application/octet-stream',
+              };
+            }
+          }
+        }
+      }
+    } catch (listErr) {
+      console.error('[S3Storage] ListObjectsV2 fallback failed:', listErr);
+    }
+
+    return null;
   }
 
   /**

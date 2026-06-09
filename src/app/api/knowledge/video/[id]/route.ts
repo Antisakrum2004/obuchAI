@@ -124,8 +124,33 @@ export async function GET(
       }
     }
 
-    // ── 4. Генерация Signed URL (15 минут) ──────────────────────────
-    const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
+    // ── 4. Verify file exists & generate Signed URL (1 hour) ───────────
+    // Use resolveKey to handle Cyrillic/special chars in S3 keys
+    const resolved = await s3Provider.resolveKey(s3Key);
+
+    let signedUrl: string;
+    if (resolved) {
+      const actualKey = resolved.key;
+      const fileSizeMB = Math.round(resolved.size / 1024 / 1024);
+      console.log(`[video/${id}] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
+
+      // Update media fileKey with correct key if it differs
+      if (actualKey !== s3Key && media.fileKey) {
+        try {
+          await pool.query(
+            `UPDATE media SET "fileKey" = $2 WHERE id = $1`,
+            [media.id, actualKey]
+          );
+          console.log(`[video/${id}] fileKey corrected in DB`);
+        } catch {}
+      }
+
+      signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+    } else {
+      // Key not found via resolveKey — try generating signed URL anyway
+      console.warn(`[video/${id}] Key not found in S3 via resolveKey, trying direct: "${s3Key}"`);
+      signedUrl = await s3Provider.getSignedUrl(s3Key, 3600);
+    }
 
     // ── 5. Return signed URL ────────────────────────────────────────
     // ?format=json → { url: signedUrl } для JS-клиента (надёжнее, чем 302 редирект)

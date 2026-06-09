@@ -12,9 +12,8 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
  * 1. media table (uploaded video attachments)
  * 2. article.videoUrl field (URL set directly on the article)
  *
- * This is needed because videos can be set either:
- * - As media attachments (uploaded via MediaUpload component)
- * - As article.videoUrl (set via admin URL import or manual edit)
+ * Now uses resolveKey() to verify the file actually exists in S3
+ * and auto-corrects the key if it contains Cyrillic/special chars.
  *
  * ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
  * no param → 302 redirect (backward compatibility)
@@ -159,9 +158,39 @@ export async function GET(
     let videoUrl: string;
 
     if (s3Key) {
-      console.log(`[video/by-article] Generating signed URL for key: "${s3Key}"`);
-      videoUrl = await s3Provider.getSignedUrl(s3Key, 900);
-      console.log(`[video/by-article] Signed URL generated (length: ${videoUrl.length})`);
+      console.log(`[video/by-article] Resolving S3 key: "${s3Key}"`);
+
+      // Use resolveKey to verify the file exists and auto-correct the key
+      // This handles Cyrillic, spaces, + signs and other special chars
+      const resolved = await s3Provider.resolveKey(s3Key);
+
+      if (resolved) {
+        const actualKey = resolved.key;
+        const fileSizeMB = Math.round(resolved.size / 1024 / 1024);
+        console.log(`[video/by-article] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
+
+        // If the resolved key differs from what we had, update the DB for next time
+        if (actualKey !== s3Key) {
+          console.log(`[video/by-article] Key corrected: "${s3Key}" → "${actualKey}"`);
+          // Update article.videoUrl with the correct key (strip s3:// prefix for clean storage)
+          try {
+            await pool.query(
+              `UPDATE articles SET "videoUrl" = $2 WHERE id = $1 AND "videoUrl" LIKE '%${s3Key.replace(/'/g, "''")}%'`,
+              [articleId, actualKey]
+            );
+          } catch (updateErr) {
+            console.warn('[video/by-article] Failed to update videoUrl in DB:', updateErr);
+          }
+        }
+
+        // Generate signed URL with 1 hour expiration (for large videos)
+        videoUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+        console.log(`[video/by-article] Signed URL generated (${fileSizeMB}MB, 1h expiry, length: ${videoUrl.length})`);
+      } else {
+        // File not found in S3 — try generating signed URL anyway (might work with some providers)
+        console.warn(`[video/by-article] Key not found in S3, trying signed URL anyway: "${s3Key}"`);
+        videoUrl = await s3Provider.getSignedUrl(s3Key, 3600);
+      }
     } else {
       videoUrl = directUrl!;
     }

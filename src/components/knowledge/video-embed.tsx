@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ExternalLink, Play, Loader2, RefreshCw, AlertCircle, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +94,8 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [buffering, setBuffering] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const fetchSignedUrl = useCallback(async () => {
     setLoading(true);
@@ -128,11 +130,23 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
 
   const handleVideoError = () => {
     // Если signed URL истёк или не работает — пробуем получить новый
-    if (retryCount < 3) {
+    if (retryCount < 5) {
       setRetryCount((c) => c + 1);
     } else {
-      setError("Не удалось воспроизвести видео. Попробуйте обновить страницу.");
+      setError("Не удалось воспроизвести видео после нескольких попыток. Попробуйте обновить страницу.");
     }
+  };
+
+  const handleVideoWaiting = () => {
+    setBuffering(true);
+  };
+
+  const handleVideoPlaying = () => {
+    setBuffering(false);
+  };
+
+  const handleVideoCanPlay = () => {
+    setBuffering(false);
   };
 
   return (
@@ -181,16 +195,29 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
       )}
 
       {!loading && !error && signedUrl && (
-        <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
+        <div className="glass rounded-xl p-2 border-white/5 overflow-hidden relative">
           <video
+            ref={videoRef}
             src={signedUrl}
             controls
             className="w-full rounded-lg"
             preload="metadata"
             onError={handleVideoError}
+            onWaiting={handleVideoWaiting}
+            onPlaying={handleVideoPlaying}
+            onCanPlay={handleVideoCanPlay}
           >
             Ваш браузер не поддерживает воспроизведение видео.
           </video>
+          {/* Buffering indicator for large files */}
+          {buffering && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none rounded-lg">
+              <div className="flex items-center gap-2 bg-black/60 px-4 py-2 rounded-lg">
+                <Loader2 className="h-4 w-4 text-emerald-400 animate-spin" />
+                <span className="text-xs text-white">Буферизация...</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

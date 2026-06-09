@@ -3,8 +3,24 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
+// Runtime migration memo — ensure aliases column exists
+let aliasesEnsured = false;
+
+async function ensureAliasesColumn(): Promise<void> {
+  if (aliasesEnsured) return;
+  try {
+    await pool.query(`ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aliases" TEXT`);
+  } catch {
+    // Column already exists — not critical
+  }
+  aliasesEnsured = true;
+}
+
 export async function GET() {
   try {
+    // Ensure aliases column exists before querying
+    await ensureAliasesColumn();
+
     const result = await pool.query(
       `SELECT id, term, definition, "shortDefinition", category, aliases, "relatedTerms"
        FROM glossary_terms
