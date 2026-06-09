@@ -47,6 +47,7 @@ import {
   Tag,
   Loader2,
   Send,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/user-store";
@@ -54,6 +55,7 @@ import { useSession } from "next-auth/react";
 import { ProcessingQueue } from "@/components/knowledge/processing-queue";
 import { BulkUpload } from "@/components/knowledge/bulk-upload";
 import { ZipUpload } from "@/components/knowledge/zip-upload";
+import { CreateArticleDialog } from "@/components/knowledge/create-article-dialog";
 import { toast } from "sonner";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -504,6 +506,7 @@ export default function MaterialsPage() {
   const [showZipUpload, setShowZipUpload] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showQueue, setShowQueue] = useState(true);
+  const [showCreateArticle, setShowCreateArticle] = useState(false);
 
   // Admin detection — use destructuring like other pages
   const { role: storeRole } = useUserStore();
@@ -628,6 +631,14 @@ export default function MaterialsPage() {
                   <Upload className="h-4 w-4 mr-1" />
                   Импорт ZIP
                 </Button>
+                <Button
+                  onClick={() => setShowCreateArticle(true)}
+                  className="bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30"
+                  size="sm"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Создать статью
+                </Button>
               </div>
             )}
           </div>
@@ -655,6 +666,19 @@ export default function MaterialsPage() {
             onUploadComplete={() => {
               fetchArticles();
               setShowZipUpload(false);
+            }}
+          />
+        )}
+
+        {/* Create Article Dialog */}
+        {isAdmin && (
+          <CreateArticleDialog
+            open={showCreateArticle}
+            onOpenChange={setShowCreateArticle}
+            onArticleCreated={() => {
+              fetchArticles();
+              setShowQueue(true);
+              setShowCreateArticle(false);
             }}
           />
         )}
