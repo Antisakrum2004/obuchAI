@@ -348,19 +348,9 @@ function EditableArticleCard({
       className="block"
     >
       <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group relative">
-        {/* Admin edit button — top right */}
+        {/* Admin edit/delete — top right, visible on hover */}
         {isAdmin && (
           <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-            {article.status && article.status !== "done" && (
-              <button
-                onClick={handlePublishWithoutAi}
-                disabled={publishing}
-                className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400 transition-colors text-muted-foreground disabled:opacity-50"
-                title="Опубликовать без AI"
-              >
-                {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-              </button>
-            )}
             <button
               onClick={handleStartEdit}
               className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 transition-colors text-muted-foreground"
@@ -467,6 +457,20 @@ function EditableArticleCard({
             </span>
           )}
         </div>
+
+        {/* Publish without AI — always visible for pending articles */}
+        {isAdmin && article.status && article.status !== "done" && (
+          <div className="mt-3 pt-3 border-t border-white/5">
+            <button
+              onClick={handlePublishWithoutAi}
+              disabled={publishing}
+              className="w-full flex items-center justify-center gap-2 h-8 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 transition-colors text-xs font-medium disabled:opacity-50"
+            >
+              {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              Опубликовать без AI
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60">
           {article.categoryName && (
