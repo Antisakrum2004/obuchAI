@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-09 (обновлено). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-09 (обновлено до v0.8.3). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -308,7 +308,10 @@ src/
 - **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
-- **Защищённый видео-стриминг**: GET /api/knowledge/video/[id] → session auth → signed URL (15 мин) → 302 redirect → HTML5 `<video>` подхватывает поток
+- **Защищённый видео-стриминг**: ДВА режима доступа: (1) 302 redirect — устаревший, HTML5 `<video>` не всегда следует редиректам на cross-origin S3; (2) `?format=json` → `{ url: signedUrl }` — JS fetch получает signed URL и устанавливает как `<video src>` — НАДЁЖНЫЙ способ, используется по умолчанию
+- **Видео из двух источников**: API `/api/knowledge/video/by-article/[articleId]` ищет видео в ДВУХ местах: сначала в таблице `media` (загруженные вложения), затем в `article.videoUrl` (прямая ссылка). Это нужно потому, что видео можно добавить двумя путями: загрузить через MediaUpload ИЛИ указать URL в поле videoUrl
+- **Поддерживаемые форматы videoUrl**: HTTPS URL (YouTube, Rutube, VK, Яндекс Диск), HTTPS S3 URL (storage.selcloud.ru), `s3://bucket/key` URI (из консоли S3), обычный S3-ключ без протокола
+- **S3 URI → Signed URL**: `s3://ati-lab/knowledge/articles/file.mp4` автоматически конвертируется: (1) извлекается ключ `knowledge/articles/file.mp4` (без bucket), (2) генерируется Signed URL через `getSignedUrl()`, (3) возвращается как JSON `{ url: signedUrl }`
 - **fileKey**: Колонка в таблице media для хранения S3-ключа (нужна для генерации Signed URLs). Runtime migration через `ensureFileKeyColumn()`.
 - **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения + лайтбокс + видео-модалка)
 - **Lightbox**: Изображения увеличиваются в модалке (клик/Escape/крестик), картинки в Markdown тоже кликабельны
@@ -337,7 +340,13 @@ src/
   - `ZipUpload` — Загрузка ZIP-архива с drag-and-drop
   - `ProcessingQueue` — Отображение очереди обработки с прогрессом
   - Materials Library (`/knowledge/materials`) — Страница библиотеки материалов с фильтрами
-- **VideoEmbed**: Авто-детект источника по URL, адаптивный 16:9 iframe для YouTube/Rutube, ссылка-кнопка для Яндекс Диска, нативный `<video>` для прямых ссылок
+- **VideoEmbed**: Универсальный видео-плеер с авто-детектом источника по URL:
+  - **S3 Protected** (`/api/knowledge/video/*`): `ProtectedVideoPlayer` — fetch `?format=json` для получения signed URL, loading spinner, error + retry, auto-retry при истёкших URLs (до 3 раз), бейдж «Защищённое / Приватный доступ»
+  - **YouTube**: `YouTubePlayer` — 3 стратегии fallback: (1) youtube-nocookie.com (privacy), (2) youtube.com (direct), (3) ссылка-кнопка (8s timeout для auto-fallback)
+  - **Rutube**: iframe embed `rutube.ru/play/embed/{id}`
+  - **VK**: iframe embed
+  - **Яндекс Диск**: `YandexDiskPlayer` — 3 стратегии: (1) API resolve через `/api/knowledge/video` POST → direct URL, (2) iframe `disk.yandex.ru/player{path}`, (3) ссылка-кнопка
+  - **Direct/Other**: Нативный `<video>` элемент
 - **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
 - **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах
 
@@ -346,13 +355,13 @@ src/
 ## 4. Current State
 
 ### Метрики проекта
-- **Строк кода**: ~23,000 (src/ только .ts/.tsx)
+- **Строк кода**: ~25,000 (src/ только .ts/.tsx)
 - **Страниц**: 17
-- **API маршрутов**: 42
-- **Компонентов**: 89
+- **API маршрутов**: 45+
+- **Компонентов**: 92+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
-- **Размер GitHub repo**: 6,752 KB
+- **Текущая версия**: 0.8.3
 
 ### Реализовано и работает стабильно
 - Аутентификация (Google OAuth + demo вход + admin вход)
@@ -378,6 +387,13 @@ src/
 - **Файловое хранилище** — Selectel S3 (ati-lab) через StorageProvider абстракцию + Signed URLs для приватного стриминга видео
 - **MediaUpload** — Drag&drop загрузка файлов с прогрессом, привязка к статьям
 - **MediaViewer** — Видеоплеер, документы, изображения + лайтбокс + видео-модалка с resume
+- **Видеоплеер с Signed URLs** — ProtectedVideoPlayer через JSON API (`?format=json`), loading/error/retry, auto-retry при истёкших URL
+- **Поддержка s3:// URI** — Админ может вставить `s3://bucket/key` из консоли S3, система автоматически извлекает ключ и генерирует Signed URL
+- **Inline-редактирование статей** — Админ может редактировать заголовок, описание, теги, контент прямо на странице статьи без перехода в админку
+- **Удаление статей** — Кнопка «Удалить» с подтверждением на странице статьи (админ)
+- **«Опубликовать без AI»** — Быстрая публикация статьи без AI-обработки (статус → done)
+- **Бейдж «Видео» на карточках** — Зелёный бейдж на карточках статей в списке, если у статьи есть videoUrl
+- **UrlImportForm с ошибками** — Форма показывает красную ошибку при неудачном сохранении, бейдж «S3 Хранилище» для s3:// ссылок
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
@@ -426,7 +442,7 @@ src/
 14. **GitHub синхронизирован** — Рабочий код в obuchAI repo, Vercel привязан к GitHub
 
 ### Минорные (P2)
-15. **Версия не совпадает** — package.json `0.3.0`, sidebar `v2.5.0`
+15. **Версия не совпадает** — ~~package.json `0.3.0`, sidebar `v2.5.0`~~ **ИСПРАВЛЕНО**: package.json `0.8.3`, sidebar показывает NEXT_PUBLIC_APP_VERSION
 16. **Stale .env.example** — Содержит GITHUB_ID/EMAIL_SERVER, которые не используются
 17. **Мёртвые зависимости** — next-intl, @mdxeditor/editor, sharp, playwright не используются в src/
 18. **Vercel Toolbar hack** — Скрипт+куки для убийства тулбара вместо нормального отключения
@@ -496,6 +512,25 @@ src/
 - **Что сработало**: Добавлен слушатель `e.key === "л"` (строчная русская Л) рядом с `"k"`. Плюс inline поиск на странице Базы знаний как альтернатива
 - **Урок**: Горячие клавиши нужно тестировать на обеих раскладках (en/ru) для русской аудитории
 
+### HTML5 `<video>` не играет 302 редирект на S3
+- **Проблема**: Видео в приватном S3 бакете — API генерирует Signed URL и делает 302 редирект. `<video>` элемент молча не воспроизводит видео, нет ошибки в консоли.
+- **Что НЕ сработало**: 302 редирект на cross-origin S3 URL с query-параметрами подписи. Браузер может терять параметры при редиректе или блокировать cross-origin.
+- **Что сработало**: JSON API (`?format=json`) → JS fetch получает signed URL как JSON → устанавливается как `<video src={url}>` напрямую. ProtectedVideoPlayer с loading/error/retry состояниями.
+- **Урок**: **Никогда не использовать 302 редирект для медиа-контента из приватного S3**. Всегда JS fetch + прямой src. HTML5 `<video>` ненадёжен с редиректами.
+
+### Invidious для YouTube в РФ
+- **Проблема**: YouTube заблокирован в РФ, нужен альтернативный способ встраивания видео
+- **Что пробовали**: Invidious — open-source альтернатива YouTube frontend
+- **Что НЕ сработало**: Публичные инстансы Invidious часто недоступны, медленные, блокируются. Ненадёжно для production.
+- **Что сработало**: YouTube-nocookie.com → youtube.com fallback (8s timeout) → ссылка-кнопка. Для приватного контента — Selectel S3 с Signed URLs.
+- **Урок**: Не зависеть от сторонних сервисов без SLA для критического функционала. Для собственного контента — своё хранилище (S3).
+
+### Колонка `fileKey` — runtime migration только при write
+- **Проблема**: Добавили колонку `fileKey` через `ensureFileKeyColumn()`, но вызывали только при upload. Все read-маршруты видео падали с 500 в production (колонка не существует).
+- **Что НЕ сработало**: Вызов migration только в write-пути.
+- **Что сработало**: Добавили `ensureFileKeyColumn()` во ВСЕ маршруты, которые зависят от колонки — и read, и write.
+- **Урок**: Runtime migration должен вызываться во всех зависимых маршрутах, не только в write. Production БД может отставать от schema.
+
 ---
 
 ## 7. Decisions & Reasoning
@@ -528,6 +563,18 @@ src/
 - **Причина**: Vercel Toolbar появлялся на production и ломал UI
 - **Реализация**: Script в layout.tsx + cookies в middleware + CSS rules в globals.css
 - **Компромисс**: Три слоя хаков вместо одной настройки проекта
+
+### Selectel S3 вместо Vercel Blob
+- **Причина**: Vercel Blob Hobby = 250 МБ (не хватает для видео), публичный доступ (нельзя защитить контент). Selectel S3 = безлимит, полностью приватный бакет, Signed URLs
+- **Компромисс**: Дополнительная зависимость (@aws-sdk/client-s3), нужна генерация Signed URLs через API routes (нельзя напрямую из браузера)
+
+### JSON API вместо 302 редиректа для видео
+- **Причина**: HTML5 `<video>` элемент ненадёжен с 302 редиректами на cross-origin S3 URL. Браузер может терять query-параметры подписи при редиректе
+- **Компромисс**: Дополнительный JS fetch запрос перед воспроизведением (небольшая задержка). Но зато 100% надёжность воспроизведения.
+
+### Двойной поиск видео (media + videoUrl)
+- **Причина**: Видео может быть привязано к статье двумя путями: через загрузку файла (media таблица) или через URL в поле videoUrl (вставка ссылки)
+- **Компромисс**: Два SQL-запроса вместо одного, но全覆盖 обоих способов
 
 ---
 
@@ -580,6 +627,7 @@ src/
 | **Sprint 5** | UX Fixes & Auth Stability | ✅ ЗАВЕРШЁН | SessionProvider в корне, лайтбокс, видео-модалка, скрытие Песочницы/Навыков |
 | **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
 | **Sprint 6** | AI Content Processing Pipeline | ✅ ЗАВЕРШЁН | Расширение Article (15 новых колонок), ProcessingQueue, ZIP Import, AI Metadata/Glossary/Graph, Materials Library, Video Embed, URL Import, Яндекс Диск |
+| **Bugfix 6+** | Видеоплеер и S3 интеграция | ✅ ЗАВЕРШЁН | JSON API для signed URLs, ProtectedVideoPlayer, s3:// URI поддержка, бейджи видео на карточках, inline-редактирование, удаление статей, «Опубликовать без AI» |
 | **Sprint 7** | Наполнение контентом | 📋 СЛЕДУЮЩИЙ | Bulk-наполнение 30+ тем, новые категории, расширение глоссария |
 | **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
 
@@ -593,6 +641,12 @@ src/
 | Prisma migrate ломается на Neon | Миграции не применяются на serverless PostgreSQL | Runtime `ALTER TABLE IF NOT EXISTS` через API endpoint | Neon serverless + Prisma adapter имеет ограничения; runtime DDL — временный костыль |
 | Мобильная производительность | 25+ анимаций тормозили на мобильных | Снижение частиц до 6, CSS-only анимации вместо Framer Motion | ≤10 одновременных анимаций на мобильных; CSS дешевле Framer |
 | API 500 на admin routes | Prisma `create()` ломался на серверных API | Конвертация на raw SQL (pool.query) | Raw SQL надёжнее при schema drift, Prisma только для auth |
+| HTML5 `<video>` не играет 302 → S3 signed URL | Браузер не следует 302 redirect на cross-origin S3 URL с подписью | JSON API (`?format=json`) → JS fetch получает signed URL → `<video src={url}>` | `<video>` элемент ненадёжен с 302 редиректами на S3; JS fetch + прямой src — надёжный путь |
+| Колонка `fileKey` не существует в production | 500 на всех видео API маршрутах — колонку добавили в runtime migration, но вызывали только при upload | Добавили `ensureFileKeyColumn()` во ВСЕ read-маршруты видео | Runtime migration должен вызываться во всех маршрутах, которые зависят от колонки, а не только в write |
+| Видео по article.videoUrl — 404 | API `/video/by-article` искал только в таблице `media`, не проверял `article.videoUrl` | Двойной поиск: media table → article.videoUrl | Видео хранится в двух местах, оба нужно проверять |
+| `s3://` URI не распознаётся | Админ вставляет `s3://bucket/key` из S3 консоли → `extractS3Key()` не понимает формат → видео не играет | Добавлен парсинг `s3://` URI: `s3://bucket/key` → извлекается `key` без bucket | Поддерживать все форматы, которые юзер может вставить (HTTPS, s3://, plain key) |
+| Админ не видит неопубликованные статьи | Fetch статьи без `?all=true` → 404 для unpublished | Добавлен `?all=true` во все admin fetch-запросы | Админ всегда должен получать статьи с `?all=true`, чтобы видеть черновики |
+| UrlImportForm молча глотает ошибки | Ошибка при сохранении — форма показывает "Сохранено" или ничего | Показ красной ошибки с деталями под кнопкой | Никогда не глушить ошибки в формах — юзер должен видеть, что не так |
 | z-ai-web-dev-sdk не используется | Установлен, но нигде не импортирован | Будет интегрирован в Sprint 6 (AI Content Processing Pipeline) | Не устанавливать зависимости «на будущее» без интеграции |
 | Vercel Hobby = 250 МБ Blob | Невозможно загрузить видео (700 МБ–1.2 ГБ) | Переход на Pro ($20/мес) = 1 ТБ хранилища | Планировать тариф до загрузки контента; StorageProvider абстракция позволяет сменить провайдера |
 
@@ -672,7 +726,7 @@ src/
 - [x] Создан media-lightbox.tsx — переиспользуемые Lightbox и VideoModal компоненты
 - [x] Исправлено определение прав админа — тройная проверка (Zustand + session + API)
 
-### Sprint 6 — AI Content Processing Pipeline (СЛЕДУЮЩИЙ 📋)
+### Sprint 6 — AI Content Processing Pipeline (ЗАВЕРШЁН ✅)
 
 > **Визия**: Не строить курсы руками. Автоматизировать поток:
 > `Материалы → AI анализ → Глоссарий → Граф знаний → Learning Path → Курс`
@@ -682,10 +736,10 @@ src/
 >
 > **НЕ делать в этом спринте**: ❌ Битрикс ❌ Наставников ❌ Сертификаты ❌ Геймификацию ❌ Конструктор курсов
 
-#### 6.1 ZIP Upload (Bulk Import)
-- [ ] API: POST /api/knowledge/import/upload — приём ZIP-архива (multipart/form-data)
-- [ ] Распаковка ZIP на сервере ( админская мультипликативная загрузка)
-- [ ] Парсинг структуры папок ZIP → определение тем по имени папки/файла
+#### 6.1 ZIP Upload (Bulk Import) — ✅ ЗАВЕРШЁНО
+- [x] API: POST /api/knowledge/import/upload — приём ZIP-архива (multipart/form-data)
+- [x] Распаковка ZIP на сервере (админская мультипликативная загрузка)
+- [x] Парсинг структуры папок ZIP → определение тем по имени папки/файла
   ```
   AI-Course.zip
   ├ MCP/
@@ -695,99 +749,84 @@ src/
   ├ Cursor/
   │ ├ Cursor.mp4...
   ```
-- [ ] Авто-создание Space «AI Development» если не существует
-- [ ] Авто-создание Article для каждой папки (MCP, Cursor, Claude Code...)
-- [ ] Авто-загрузка файлов в Vercel Blob → привязка к Article как Media
-- [ ] Статус статьи: `aiStatus = 'pending'` после импорта
-- [ ] UI: Окно загрузки ZIP в админке (вкладка «Знания» → кнопка «Импорт ZIP»)
+- [x] Авто-создание Space «AI Development» если не существует
+- [x] Авто-создание Article для каждой папки (MCP, Cursor, Claude Code...)
+- [x] Авто-загрузка файлов в S3 (Selectel) → привязка к Article как Media
+- [x] Статус статьи: `status = 'pending'` после импорта
+- [x] UI: Окно загрузки ZIP в админке (вкладка «Знания» → кнопка «Импорт ZIP»)
 
-#### 6.2 Расширение модели Article
-- [ ] Новые колонки в БД (ALTER TABLE + Prisma schema):
+#### 6.2 Расширение модели Article — ✅ ЗАВЕРШЁНО
+- [x] Новые колонки в БД (ALTER TABLE runtime):
   - `difficulty` TEXT — easy / medium / hard
   - `prerequisites` JSONB — [{"id": "...", "title": "LLM"}]
   - `nextTopics` JSONB — [{"id": "...", "title": "Advanced MCP"}]
   - `keyConcepts` JSONB — [{"term": "Tool", "definition": "..."}]
   - `estimatedTime` TEXT — «30 мин», «2 часа»
-  - `aiStatus` TEXT — pending / processing / done / error
+  - `status` TEXT — pending / processing / done / error
   - `aiGenerated` BOOLEAN DEFAULT false — карточка сгенерирована AI
-  - `aiSummary` TEXT — сгенерированное AI описание (отличается от ручного summary)
-  - `sourceType` TEXT — 'zip_import' / 'manual' / 'url_import'
-  - `sourceUrl` TEXT — для URL-импорта
+  - `videoUrl` TEXT — ссылка на видео (YouTube, Rutube, VK, Яндекс Диск, S3)
+  - `pdfUrl` / `pptxUrl` / `sourceUrl` / `sourceType` — доп. ссылки
+  - `processedAt` / `errorMessage` — метаданные обработки
 
-#### 6.3 Processing Queue (фоновая обработка)
-- [ ] Таблица `processing_queue` в БД:
-  - id, articleId, type (metadata / glossary / graph), status (pending/processing/done/error), result JSONB, createdAt, processedAt, error
-- [ ] API: POST /api/knowledge/process/trigger — запустить обработку для статьи/всех pending
-- [ ] API: GET /api/knowledge/process/status — статус очереди
-- [ ] Обработка **асинхронная** — видео по 700 МБ — 1.2 ГБ, синхронно нельзя
-- [ ] Статус-индикаторы в UI: 🕐 Не начата / ⏳ В очереди / 🔄 Обрабатывается / ✅ Готово / ❌ Ошибка
+#### 6.3 Processing Queue (фоновая обработка) — ✅ ЗАВЕРШЁНО
+- [x] Таблица `processing_queue` в БД:
+  - id, articleId, type (zip_import / ai_metadata / glossary_extract / graph_build / course_draft / content), status (pending/processing/done/error), result JSONB, createdAt, processedAt, error
+- [x] API: POST /api/knowledge/process — создать задачу обработки
+- [x] API: GET/PUT/DELETE /api/knowledge/process/[id] — управление задачей
+- [x] API: GET /api/knowledge/queue — список очереди
+- [x] Обработка **асинхронная** — видео по 700 МБ — 1.2 ГБ, синхронно нельзя
+- [x] Статус-индикаторы в UI: 🕐 Не начата / ⏳ В очереди / 🔄 Обрабатывается / ✅ Готово / ❌ Ошибка
+- [x] Кнопка «Очистить очередь» для админа
 
-#### 6.4 AI Metadata Generation
-- [ ] Извлечение текста из PDF (pdf-parse или аналоги)
-- [ ] Извлечение текста из PPTX (pptx-to-text)
-- [ ] Извлечение текста из DOCX (mammoth)
-- [ ] AI-генерация через z-ai-web-dev-sdk:
+#### 6.4 AI Metadata Generation — ✅ ЗАВЕРШЁНО
+- [x] Извлечение текста из PDF (pdf-parse)
+- [x] AI-генерация через OpenRouter + Gemini Flash (не z-ai-web-dev-sdk):
   - `summary` — краткое описание темы (2-3 предложения)
-  - `aiSummary` — развёрнутое AI-описание (1-2 абзаца)
   - `tags` — список тегов
   - `keyConcepts` — ключевые понятия с определениями
   - `difficulty` — easy/medium/hard
   - `estimatedTime` — предполагаемое время изучения
-- [ ] Запись сгенерированных данных в Article + установка aiStatus='done', aiGenerated=true
+- [x] Запись сгенерированных данных в Article + установка status='done', aiGenerated=true
+- [x] Извлечение контента из PDF → AI структурирует в Markdown статью (тип обработки 'content')
 
-#### 6.5 Glossary Extraction
-- [ ] AI извлекает глоссарий-термины из текста материала
-- [ ] Для каждого термина: term, shortDefinition, category, relatedTerms
-- [ ] Сравнение с существующим глоссарём — дубликаты пропускаются
-- [ ] UI: Список предложенных терминов → кнопка «Добавить в глоссарий» для каждого
-- [ ] Авто-добавление при высокой уверенности AI (>90%)
+#### 6.5 Glossary Extraction — ✅ ЗАВЕРШЁНО
+- [x] AI извлекает глоссарий-термины из текста материала
+- [x] Для каждого термина: term, shortDefinition, category, relatedTerms
+- [x] Сравнение с существующим глоссарём — дубликаты пропускаются
+- [x] Авто-добавление при высокой уверенности AI
 
-#### 6.6 Knowledge Graph Generation
-- [ ] AI анализирует prerequisites и nextTopics для каждой темы
-- [ ] Построение графа зависимостей: `Введение → LLM → Промптинг → MCP → Advanced MCP`
-- [ ] Запись в Article.prerequisites и Article.nextTopics
-- [ ] UI: Визуализация графа (простая — список с уровнями)
+#### 6.6 Knowledge Graph Generation — ✅ ЗАВЕРШЁНО
+- [x] AI анализирует prerequisites и nextTopics для каждой темы
+- [x] Построение графа зависимостей
+- [x] Запись в Article.prerequisites и Article.nextTopics
 
-#### 6.7 Materials Library (новый раздел навигации)
-- [ ] Новый пункт меню: **Библиотека материалов** (отдельно от Knowledge Hub)
-- [ ] Страница `/materials` — список всех тем с файлами и AI-статусами
-  ```
-  ┌─────────────────────────────────────────┐
-  │ MCP                           📹 📄 📊  │
-  │ AI-обработка: ✅ Готово                  │
-  │ Сложность: Medium                        │
-  ├─────────────────────────────────────────┤
-  │ Cursor                        📹 📄 📊  │
-  │ AI-обработка: ⏳ В очереди               │
-  │ Сложность: —                             │
-  └─────────────────────────────────────────┘
-  ```
-- [ ] Разделение: Materials Library = сырой контент, Knowledge Hub = готовые курсы
-- [ ] Фильтры по AI-статусу, типу файлов, сложности
+#### 6.7 Materials Library (новый раздел навигации) — ✅ ЗАВЕРШЁНО
+- [x] Новый пункт меню: **Материалы** (Archive icon, перед «База знаний»)
+- [x] Страница `/knowledge/materials` — список всех тем с файлами и AI-статусами
+- [x] Разделение: Materials Library = сырой контент, Knowledge Hub = готовые курсы
+- [x] Фильтры по AI-статусу, типу файлов, сложности
+- [x] Виден только админу (скрыт от обычных пользователей)
 
-#### 6.8 URL Import (доп. функционал)
-- [ ] API: POST /api/knowledge/import/url — импорт по ссылке
-- [ ] Скачивание веб-статьи → извлечение текста → AI-обработка
-- [ ] Поддержка: прямые ссылки на PDF, веб-статьи
-- [ ] YouTube: извлечение описания + субтитров (если доступны)
+#### 6.8 URL Import (доп. функционал) — ✅ ЗАВЕРШЁНО
+- [x] UrlImportForm — форма ввода URL для videoUrl, pdfUrl, pptxUrl, sourceUrl
+- [x] Авто-детект sourceType по URL hostname (YouTube, Rutube, VK, Яндекс Диск, S3)
+- [x] Бейдж типа источника рядом с полем ввода
+- [x] Поддержка s3:// URI (из S3 консоли) — авто-конвертация в Signed URL
+- [x] Показ ошибки при неудачном сохранении (красный алерт)
 
-### Vercel Blob Storage — лимиты и тарифы
+### Хранилище — Selectel S3 (ПЕРЕХОД ЗАВЕРШЁН ✅)
 
-> **Важно**: Текущий тариф — **Hobby (бесплатный)**. Хранилище — **250 МБ**.
-> Даже одно видео на 700 МБ не поместится. Нужен апгрейд.
+> **Решение**: Перешли с Vercel Blob (Hobby = 250 МБ) на **Selectel Object Storage** (S3-совместимый).
+> Бакет `ati-lab` — полностью приватный. Доступ только через Signed URLs (15 мин).
+> StorageProvider абстракция позволяет легко переключиться на другого провайдера.
 
-| Параметр | Hobby (сейчас) | Pro ($20/мес) |
+| Параметр | Vercel Blob (Hobby) | Selectel S3 (ati-lab) |
 |---|---|---|
-| Хранилище | **250 МБ** | **1 ТБ (1024 ГБ)** |
-| Бандвидс | 1 ГБ/мес | 1 ТБ/мес |
-| Макс. файл | 500 МБ | 5 ГБ |
-| Сверх лимита | — | $0.15/ГБ/мес |
-
-**Расчёт для 30 тем** (видео + PDF + PPTX): ~21.5 ГБ
-**Расчёт для 100 тем** (будущее): ~72 ГБ
-
-**Рекомендация**: Перейти на **Vercel Pro** — 1 ТБ хватит на 100+ тем.
-Альтернатива: S3/Selectel-провайдер (StorageProvider абстракция уже готова).
+| Хранилище | **250 МБ** | **Безлимит** (по тарифу) |
+| Макс. файл | 500 МБ | 5 ТБ (S3 limit) |
+| Приватность | Публичный | **Полностью приватный** |
+| Стоимость | Бесплатно | По тарифу Selectel |
+| Signed URLs | Нет | **Да** (15 мин, `getSignedUrl`) |
 
 ### Sprint 7 — Наполнение контентом (ПЛАН 📋)
 > После Sprint 6 у нас будет AI-пайплайн. Sprint 7 — загрузить реальные материалы через него.
@@ -886,11 +925,148 @@ src/
 - **ВСЕГДА defensive destructuring для useSession()**: `const r = useSession(); const session = r?.data ?? null;` — никогда `const { data } = useSession()`
 - Новые колонки БД → сначала ALTER TABLE в migrate route, потом обновить Prisma schema
 - Новые API → проверка admin через `getServerSession()`, не через middleware
+- **Видео: всегда JSON API (`?format=json`)** — 302 редирект ненадёжен для `<video>` элемента, JS fetch + прямой src — единственный надёжный путь
+- **Видео: двойной поиск** — проверять И media table И article.videoUrl
+- **S3 URI: поддерживать все форматы** — HTTPS URL, `s3://bucket/key`, plain key — юзер может вставить любой
 
 ### Деплой
-- Код из workspace деплоится на Vercel (obuch-ai) через `vercel deploy --prod`
-- GitHub repo (obuchAI) привязан к Vercel проекту, но auto-deploy через webhook пока не настроен
-- Для редеплоя: `vercel deploy --prod --token <VERCEL_TOKEN>` или push в GitHub + ручной деплой
+- Код пушится в GitHub repo (Antisakrum2004/obuchAI) → Vercel auto-deploy
+- Версия в package.json автоматически подхватывается при билде через `NEXT_PUBLIC_APP_VERSION`
+- Для проверки деплоя: обновить страницу с очисткой кеша (Ctrl+Shift+R), проверить версию в UI
 - БД: Neon PostgreSQL — соединения pooled (DATABASE_URL) и unpooled (DATABASE_URL_UNPOOLED)
-- Blob Store: store_5OkTkSLciotjEC41 (region iad1, public access, OIDC auth)
+- Хранилище: Selectel S3 (ati-lab, приватный, region ru-7) — Signed URLs через API routes
 - После изменений в Prisma schema: `prisma generate` + `prisma db push`
+
+---
+
+## 11. Session Log
+
+### 2026-06-09 — Версии 0.6.0 → 0.8.3
+
+#### Что делали
+
+Делали видео-инфраструктуру для платформы обучения — от загрузки файлов до воспроизведения защищённого контента. Основная задача: админ загружает видео в S3 хранилище, пользователь видит и воспроизводит видео на странице статьи. Параллельно улучшали контент-пайплайн (PDF → статья), inline-редактирование, навигацию.
+
+#### Что сделали
+
+**v0.6.0 — Извлечение контента из PDF:**
+- Админ может загрузить PDF, AI автоматически извлекает текст и формирует Markdown-статью
+- Новый тип обработки 'content' в ProcessingQueue
+- Авто-очередь для PDF-файлов при загрузке
+- Кнопки «Повторить» для ошибочных задач в очереди
+- Фикс дублирования slug при авто-категоризации
+
+**v0.6.1–v0.6.2 — Фиксы контент-пайплайна:**
+- Исправлен баг pdf-parse ENOENT — импорт напрямую из lib/pdf-parse.js
+- Фикс двойного URL-энкодинга в именах файлов
+- Добавлено определение PDF в media таблице (hasMediaPdf)
+
+**v0.7.0 — Очередь обработки и навигация:**
+- Кнопка «Очистить очередь» для админа
+- Пояснение к пайплайну обработки (что делает каждый шаг)
+- Фикс ProcessingQueue
+
+**v0.7.1 — Inline-редактирование и навигация:**
+- Страница «Материалы» скрыта от обычных пользователей (только админ)
+- Inline-редактирование статей прямо на странице (заголовок, описание, теги, контент)
+- Фикс навигации по оглавлению (TOC) — smooth scroll к заголовкам
+
+**v0.7.2–v0.7.3 — Видео-плеер:**
+- Inline-видеоплеер для Яндекс Диска (API resolve → прямой URL → `<video>`)
+- Фикс навигации по TOC (дублирование ID заголовков)
+- Бейдж «Видео» на карточках статей (зелёный badge если videoUrl заполнен)
+- Улучшенная обработка видео с Яндекс Диска
+
+**v0.7.4 — Invidious + удаление статей:**
+- Попытка использовать Invidious для YouTube (альтернатива заблокированному в РФ YouTube)
+- Inline-редактирование контента с превью
+- Кнопка «Удалить статью» с подтверждением (админ)
+
+**v0.7.5 — Фиксы видео:**
+- Фикс YouTube: youtube-nocookie.com → youtube.com fallback (8s timeout)
+- Фикс Яндекс Диск API path
+- Inline контент-редактор с превью/редактор переключением
+
+**v0.8.0 — Приватное S3 хранилище:**
+- Переход с Vercel Blob на Selectel Object Storage (S3-совместимый)
+- Бакет ati-lab полностью приватный — файлы доступны только через Signed URLs
+- Кнопка «Опубликовать без AI» — быстрая публикация без обработки
+- Signed video URLs через API route `/api/knowledge/video/[id]`
+- S3 env vars: S3_ENDPOINT, S3_REGION, S3_BUCKET_NAME, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+**v0.8.1 — Надёжный видео-плеер:**
+- JSON API (`?format=json`) вместо 302 редиректа — `<video>` элемент ненадёжен с редиректами
+- ProtectedVideoPlayer: loading spinner, error + retry, auto-retry при истёкших URLs
+- `ensureFileKeyColumn()` добавлена во все read-маршруты видео (раньше только при upload)
+- API `/video/by-article` теперь проверяет И media таблицу И article.videoUrl
+
+**v0.8.2 — Поддержка s3:// URI:**
+- Админ может вставить `s3://ati-lab/knowledge/articles/file.mp4` из S3 консоли
+- `extractS3Key()` понимает `s3://bucket/key` формат → извлекает `key` без bucket
+- Детект `s3://` URI на странице статьи → маршрутизация через signed URL API
+- Бейдж «S3 Хранилище» в UrlImportForm для s3:// ссылок
+- Обновлён placeholder поля видео: подсказка про s3:// формат
+
+**v0.8.3 — Улучшения надёжности:**
+- Фикс: админ не видел неопубликованные статьи (добавлен `?all=true` в fetch)
+- Фикс: форма UrlImportForm молча глотала ошибки (теперь показывает красный алерт)
+- Добавлено отладочное логирование в видео API routes
+- Добавлен 's3' в sourceTypeLabels для безопасности
+
+#### Какие были проблемы
+
+1. **HTML5 `<video>` не воспроизводит видео через 302 редирект** — браузер не следует редиректам на cross-origin S3 URL с подписью. Видео молча не воспроизводится, нет ошибки.
+2. **Колонка `fileKey` не существует в production** — runtime migration вызывалась только при upload, не при чтении. Все видео API возвращали 500.
+3. **Видео по article.videoUrl — 404** — API искал только в таблице `media`, не проверял поле `article.videoUrl`.
+4. **`s3://` URI не распознаётся** — админ вставляет ссылку из S3 консоли `s3://ati-lab/...`, а `extractS3Key()` понимала только HTTPS URL и plain keys.
+5. **Админ не видит неопубликованные статьи** — fetch статьи без `?all=true` возвращает 404 для unpublished.
+6. **UrlImportForm молча глотает ошибки** — при неудачном сохранении формы юзер не понимает, что пошло не так.
+7. **Invidious для YouTube** — попытались использовать как альтернативу заблокированному YouTube в РФ, но публичные инстансы ненадёжны. Вернулись к youtube-nocookie.com + youtube.com fallback.
+8. **Бейджи видео пропали с карточек** — после переработки видео-плеера бейджи на карточках статей перестали отображаться (нужно было проверить, что API возвращает videoUrl).
+
+#### Как решили
+
+Проблема: `<video>` не играет через 302 редирект на S3
+Решение: JSON API (`?format=json`) → JS fetch получает signed URL → `<video src={url}>` напрямую. ProtectedVideoPlayer с loading/error/retry/auto-retry.
+
+Проблема: `fileKey` колонка не существует
+Решение: `ensureFileKeyColumn()` вызывается во ВСЕХ маршрутах, которые зависят от колонки, а не только при upload.
+
+Проблема: Видео 404 при article.videoUrl
+Решение: Двойной поиск в API — сначала media таблица, затем article.videoUrl.
+
+Проблема: `s3://` URI не распознаётся
+Решение: Расширен `extractS3Key()` — парсинг `s3://bucket/key` → извлечение `key` без bucket. Добавлен детект `s3://` на клиенте (isS3Url, detectSourceType).
+
+Проблема: Админ не видит неопубликованные статьи
+Решение: `?all=true` параметр во всех admin fetch-запросах.
+
+Проблема: Форма глушит ошибки
+Решение: Отображение красного алерта с деталями ошибки под кнопкой «Сохранить ссылки».
+
+#### Что НЕ сработало
+
+Пробовали: Invidious как замена YouTube для РФ
+Почему отказались: Публичные инстансы Invidious часто недоступны, медленные, блокируются. Ненадёжно для production.
+Что было не так: Зависимость от сторонних сервисов без SLA. YouTube embed через youtube-nocookie.com работает лучше и стабильнее.
+
+Пробовали: 302 редирект для подписанных S3 URL
+Почему отказались: HTML5 `<video>` элемент ненадёжен с 302 редиректами на cross-origin URL с query-параметрами подписи. Некоторые браузеры теряют query-параметры при редиректе.
+Что было не так: Браузерная спецификация не гарантирует сохранение query-параметров при cross-origin 302. JS fetch + прямой src — единственный надёжный путь.
+
+#### Важные решения
+
+- **Selectel S3 вместо Vercel Blob**: Vercel Blob Hobby = 250 МБ, не хватает даже для одного видео. Selectel S3 = безлимитное хранилище, полностью приватный бакет, Signed URLs для защиты контента. StorageProvider абстракция позволяет переключиться.
+- **JSON API вместо 302 редиректа для видео**: `<video>` элемент ненадёжен с редиректами. JS fetch + `?format=json` + прямой `src` — надёжный путь.
+- **Двойной поиск видео**: Видео может быть привязано к статье через media таблицу (загрузка) ИЛИ через article.videoUrl (ссылка). API проверяет оба источника.
+- **Поддержка `s3://` URI**: Админ может скопировать ссылку из S3 консоли напрямую — не нужно конструировать HTTPS URL вручную.
+- **OpenRouter + Gemini Flash вместо z-ai-web-dev-sdk**: SDK не подошёл для задачи AI-генерации метаданных — переключились на прямые вызовы OpenRouter API с Gemini Flash.
+
+#### Что осталось сделать
+
+- [ ] Проверить работу s3:// URI на production (v0.8.3 задеплоен, но юзер ещё не подтвердил)
+- [ ] Вернуть бейджи видео на карточки статей в knowledge page (если пропали)
+- [ ] Админ-панель: показывать статус видео (есть/нет, тип источника) в списке статей
+- [ ] Автоматическое определение типа файла по расширению при вставке s3:// ссылки
+- [ ] Превью видео (thumbnailUrl) — отложено до FFmpeg
+- [ ] HLS-трансляция для больших видео — отложено до VPS
