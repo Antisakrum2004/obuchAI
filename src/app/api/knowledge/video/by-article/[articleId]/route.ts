@@ -7,30 +7,25 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
 /**
  * GET /api/knowledge/video/by-article/[articleId]
  *
- * Streams video from S3. Two modes:
- * 1. Default → 302 redirect to signed S3 URL (browser streams directly from S3)
- * 2. ?format=json → returns signed URL as JSON
+ * Возвращает Signed URL для видео статьи из приватного S3-хранилища.
  *
- * Signed URLs are cleaned of x-amz-checksum-mode=ENABLED which Selectel doesn't support.
+ * ВАЖНО: Этот роут НЕ скачивает и НЕ стримит видео через себя.
+ * Он ТОЛЬКО генерирует подписанную ссылку и отдаёт её клиенту:
+ *   - Без параметров → 302 редирект на signed URL
+ *   - ?format=json   → JSON { url: "signedUrl" }
+ *
+ * Браузер сотрудника качает видео НАПРЯМУЮ из Selectel,
+ * минуя сервера Vercel/AWS — это экономит трафик Selectel.
  */
 
 const s3Provider = new S3StorageProvider();
 
-// Runtime migration memo
-let fileKeyEnsured = false;
-
-async function ensureFileKeyColumn(): Promise<void> {
-  if (fileKeyEnsured) return;
-  try {
-    await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`);
-  } catch {
-    // Column already exists — not critical
-  }
-  fileKeyEnsured = true;
-}
-
 /**
- * Extract S3 key from various URL formats
+ * Извлечь S3-ключ из URL, хранящегося в БД.
+ * Поддерживаемые форматы:
+ *   - s3://bucket/key
+ *   - https://endpoint/bucket/key
+ *   - plain key (knowledge/...)
  */
 function extractS3Key(url: string): string | null {
   if (url.startsWith("s3://")) {
@@ -74,13 +69,10 @@ export async function GET(
       );
     }
 
-    // 2. Ensure fileKey column exists
-    await ensureFileKeyColumn();
-
-    // 3. Resolve articleId
+    // 2. Resolve articleId
     const { articleId } = await params;
 
-    // 4. Try to find video in media table first
+    // 3. Try to find video in media table first
     const mediaResult = await pool.query(
       `SELECT id, "fileName", url, "fileKey"
        FROM media
@@ -108,7 +100,7 @@ export async function GET(
       }
     }
 
-    // 5. If no media found, check article.videoUrl
+    // 4. If no media found, check article.videoUrl
     if (!s3Key && !directUrl) {
       const articleResult = await pool.query(
         `SELECT id, "videoUrl" FROM articles WHERE id = $1`,
@@ -129,7 +121,7 @@ export async function GET(
       }
     }
 
-    // 6. Nothing found
+    // 5. Nothing found
     if (!s3Key && !directUrl) {
       return NextResponse.json(
         { error: "Видео не найдено для данной статьи" },
@@ -137,7 +129,7 @@ export async function GET(
       );
     }
 
-    // 7. For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
+    // 6. For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
     if (directUrl) {
       const format = request.nextUrl.searchParams.get("format");
       if (format === "json") {
@@ -146,48 +138,8 @@ export async function GET(
       return NextResponse.redirect(directUrl);
     }
 
-    // 8. S3 video — resolve key
-    const resolved = await s3Provider.resolveKey(s3Key!);
-
-    let actualKey: string;
-    let fileSizeMB = 0;
-
-    if (resolved) {
-      actualKey = resolved.key;
-      fileSizeMB = Math.round(resolved.size / 1024 / 1024);
-      console.log(`[video/by-article] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
-
-      // If the resolved key differs from what we had, update the DB for next time
-      if (actualKey !== s3Key) {
-        console.log(`[video/by-article] Key corrected: "${s3Key}" → "${actualKey}"`);
-        try {
-          await pool.query(
-            `UPDATE articles SET "videoUrl" = $2 WHERE id = $1`,
-            [articleId, actualKey]
-          );
-        } catch (updateErr) {
-          console.warn('[video/by-article] Failed to update videoUrl in DB:', updateErr);
-        }
-
-        if (mediaResult.rows && mediaResult.rows.length > 0) {
-          try {
-            await pool.query(
-              `UPDATE media SET "fileKey" = $2 WHERE id = $1`,
-              [mediaResult.rows[0].id, actualKey]
-            );
-          } catch (updateErr) {
-            console.warn('[video/by-article] Failed to update media fileKey in DB:', updateErr);
-          }
-        }
-      }
-    } else {
-      console.warn(`[video/by-article] Key not found in S3, trying signed URL: "${s3Key}"`);
-      actualKey = s3Key!;
-    }
-
-    // 9. Generate signed URL (with x-amz-checksum-mode stripped by getSignedUrl)
-    const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
-    console.log(`[video/by-article] Signed URL generated for "${actualKey}" (${fileSizeMB}MB)`);
+    // 7. S3 video — generate signed URL (pure computation, NO S3 API calls)
+    const signedUrl = await s3Provider.getSignedUrl(s3Key!, 3600);
 
     // Return format
     const format = request.nextUrl.searchParams.get("format");
@@ -195,9 +147,8 @@ export async function GET(
       return NextResponse.json({ url: signedUrl });
     }
 
-    // 302 redirect to signed URL — browser streams directly from S3
-    // This is the only reliable way on Vercel serverless (no streaming 500MB through server)
-    return NextResponse.redirect(signedUrl);
+    // 302 redirect — browser streams directly from Selectel
+    return NextResponse.redirect(signedUrl, { status: 302 });
   } catch (error) {
     console.error("[video/by-article] Error:", error);
     return NextResponse.json(

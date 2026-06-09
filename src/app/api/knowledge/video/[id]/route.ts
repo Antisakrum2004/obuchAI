@@ -7,26 +7,54 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
 /**
  * GET /api/knowledge/video/[id]
  *
- * Video streaming by media ID.
- * Default → 302 redirect to signed S3 URL
- * ?format=json → returns signed URL as JSON
+ * Возвращает Signed URL для видео из приватного S3-хранилища.
  *
- * Signed URLs are cleaned of x-amz-checksum-mode=ENABLED which Selectel doesn't support.
+ * ВАЖНО: Этот роут НЕ скачивает и НЕ стримит видео через себя.
+ * Он ТОЛЬКО генерирует подписанную ссылку и отдаёт её клиенту:
+ *   - Без параметров → 302 редирект на signed URL
+ *   - ?format=json   → JSON { url: "signedUrl" }
+ *
+ * Браузер сотрудника качает видео НАПРЯМУЮ из Selectel,
+ * минуя сервера Vercel/AWS — это экономит трафик Selectel.
+ *
+ * Signed URLs генерируются вручную (AWS Sig V4) без x-amz-checksum-mode,
+ * который Selectel не поддерживает (ERR_CONNECTION_RESET).
  */
 
 const s3Provider = new S3StorageProvider();
 
-// Runtime migration memo
-let fileKeyEnsured = false;
+/**
+ * Извлечь S3-ключ из URL, хранящегося в БД.
+ * Поддерживаемые форматы:
+ *   - s3://bucket/key
+ *   - https://endpoint/bucket/key
+ *   - plain key (knowledge/...)
+ */
+function extractS3Key(url: string): string | null {
+  const endpoint = process.env.S3_ENDPOINT || "";
+  const bucket = process.env.S3_BUCKET_NAME || "";
+  const prefix = `${endpoint}/${bucket}/`;
 
-async function ensureFileKeyColumn(): Promise<void> {
-  if (fileKeyEnsured) return;
-  try {
-    await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`);
-  } catch {
-    // Column already exists — not critical
+  if (url.startsWith("s3://")) {
+    const withoutProtocol = url.slice(5);
+    const slashIndex = withoutProtocol.indexOf("/");
+    if (slashIndex > 0) {
+      return withoutProtocol.slice(slashIndex + 1);
+    }
+    return null;
   }
-  fileKeyEnsured = true;
+
+  if (url.startsWith(prefix)) {
+    return url.slice(prefix.length);
+  }
+
+  // Если это не URL (нет http), считаем что это уже ключ
+  if (!url.startsWith("http")) {
+    return url;
+  }
+
+  // URL не из нашего S3
+  return null;
 }
 
 export async function GET(
@@ -34,6 +62,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // ── 1. Авторизация ──
     const sessionResult = await getServerSession(authOptions);
     const session = sessionResult ?? undefined;
     const user = session?.user;
@@ -45,10 +74,9 @@ export async function GET(
       );
     }
 
-    await ensureFileKeyColumn();
-
     const { id } = await params;
 
+    // ── 2. Получаем ключ файла из БД ──
     const result = await pool.query(
       `SELECT id, "fileName", "mimeType", "fileType", url, "fileKey"
        FROM media
@@ -65,83 +93,45 @@ export async function GET(
 
     const media = result.rows[0];
 
-    let s3Key: string;
+    // ── 3. Определяем S3-ключ ──
+    // Приоритет: fileKey из БД → извлечение из url
+    let s3Key: string | null = null;
 
     if (media.fileKey) {
       s3Key = media.fileKey;
-    } else {
-      const url = media.url as string;
-
-      if (!url) {
-        return NextResponse.json(
-          { error: "У видео отсутствует ссылка на файл" },
-          { status: 500 }
-        );
-      }
-
-      const endpoint = process.env.S3_ENDPOINT || "";
-      const bucket = process.env.S3_BUCKET_NAME || "";
-      const prefix = `${endpoint}/${bucket}/`;
-
-      if (url.startsWith("s3://")) {
-        const withoutProtocol = url.slice(5);
-        const slashIndex = withoutProtocol.indexOf("/");
-        if (slashIndex > 0) {
-          s3Key = withoutProtocol.slice(slashIndex + 1);
-        } else {
-          return NextResponse.json(
-            { error: "Некорректный формат s3:// URI" },
-            { status: 400 }
-          );
-        }
-      } else if (url.startsWith(prefix)) {
-        s3Key = url.slice(prefix.length);
-      } else if (!url.startsWith("http")) {
-        s3Key = url;
-      } else {
-        console.warn(`[video/${id}] URL не из S3, перенаправление:`, url);
-        return NextResponse.redirect(url);
-      }
+    } else if (media.url) {
+      s3Key = extractS3Key(media.url);
     }
 
-    // Resolve key
-    const resolved = await s3Provider.resolveKey(s3Key);
-
-    let actualKey = s3Key;
-
-    if (resolved) {
-      actualKey = resolved.key;
-      const fileSizeMB = Math.round(resolved.size / 1024 / 1024);
-      console.log(`[video/${id}] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
-
-      if (actualKey !== s3Key) {
-        try {
-          await pool.query(
-            `UPDATE media SET "fileKey" = $2 WHERE id = $1`,
-            [media.id, actualKey]
-          );
-          console.log(`[video/${id}] fileKey corrected in DB`);
-        } catch {}
+    if (!s3Key) {
+      // URL не из нашего S3 — перенаправляем напрямую
+      if (media.url && media.url.startsWith("http")) {
+        return NextResponse.redirect(media.url);
       }
-    } else {
-      console.warn(`[video/${id}] Key not found via resolveKey, trying direct: "${s3Key}"`);
+      return NextResponse.json(
+        { error: "У видео отсутствует ключ файла в S3" },
+        { status: 500 }
+      );
     }
 
-    // Generate signed URL (with x-amz-checksum-mode stripped)
-    const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+    // ── 4. Генерируем Signed URL (чистая криптография, без сети) ──
+    const signedUrl = await s3Provider.getSignedUrl(s3Key, 3600);
 
-    // Return format
+    // ── 5. Отдаём результат ──
     const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
       return NextResponse.json({ url: signedUrl });
     }
 
-    // 302 redirect to signed URL
-    return NextResponse.redirect(signedUrl);
+    // Жёсткий 302 редирект — браузер качает напрямую из Selectel
+    return NextResponse.redirect(signedUrl, { status: 302 });
   } catch (error) {
     console.error("[video/[id]] Error:", error);
     return NextResponse.json(
-      { error: "Ошибка генерации ссылки на видео", details: error instanceof Error ? error.message : String(error) },
+      {
+        error: "Ошибка генерации ссылки на видео",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

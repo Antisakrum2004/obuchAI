@@ -77,35 +77,84 @@ const sourceTypeLabels: Record<string, string> = {
   other: "Ссылка",
 };
 
-// ─── Protected Video Player (S3 streaming proxy) ───
+// ─── Protected Video Player (S3 direct download) ───
 
 /**
  * Компонент для воспроизведения видео из приватного S3-хранилища.
- * Использует streaming proxy — браузер НЕ подключается к S3 напрямую.
- * Вместо этого <video> обращается к нашему API, который проксирует
- * Range-запросы к S3. Это решает проблему ERR_CONNECTION_RESET с Selectel.
  *
- * Поддерживает:
- * - Загрузку с индикацией прогресса
- * - Обработку ошибок с возможностью повтора
- * - Видео-перемотку (Range-запросы проксируются автоматически)
+ * Схема работы (БЕЗ проксирования через Vercel):
+ * 1. Запрашиваем signed URL через ?format=json (один короткий API-вызов)
+ * 2. Устанавливаем signed URL как <video src>
+ * 3. Браузер качает видео НАПРЯМУЮ из Selectel — без участия Vercel
+ *
+ * Это экономит трафик Selectel: видео не гоняется через сервера AWS в США.
+ * Range-запросы (перемотка) тоже идут напрямую в Selectel.
  */
 function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; title?: string; className?: string }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // The video src is the API path directly — the browser's <video> element
-  // will automatically make Range requests, which our API proxies to S3.
-  const videoSrc = apiPath;
+  // Fetch signed URL via JSON API (one lightweight call, no video data through Vercel)
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSignedUrl(null);
+
+    const mediaId = apiPath.split("/").pop();
+    if (!mediaId) {
+      setError("Некорректный путь к видео");
+      setLoading(false);
+      return;
+    }
+
+    fetch(`/api/knowledge/video/${mediaId}?format=json`)
+      .then((res) => {
+        if (!res.ok) return res.json().then((d) => { throw new Error(d.error || `Ошибка ${res.status}`); });
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled && data.url) {
+          setSignedUrl(data.url);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+          setLoading(false);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [apiPath]);
 
   const handleRetry = () => {
-    // Force video element to reload by incrementing retry count
-    setRetryCount((c) => c + 1);
+    setSignedUrl(null);
     setError(null);
     setLoading(true);
+
+    const mediaId = apiPath.split("/").pop();
+    if (!mediaId) return;
+
+    fetch(`/api/knowledge/video/${mediaId}?format=json`)
+      .then((res) => {
+        if (!res.ok) return res.json().then((d) => { throw new Error(d.error || `Ошибка ${res.status}`); });
+        return res.json();
+      })
+      .then((data) => {
+        if (data.url) {
+          setSignedUrl(data.url);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+        setLoading(false);
+      });
   };
 
   const handleVideoError = () => {
@@ -175,21 +224,22 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
           </div>
         )}
 
-        <video
-          key={retryCount}
-          ref={videoRef}
-          src={videoSrc}
-          controls
-          className={cn("w-full rounded-lg", loading && "sr-only")}
-          preload="metadata"
-          onLoadStart={handleLoadStart}
-          onCanPlay={handleVideoCanPlay}
-          onError={handleVideoError}
-          onWaiting={handleVideoWaiting}
-          onPlaying={handleVideoPlaying}
-        >
-          Ваш браузер не поддерживает воспроизведение видео.
-        </video>
+        {signedUrl && (
+          <video
+            ref={videoRef}
+            src={signedUrl}
+            controls
+            className={cn("w-full rounded-lg", loading && "sr-only")}
+            preload="metadata"
+            onLoadStart={handleLoadStart}
+            onCanPlay={handleVideoCanPlay}
+            onError={handleVideoError}
+            onWaiting={handleVideoWaiting}
+            onPlaying={handleVideoPlaying}
+          >
+            Ваш браузер не поддерживает воспроизведение видео.
+          </video>
+        )}
 
         {/* Buffering indicator for large files */}
         {buffering && !loading && (
