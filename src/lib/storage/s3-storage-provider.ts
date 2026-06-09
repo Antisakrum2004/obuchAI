@@ -209,27 +209,31 @@ export class S3StorageProvider implements StorageProvider {
 
     const endpointUrl = new URL(config.endpoint);
     const host = endpointUrl.host;
-    // Path-style access: /bucket/key
-    const path = "/" + config.bucket + "/" + key;
+
+    // Path-style access: /bucket/key — each segment URI-encoded
+    const rawPath = "/" + config.bucket + "/" + key;
+    const encodedPath = rawPath.split("/").map((s) => encodeURIComponent(s)).join("/");
 
     // Canonical query string — NO x-amz-checksum-mode, NO x-id
-    const queryParams: [string, string][] = [
-      ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
-      ["X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD"],
-      ["X-Amz-Credential", config.accessKeyId + "/" + dateOnly + "/" + config.region + "/s3/aws4_request"],
-      ["X-Amz-Date", dateStamp],
-      ["X-Amz-Expires", String(expiresIn)],
-      ["X-Amz-SignedHeaders", "host"],
-    ];
+    // Parameters MUST be sorted by key name for AWS Signature V4
+    const queryParams: Record<string, string> = {
+      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+      "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+      "X-Amz-Credential": config.accessKeyId + "/" + dateOnly + "/" + config.region + "/s3/aws4_request",
+      "X-Amz-Date": dateStamp,
+      "X-Amz-Expires": String(expiresIn),
+      "X-Amz-SignedHeaders": "host",
+    };
 
-    const canonicalQuerystring = queryParams
-      .map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
+    const canonicalQuerystring = Object.keys(queryParams)
+      .sort()
+      .map((k) => encodeURIComponent(k) + "=" + encodeURIComponent(queryParams[k]))
       .join("&");
 
-    // Canonical request
+    // Canonical request — uses URI-encoded path
     const canonicalRequest = [
       "GET",
-      path,
+      encodedPath,
       canonicalQuerystring,
       "host:" + host,
       "",
@@ -254,8 +258,8 @@ export class S3StorageProvider implements StorageProvider {
     // Signature
     const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
 
-    // Final URL
-    return config.endpoint + path + "?" + canonicalQuerystring + "&X-Amz-Signature=" + signature;
+    // Final URL — encoded path for the browser
+    return config.endpoint + encodedPath + "?" + canonicalQuerystring + "&X-Amz-Signature=" + signature;
   }
 
   /**
