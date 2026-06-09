@@ -261,7 +261,21 @@ export class S3StorageProvider implements StorageProvider {
 
     // Use the presigning client (with middleware to remove ChecksumMode)
     const presigningClient = getPresigningClient();
-    const signedUrl = await getSignedUrl(presigningClient, command, { expiresIn });
+    let signedUrl = await getSignedUrl(presigningClient, command, { expiresIn });
+
+    // CRITICAL FIX: Remove x-amz-checksum-mode=ENABLED from the signed URL.
+    // AWS SDK v3 automatically adds this parameter even when ChecksumMode is deleted
+    // from the command input, because the serializer adds it during presigning.
+    // Selectel S3 does NOT support this parameter and returns ERR_CONNECTION_RESET.
+    // We must strip it from the final URL.
+    signedUrl = signedUrl
+      .replace(/([&?])x-amz-checksum-mode=ENABLED/, '$1')
+      .replace(/([&?])x-amz-checksum-mode=[^&]+/, '$1')
+      // Clean up empty params (e.g. "&&" or trailing "&")
+      .replace(/&&/g, '&')
+      .replace(/[?]&/, '?')
+      .replace(/&$/, '');
+
     return signedUrl;
   }
 

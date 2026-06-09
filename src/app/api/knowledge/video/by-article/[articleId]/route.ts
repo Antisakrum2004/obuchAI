@@ -3,20 +3,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
-import { Readable } from "stream";
 
 /**
  * GET /api/knowledge/video/by-article/[articleId]
  *
- * Streams video from S3 directly through AWS SDK GetObjectCommand.
- * Does NOT use signed URLs — works directly through SDK,
- * which solves Cyrillic key encoding issues and avoids ERR_CONNECTION_RESET from Selectel.
+ * Streams video from S3. Two modes:
+ * 1. Default → 302 redirect to signed S3 URL (browser streams directly from S3)
+ * 2. ?format=json → returns signed URL as JSON
  *
- * Supports HTTP Range requests for video seeking.
- * The browser never connects to S3 directly.
- *
- * ?format=json → { url: signedUrl } for JS client (backward compatibility)
- * no param → STREAM the video from S3 through our server (proxy mode)
+ * Signed URLs are cleaned of x-amz-checksum-mode=ENABLED which Selectel doesn't support.
  */
 
 const s3Provider = new S3StorageProvider();
@@ -35,21 +30,15 @@ async function ensureFileKeyColumn(): Promise<void> {
 }
 
 /**
- * Extract S3 key from various URL formats:
- * - s3://bucket/key → key
- * - https://endpoint/bucket/key → key
- * - plain key (no protocol) → key
- * - non-S3 URL → null
+ * Extract S3 key from various URL formats
  */
 function extractS3Key(url: string): string | null {
-  // Handle s3://bucket/key format (e.g. from S3 console)
   if (url.startsWith("s3://")) {
-    const withoutProtocol = url.slice(5); // "ati-lab/knowledge/articles/01 SDD.mp4"
+    const withoutProtocol = url.slice(5);
     const slashIndex = withoutProtocol.indexOf("/");
     if (slashIndex > 0) {
-      return withoutProtocol.slice(slashIndex + 1); // "knowledge/articles/01 SDD.mp4"
+      return withoutProtocol.slice(slashIndex + 1);
     }
-    // Invalid s3:// URI — no key after bucket
     return null;
   }
 
@@ -61,12 +50,10 @@ function extractS3Key(url: string): string | null {
     return url.slice(prefix.length);
   }
 
-  // Already a key (no http prefix)
   if (!url.startsWith("http")) {
     return url;
   }
 
-  // Not an S3 URL
   return null;
 }
 
@@ -116,7 +103,6 @@ export async function GET(
         if (extracted) {
           s3Key = extracted;
         } else {
-          // Not an S3 URL — use directly
           directUrl = media.url;
         }
       }
@@ -133,13 +119,10 @@ export async function GET(
         const article = articleResult.rows[0];
 
         if (article.videoUrl) {
-          console.log(`[video/by-article] Article videoUrl: "${article.videoUrl}"`);
           const extracted = extractS3Key(article.videoUrl);
-          console.log(`[video/by-article] Extracted S3 key: "${extracted}"`);
           if (extracted) {
             s3Key = extracted;
           } else {
-            // Not an S3 URL (YouTube, Rutube, etc.) — use directly
             directUrl = article.videoUrl;
           }
         }
@@ -163,9 +146,7 @@ export async function GET(
       return NextResponse.redirect(directUrl);
     }
 
-    // 8. S3 video — resolve key and stream
-    console.log(`[video/by-article] Resolving S3 key: "${s3Key}"`);
-
+    // 8. S3 video — resolve key
     const resolved = await s3Provider.resolveKey(s3Key!);
 
     let actualKey: string;
@@ -188,7 +169,6 @@ export async function GET(
           console.warn('[video/by-article] Failed to update videoUrl in DB:', updateErr);
         }
 
-        // Also update media.fileKey if media was found
         if (mediaResult.rows && mediaResult.rows.length > 0) {
           try {
             await pool.query(
@@ -201,102 +181,23 @@ export async function GET(
         }
       }
     } else {
-      // Key not found in S3 — try streaming with the original key as last resort
-      console.warn(`[video/by-article] Key not found in S3, trying direct stream: "${s3Key}"`);
+      console.warn(`[video/by-article] Key not found in S3, trying signed URL: "${s3Key}"`);
       actualKey = s3Key!;
     }
 
-    // Backward compatibility: return signed URL as JSON
+    // 9. Generate signed URL (with x-amz-checksum-mode stripped by getSignedUrl)
+    const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+    console.log(`[video/by-article] Signed URL generated for "${actualKey}" (${fileSizeMB}MB)`);
+
+    // Return format
     const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
-      const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
       return NextResponse.json({ url: signedUrl });
     }
 
-    // ── Streaming proxy mode (S3 only) ──────────────────────
-    // Instead of generating a signed URL and then fetching it with Node.js fetch
-    // (which causes issues with Cyrillic key encoding and ERR_CONNECTION_RESET),
-    // we use AWS SDK GetObjectCommand directly to stream from S3.
-    // This is much more reliable for files with Cyrillic/special characters.
-
-    const rangeHeader = request.headers.get("Range");
-    console.log(`[video/by-article] Streaming via SDK: "${actualKey}"${rangeHeader ? ` (Range: ${rangeHeader})` : ""}`);
-
-    try {
-      const s3Stream = await s3Provider.streamObject(actualKey, rangeHeader || undefined);
-
-      // Build response headers
-      const responseHeaders = new Headers();
-      responseHeaders.set("Accept-Ranges", "bytes");
-      responseHeaders.set("Content-Type", s3Stream.contentType || "video/mp4");
-      responseHeaders.set("Content-Length", String(s3Stream.contentLength));
-
-      if (s3Stream.contentRange) {
-        responseHeaders.set("Content-Range", s3Stream.contentRange);
-      }
-
-      // Cache control — allow browser caching for 1 hour
-      responseHeaders.set("Cache-Control", "private, max-age=3600");
-
-      // Convert Node.js Readable to Web ReadableStream
-      const webStream = Readable.toWeb(s3Stream.body as Readable) as ReadableStream;
-
-      console.log(`[video/by-article] Streaming response: ${s3Stream.statusCode} Content-Length=${s3Stream.contentLength}${s3Stream.contentRange ? ` Range=${s3Stream.contentRange}` : ""}`);
-
-      return new Response(webStream, {
-        status: s3Stream.statusCode,
-        headers: responseHeaders,
-      });
-    } catch (streamErr) {
-      console.error(`[video/by-article] SDK stream failed for key "${actualKey}":`, streamErr);
-
-      // Fallback: try signed URL + fetch as last resort
-      console.log(`[video/by-article] Falling back to signed URL + fetch`);
-      try {
-        const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
-
-        const fetchHeaders: Record<string, string> = {};
-        if (rangeHeader) {
-          fetchHeaders["Range"] = rangeHeader;
-        }
-
-        const s3Response = await fetch(signedUrl, {
-          headers: fetchHeaders,
-          redirect: "follow",
-        });
-
-        if (!s3Response.ok && s3Response.status !== 206) {
-          console.error(`[video/by-article] Fallback fetch also failed: ${s3Response.status}`);
-          return NextResponse.json(
-            { error: "Не удалось получить видео из хранилища", details: `S3 returned ${s3Response.status}` },
-            { status: s3Response.status === 404 ? 404 : 502 }
-          );
-        }
-
-        const responseHeaders = new Headers();
-        responseHeaders.set("Accept-Ranges", "bytes");
-        const contentType = s3Response.headers.get("Content-Type");
-        responseHeaders.set("Content-Type", contentType || "video/mp4");
-        const contentLength = s3Response.headers.get("Content-Length");
-        if (contentLength) responseHeaders.set("Content-Length", contentLength);
-        const contentRange = s3Response.headers.get("Content-Range");
-        if (contentRange) responseHeaders.set("Content-Range", contentRange);
-        responseHeaders.set("Cache-Control", "private, max-age=3600");
-
-        const status = s3Response.status === 206 ? 206 : 200;
-
-        return new Response(s3Response.body, {
-          status,
-          headers: responseHeaders,
-        });
-      } catch (fallbackErr) {
-        console.error(`[video/by-article] Both streaming methods failed:`, fallbackErr);
-        return NextResponse.json(
-          { error: "Не удалось получить видео из хранилища", details: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) },
-          { status: 502 }
-        );
-      }
-    }
+    // 302 redirect to signed URL — browser streams directly from S3
+    // This is the only reliable way on Vercel serverless (no streaming 500MB through server)
+    return NextResponse.redirect(signedUrl);
   } catch (error) {
     console.error("[video/by-article] Error:", error);
     return NextResponse.json(
