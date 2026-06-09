@@ -79,6 +79,58 @@ function getS3Client(): { client: S3Client; bucket: string } {
   return { client: globalForS3.s3Client, bucket: globalForS3.s3Bucket };
 }
 
+// ── Presigning S3Client (removes ChecksumMode to avoid Selectel issues) ──
+
+const globalForPresigning = globalThis as unknown as {
+  presigningClient: S3Client | undefined;
+};
+
+/**
+ * Creates an S3Client specifically for presigning URLs.
+ * This client has middleware that removes the `ChecksumMode` parameter
+ * from GetObjectCommand before presigning. Without this, AWS SDK v3
+ * automatically adds `x-amz-checksum-mode=ENABLED` to signed URLs,
+ * which Selectel S3 does not support and causes ERR_CONNECTION_RESET.
+ */
+function getPresigningClient(): S3Client {
+  if (globalForPresigning.presigningClient) {
+    return globalForPresigning.presigningClient;
+  }
+
+  const config = getS3Config();
+
+  const client = new S3Client({
+    region: config.region,
+    endpoint: config.endpoint,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+    forcePathStyle: true,
+  });
+
+  // Remove ChecksumMode from GetObjectCommand inputs before presigning.
+  // This prevents `x-amz-checksum-mode=ENABLED` from appearing in signed URLs.
+  client.middlewareStack.addRelativeTo(
+    (next) => async (args) => {
+      // @ts-expect-error — accessing internal command input
+      if (args.input?.ChecksumMode) {
+        // @ts-expect-error — mutating internal command input
+        delete args.input.ChecksumMode;
+      }
+      return next(args);
+    },
+    {
+      name: "removeChecksumMode",
+      relation: "before",
+      toMiddleware: "presignInterceptMiddleware",
+    }
+  );
+
+  globalForPresigning.presigningClient = client;
+  return client;
+}
+
 // ── S3StorageProvider ────────────────────────────────────────
 
 export class S3StorageProvider implements StorageProvider {
@@ -202,14 +254,14 @@ export class S3StorageProvider implements StorageProvider {
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
-      // Для видео: указываем ResponseContentType чтобы браузер правильно определял тип
-      ResponseContentType: key.endsWith('.mp4') ? 'video/mp4'
-        : key.endsWith('.webm') ? 'video/webm'
-        : key.endsWith('.mov') ? 'video/quicktime'
-        : undefined,
+      // NOTE: ResponseContentType removed — it adds `response-content-type` to the signed URL
+      // which may cause issues with Selectel S3. The Content-Type is now set by the streaming
+      // proxy in the API route, so this is no longer needed.
     });
 
-    const signedUrl = await getSignedUrl(client, command, { expiresIn });
+    // Use the presigning client (with middleware to remove ChecksumMode)
+    const presigningClient = getPresigningClient();
+    const signedUrl = await getSignedUrl(presigningClient, command, { expiresIn });
     return signedUrl;
   }
 

@@ -15,8 +15,10 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
  * Now uses resolveKey() to verify the file actually exists in S3
  * and auto-corrects the key if it contains Cyrillic/special chars.
  *
- * ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
- * no param → 302 redirect (backward compatibility)
+ * ?format=json → { url: signedUrl } for JS client (backward compatibility)
+ * no param → STREAM the video from S3 through our server (proxy mode)
+ *            Supports HTTP Range requests for video seeking.
+ *            The browser never connects to S3 directly — avoids ERR_CONNECTION_RESET.
  */
 
 const s3Provider = new S3StorageProvider();
@@ -197,13 +199,77 @@ export async function GET(
 
     // 8. Return result
     const format = request.nextUrl.searchParams.get("format");
+
+    // Backward compatibility: return signed URL as JSON
     if (format === "json") {
       return NextResponse.json({ url: videoUrl });
     }
 
-    return NextResponse.redirect(videoUrl);
+    // For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
+    if (directUrl) {
+      return NextResponse.redirect(videoUrl);
+    }
+
+    // ── Streaming proxy mode (S3 only) ──────────────────────
+    // Instead of redirecting the browser to S3 (which causes ERR_CONNECTION_RESET
+    // with Selectel), we fetch from S3 server-side and stream the response to the browser.
+    // This also avoids exposing the signed URL to the client.
+
+    const rangeHeader = request.headers.get("Range");
+    const fetchHeaders: Record<string, string> = {};
+    if (rangeHeader) {
+      fetchHeaders["Range"] = rangeHeader;
+    }
+
+    console.log(`[video/by-article] Streaming proxy: fetching from S3${rangeHeader ? ` (Range: ${rangeHeader})` : ""}`);
+
+    const s3Response = await fetch(videoUrl, {
+      headers: fetchHeaders,
+      redirect: "follow",
+    });
+
+    if (!s3Response.ok && s3Response.status !== 206) {
+      console.error(`[video/by-article] S3 fetch failed: ${s3Response.status} ${s3Response.statusText}`);
+      return NextResponse.json(
+        { error: "Не удалось получить видео из хранилища", details: `S3 returned ${s3Response.status}` },
+        { status: s3Response.status === 404 ? 404 : 502 }
+      );
+    }
+
+    // Build response headers from S3 response
+    const responseHeaders = new Headers();
+    responseHeaders.set("Accept-Ranges", "bytes");
+
+    // Content-Type
+    const contentType = s3Response.headers.get("Content-Type");
+    responseHeaders.set("Content-Type", contentType || "video/mp4");
+
+    // Content-Length
+    const contentLength = s3Response.headers.get("Content-Length");
+    if (contentLength) {
+      responseHeaders.set("Content-Length", contentLength);
+    }
+
+    // Content-Range (for 206 Partial Content responses)
+    const contentRange = s3Response.headers.get("Content-Range");
+    if (contentRange) {
+      responseHeaders.set("Content-Range", contentRange);
+    }
+
+    // Cache control — allow browser caching for 1 hour (signed URL lifetime)
+    responseHeaders.set("Cache-Control", "private, max-age=3600");
+
+    // Status: 206 if S3 returned partial content, 200 otherwise
+    const status = s3Response.status === 206 ? 206 : 200;
+
+    // Stream the response body directly — no buffering!
+    // This is critical for large video files (300-500MB+)
+    return new Response(s3Response.body, {
+      status,
+      headers: responseHeaders,
+    });
   } catch (error) {
-    console.error("[video/by-article] Error generating signed URL:", error);
+    console.error("[video/by-article] Error:", error);
     return NextResponse.json(
       { error: "Ошибка генерации ссылки на видео", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
