@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-08 (обновлено). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-09 (обновлено). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -48,10 +48,14 @@
 | `NEXT_PUBLIC_VERCEL_*` | Клиентские флаги для тулбара |
 | `BLOB_STORE_ID` | ID Blob Store: store_5OkTkSLciotjEC41 (авто-устанавливается Vercel) |
 | `BLOB_WEBHOOK_PUBLIC_KEY` | Публичный ключ для Blob Store webhook'ов |
-| `STORAGE_PROVIDER` | Провайдер файлового хранилища: "vercel-blob" (default) / "s3" / "minio" |
+| `STORAGE_PROVIDER` | Провайдер файлового хранилища: **"s3"** (Selectel) / "vercel-blob" / "minio" |
+| `S3_ACCESS_KEY_ID` | Selectel S3 access key |
+| `S3_SECRET_ACCESS_KEY` | Selectel S3 secret key |
+| `S3_ENDPOINT` | `https://s3.ru-7.storage.selcloud.ru` |
+| `S3_REGION` | `ru-7` |
+| `S3_BUCKET_NAME` | `ati-lab` (приватный бакет) |
 
-> ℹ️ **BLOB_READ_WRITE_TOKEN**: Не требуется! @vercel/blob v2.4.0 использует внутреннюю аутентификацию Vercel при запуске на серверless-функциях. OIDC токен автоматически доступен в production.
-| `STORAGE_PROVIDER` | Провайдер файлового хранилища: "vercel-blob" (default) / "s3" / "minio" |
+> ⚠️ **Важно**: Бакет `ati-lab` полностью приватный. Файлы доступны ТОЛЬКО через Signed URLs (15 мин), генерируемые API-роутом `/api/knowledge/video/[id]`. Прямые ссылки на S3 не работают.
 
 ---
 
@@ -168,7 +172,9 @@ src/
 | date-fns | ^4.1.0 | Работа с датами (streak, daily) |
 | react-markdown | ^10.1.0 | Рендеринг Markdown в задачах |
 | react-syntax-highlighter | ^15.6.1 | Подсветка кода в задачах |
-| @vercel/blob | ^2.4.0 | Файловое хранилище (Vercel Blob Storage, OIDC auth) |
+| @aws-sdk/client-s3 | ^3.1064.0 | S3-клиент для Selectel Object Storage |
+| @aws-sdk/s3-request-presigner | ^3.1064.0 | Генерация Signed URLs для приватного доступа |
+| @vercel/blob | ^2.4.0 | Файловое хранилище (legacy, заменено на Selectel S3) |
 
 ### Мёртвые зависимости (установлены, не используются в src/)
 
@@ -276,7 +282,7 @@ src/
 - **KnowledgeSpace**: Пространства знаний (AI Разработка, Промпт-инжиниринг, 1С и AI, Инструменты)
 - **Category**: Иерархические категории внутри пространств (Cursor, Claude Code, MCP, OpenAI)
 - **Article**: Markdown-статьи с summary, tags, keyTopics, viewCount + Sprint 6: difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType
-- **Media**: Видео/документы/изображения, привязанные к статьям (Vercel Blob → StorageProvider)
+- **Media**: Видео/документы/изображения, привязанные к статьям (Selectel S3 → StorageProvider, приватный бакет)
 - **GlossaryTerm**: Термины с определениями, категориями, связанными терминами + Sprint 6: aiGenerated
 - **ProcessingQueue**: Очередь AI-обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft) с прогрессом и статусами
 - **API**: 21 маршрут (CRUD spaces, categories, articles, glossary, search, seed, media, ZIP import, AI processing, processing queue)
@@ -295,24 +301,28 @@ src/
 
 ### 3.16 Storage & Media (`src/lib/storage/`, `src/lib/media-service.ts`, `src/lib/media-utils.ts`)
 - **StorageProvider**: Интерфейс (upload, delete, getUrl) — абстракция над файловым хранилищем
-- **VercelBlobStorageProvider**: Реализация через @vercel/blob (MVP)
+- **S3StorageProvider**: Реализация через @aws-sdk/client-s3 + @aws-sdk/s3-request-presigner → **Selectel Object Storage** (активный провайдер)
+- **VercelBlobStorageProvider**: Реализация через @vercel/blob (MVP, более не используется)
 - **MediaService**: Бизнес-логика загрузки/удаления/привязки файлов, не знает про конкретное хранилище
 - **media-utils.ts**: Клиентские утилиты (formatFileSize, getFileIcon, validateFile, detectFileType, generateStorageKey, ALLOWED_FILE_TYPES) — БЕЗ серверных импортов. Клиентские компоненты импортируют отсюда.
 - **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
+- **Защищённый видео-стриминг**: GET /api/knowledge/video/[id] → session auth → signed URL (15 мин) → 302 redirect → HTML5 `<video>` подхватывает поток
+- **fileKey**: Колонка в таблице media для хранения S3-ключа (нужна для генерации Signed URLs). Runtime migration через `ensureFileKeyColumn()`.
 - **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения + лайтбокс + видео-модалка)
 - **Lightbox**: Изображения увеличиваются в модалке (клик/Escape/крестик), картинки в Markdown тоже кликабельны
-- **Video Modal**: Видео открываются в модалке поверх страницы, продолжение с того же места после закрытия
+- **Video Modal**: Видео открываются в модалке поверх страницы, продолжение с того же места после закрытия. Бейдж «🛡 Защищённый доступ» под плеером.
 - **Inline Glossary Search**: Строка поиска по глоссарию прямо на странице База знаний
 - **Ctrl+Л**: Русская раскладка поддерживается для глобального поиска (Ctrl+K / Ctrl+Л)
-- **Переключение хранилища**: env var STORAGE_PROVIDER → vercel-blob (default) / s3 / minio (будущие)
-- **Blob Store**: store_5OkTkSLciotjEC41 (подключён, верифицирован, region iad1)
+- **Переключение хранилища**: env var STORAGE_PROVIDER → **s3** (активный, Selectel) / vercel-blob / minio (будущие)
+- **Blob Store**: Selectel S3 (ati-lab, приватный, region ru-7) — **реализовано**
+- **Защита контента**: Все видеокурсы строго приватны. Стриминг идёт через Signed URLs (15 мин) через роут `/api/knowledge/video/[id]`. Без авторизации → 401. Без валидного fileKey → 404. Ссылки истекают — невозможно слить.
 
 ### 3.17 AI Content Processing Pipeline — Sprint 6 (`src/app/api/knowledge/`, `src/components/knowledge/`)
 - **Видение**: НЕ строить курсы вручную. Загрузить сырые материалы → AI анализирует → глоссарий → граф знаний → курсы появляются автоматически
 - **Поток**: Materials → AI Analysis → Glossary → Knowledge Graph → Learning Path → Course
-- **Хранилище видео**: Яндекс Диск (75 ГБ бесплатно) — видео НЕ загружается на наш сервер, только ссылки
+- **Хранилище видео**: Selectel S3 (приватный бакет ati-lab, Signed URLs 15 мин) — Яндекс Диск и YouTube не работают в РФ без VPN
 - **Article расширения**: 15 новых колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage)
 - **ProcessingQueue**: Новая таблица для асинхронной обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft)
 - **API маршруты** (5 новых):
@@ -365,7 +375,7 @@ src/
 - **Knowledge Hub** — База знаний (4 пространства, 6 категорий, статьи, медиа)
 - **AI-Глоссарий** — ⌘K глобальный поиск по терминам (10 предзагруженных терминов)
 - **Умный поиск** — /api/knowledge/search — поиск по статьям, глоссарию, задачам
-- **Файловое хранилище** — Vercel Blob Storage через StorageProvider абстракцию (видео, PDF, PPTX, DOCX, изображения)
+- **Файловое хранилище** — Selectel S3 (ati-lab) через StorageProvider абстракцию + Signed URLs для приватного стриминга видео
 - **MediaUpload** — Drag&drop загрузка файлов с прогрессом, привязка к статьям
 - **MediaViewer** — Видеоплеер, документы, изображения + лайтбокс + видео-модалка с resume
 
@@ -382,7 +392,7 @@ src/
 - **Тесты** (0 тестовых файлов, playwright установлен)
 - **Error boundaries** (любой рантайм краш = белый экран)
 - **Rate limiting** (API без защиты от спама)
-- **Загрузка файлов** (MinIO/S3 — Sprint 2, реализовано через Vercel Blob)
+- ~~**Загрузка файлов S3**~~ — **Реализовано**: Selectel S3 (ati-lab) с Signed URLs через `/api/knowledge/video/[id]`
 - **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
 - **Превью видео** (thumbnailUrl — отложено до FFmpeg)
 - ~~**AI-анализ материалов**~~ (реализовано в Sprint 6 — AI metadata/glossary/graph через z-ai-web-dev-sdk)

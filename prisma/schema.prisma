@@ -351,6 +351,7 @@ model Media {
   url          String   // Storage URL (MinIO, S3, local)
   thumbnailUrl String?
   duration     Int?     // seconds, for video
+  fileKey      String?  @map("fileKey") // S3 object key for Signed URL generation
   articleId    String?
   article      Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
   uploadedBy   String?
