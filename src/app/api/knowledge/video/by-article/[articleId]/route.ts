@@ -7,12 +7,28 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
 /**
  * GET /api/knowledge/video/by-article/[articleId]
  *
- * Redirects to a signed S3 URL for the first video media of an article.
+ * Returns a signed S3 URL for the first video media of an article.
  * Used by VideoEmbed on the article page — the S3 bucket is private,
  * so direct URLs return 403. This route generates a 15-min presigned URL.
+ *
+ * ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
+ * no param → 302 redirect (backward compatibility)
  */
 
 const s3Provider = new S3StorageProvider();
+
+// Runtime migration memo
+let fileKeyEnsured = false;
+
+async function ensureFileKeyColumn(): Promise<void> {
+  if (fileKeyEnsured) return;
+  try {
+    await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`);
+  } catch {
+    // Column already exists — not critical
+  }
+  fileKeyEnsured = true;
+}
 
 export async function GET(
   request: NextRequest,
@@ -31,7 +47,10 @@ export async function GET(
       );
     }
 
-    // 2. Find the first video media for this article
+    // 2. Ensure fileKey column exists
+    await ensureFileKeyColumn();
+
+    // 3. Find the first video media for this article
     const { articleId } = await params;
 
     const result = await pool.query(
@@ -52,7 +71,7 @@ export async function GET(
 
     const media = result.rows[0];
 
-    // 3. Determine S3 key
+    // 4. Determine S3 key
     let s3Key: string;
 
     if (media.fileKey) {
@@ -76,16 +95,18 @@ export async function GET(
         s3Key = url;
       } else {
         // Not an S3 URL — redirect directly
+        const format = request.nextUrl.searchParams.get("format");
+        if (format === "json") {
+          return NextResponse.json({ url });
+        }
         return NextResponse.redirect(url);
       }
     }
 
-    // 4. Generate signed URL (15 min)
+    // 5. Generate signed URL (15 min)
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
 
-    // 5. Return signed URL
-    // ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
-    // no param → 302 redirect (backward compatibility)
+    // 6. Return signed URL
     const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
       return NextResponse.json({ url: signedUrl });
@@ -95,7 +116,7 @@ export async function GET(
   } catch (error) {
     console.error("[video/by-article] Error generating signed URL:", error);
     return NextResponse.json(
-      { error: "Ошибка генерации ссылки на видео" },
+      { error: "Ошибка генерации ссылки на видео", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

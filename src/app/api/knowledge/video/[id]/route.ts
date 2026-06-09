@@ -11,16 +11,28 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
  *
  * Логика:
  * 1. Проверка авторизации через getServerSession (defensive destructuring)
- * 2. Raw SQL запрос к media — достаём file_key (или url) по id
- * 3. Генерация Signed URL через @aws-sdk/s3-request-presigner (expiresIn: 900 = 15 мин)
- * 4. Редирект на Signed URL — HTML5 <video> плеер подхватит поток
- *
- * Signed URL истекает через 15 минут — сотрудники не могут скопировать
- * ссылку и слить видеокурс.
+ * 2. Runtime migration: убедиться что колонка fileKey существует
+ * 3. Raw SQL запрос к media — достаём file_key (или url) по id
+ * 4. Генерация Signed URL через @aws-sdk/s3-request-presigner (expiresIn: 900 = 15 мин)
+ * 5. ?format=json → { url: signedUrl } для JS-клиента (надёжнее, чем 302 редирект)
+ *    без параметра → 302 редирект на Signed URL
  */
 
 // Singleton S3StorageProvider для генерации Signed URLs
 const s3Provider = new S3StorageProvider();
+
+// Runtime migration memo
+let fileKeyEnsured = false;
+
+async function ensureFileKeyColumn(): Promise<void> {
+  if (fileKeyEnsured) return;
+  try {
+    await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`);
+  } catch {
+    // Column already exists — not critical
+  }
+  fileKeyEnsured = true;
+}
 
 export async function GET(
   request: NextRequest,
@@ -39,10 +51,12 @@ export async function GET(
       );
     }
 
-    // ── 2. Получаем file_key видео из БД (raw SQL) ─────────────────
+    // ── 2. Ensure fileKey column exists ────────────────────────────
+    await ensureFileKeyColumn();
+
+    // ── 3. Получаем file_key видео из БД (raw SQL) ─────────────────
     const { id } = await params;
 
-    // Пробуем достать file_key, с fallback на url (для записей без file_key)
     const result = await pool.query(
       `SELECT id, "fileName", "mimeType", "fileType", url, "fileKey"
        FROM media
@@ -98,10 +112,10 @@ export async function GET(
       }
     }
 
-    // ── 3. Генерация Signed URL (15 минут) ──────────────────────────
+    // ── 4. Генерация Signed URL (15 минут) ──────────────────────────
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
 
-    // ── 4. Return signed URL ────────────────────────────────────────
+    // ── 5. Return signed URL ────────────────────────────────────────
     // ?format=json → { url: signedUrl } для JS-клиента (надёжнее, чем 302 редирект)
     // без параметра → 302 редирект (обратная совместимость)
     const format = request.nextUrl.searchParams.get("format");
@@ -114,7 +128,7 @@ export async function GET(
   } catch (error) {
     console.error("[video/[id]] Error generating signed URL:", error);
     return NextResponse.json(
-      { error: "Ошибка генерации ссылки на видео" },
+      { error: "Ошибка генерации ссылки на видео", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

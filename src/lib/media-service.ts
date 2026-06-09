@@ -123,6 +123,9 @@ export const MediaService = {
       createdAt: string;
     }>
   > {
+    // Ensure fileKey column exists (runtime migration)
+    await ensureFileKeyColumn();
+
     const result = await pool.query(
       `SELECT id, "fileName", "fileType", "mimeType", "fileSize", url, "thumbnailUrl", duration, "fileKey", "createdAt"
        FROM media
@@ -133,7 +136,7 @@ export const MediaService = {
     return result.rows.map((row) => ({
       ...row,
       fileKey: row.fileKey || null,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: row.createdAt?.toISOString?.() || String(row.createdAt),
     }));
   },
 
