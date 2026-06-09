@@ -46,6 +46,7 @@ import {
   Trash2,
   Tag,
   Loader2,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/store/user-store";
@@ -135,14 +136,17 @@ function EditableArticleCard({
   isAdmin,
   onUpdate,
   onDelete,
+  onPublishWithoutAi,
 }: {
   article: MaterialArticle;
   isAdmin: boolean;
   onUpdate: (id: string, fields: Partial<MaterialArticle>) => void;
   onDelete: (id: string) => void;
+  onPublishWithoutAi: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [editTitle, setEditTitle] = useState(article.title);
   const [editSummary, setEditSummary] = useState(article.summary || "");
   const [editTagsStr, setEditTagsStr] = useState(
@@ -222,6 +226,30 @@ function EditableArticleCard({
       }
     } catch {
       toast.error("Не удалось удалить");
+    }
+  };
+
+  const handlePublishWithoutAi = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "publish-without-ai", articleId: article.id }),
+      });
+      if (res.ok) {
+        toast.success("Опубликовано без AI-обработки");
+        onPublishWithoutAi(article.id);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Ошибка публикации");
+      }
+    } catch {
+      toast.error("Не удалось опубликовать");
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -323,6 +351,16 @@ function EditableArticleCard({
         {/* Admin edit button — top right */}
         {isAdmin && (
           <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            {article.status && article.status !== "done" && (
+              <button
+                onClick={handlePublishWithoutAi}
+                disabled={publishing}
+                className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-blue-500/20 hover:border-blue-500/30 hover:text-blue-400 transition-colors text-muted-foreground disabled:opacity-50"
+                title="Опубликовать без AI"
+              >
+                {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              </button>
+            )}
             <button
               onClick={handleStartEdit}
               className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-400 transition-colors text-muted-foreground"
@@ -531,6 +569,15 @@ export default function MaterialsPage() {
     setArticles((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  // Handle publish without AI
+  const handlePublishWithoutAi = useCallback((id: string) => {
+    setArticles((prev) =>
+      prev.map((a) =>
+        a.id === id ? { ...a, status: "done", isPublished: true } : a
+      )
+    );
+  }, []);
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-6xl space-y-6">
@@ -689,6 +736,7 @@ export default function MaterialsPage() {
                 isAdmin={isAdmin}
                 onUpdate={handleArticleUpdate}
                 onDelete={handleArticleDelete}
+                onPublishWithoutAi={handlePublishWithoutAi}
               />
             ))}
           </div>

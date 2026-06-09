@@ -225,8 +225,56 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === "publish-without-ai") {
+      // Publish an article immediately without AI processing
+      // Sets isPublished=true, status=done, removes all queue items for that article
+      const { articleId } = body as { articleId?: string };
+      if (!articleId) {
+        return NextResponse.json({ error: "articleId обязателен" }, { status: 400 });
+      }
+
+      // Check article exists and is not already published
+      const { rows: articleRows } = await pool.query(
+        `SELECT id, status, "isPublished" FROM articles WHERE id = $1`,
+        [articleId]
+      );
+
+      if (articleRows.length === 0) {
+        return NextResponse.json({ error: "Статья не найдена" }, { status: 404 });
+      }
+
+      // Update article: publish + set status done + replace placeholder content
+      const { rows: updated } = await pool.query(
+        `UPDATE articles 
+         SET "isPublished" = true, 
+             status = 'done', 
+             "errorMessage" = NULL,
+             content = CASE 
+               WHEN content LIKE '%Содержимое будет добавлено после обработки%' OR LENGTH(COALESCE(content, '')) < 50
+               THEN '*Материал загружен и опубликован без AI-обработки.*'
+               ELSE content
+             END,
+             "updatedAt" = NOW()
+         WHERE id = $1
+         RETURNING id, title, status, "isPublished"`,
+        [articleId]
+      );
+
+      // Delete ALL queue items for this article (no more AI processing needed)
+      const { rowCount: deletedQueue } = await pool.query(
+        `DELETE FROM processing_queue WHERE "articleId" = $1`,
+        [articleId]
+      );
+
+      return NextResponse.json({
+        message: `Статья «${updated[0]?.title || articleId}» опубликована без AI-обработки`,
+        article: updated[0],
+        deletedQueueItems: deletedQueue,
+      });
+    }
+
     return NextResponse.json(
-      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, ensure-queue-items, create-content-tasks" },
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, ensure-queue-items, create-content-tasks, publish-without-ai" },
       { status: 400 }
     );
   } catch (error) {
