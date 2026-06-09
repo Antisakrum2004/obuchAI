@@ -40,10 +40,11 @@ export async function GET(
 
     // 2. Resolve articleId
     const { articleId } = await params;
+    console.log(`[by-article] Request for articleId="${articleId}"`);
 
     // 3. Try to find video in media table first
     const mediaResult = await pool.query(
-      `SELECT id, "fileName", url, "fileKey"
+      `SELECT id, "fileName", url, "fileKey", "articleId"
        FROM media
        WHERE "articleId" = $1 AND "fileType" = 'video'
        ORDER BY "createdAt" ASC
@@ -56,6 +57,13 @@ export async function GET(
 
     if (mediaResult.rows && mediaResult.rows.length > 0) {
       const media = mediaResult.rows[0];
+      console.log(`[by-article] Found media record:`, JSON.stringify({
+        id: media.id,
+        fileName: media.fileName,
+        url: media.url,
+        fileKey: media.fileKey,
+        articleId: media.articleId,
+      }));
 
       // extractS3Key жёстко парсит все форматы: s3://, https://, чистый ключ
       if (media.fileKey) {
@@ -68,6 +76,23 @@ export async function GET(
       if (!s3Key && media.url) {
         directUrl = media.url;
       }
+
+      // ── Автоисправление: если ключ содержит пробелы и не заканчивается на расширение ──
+      if (s3Key && s3Key.includes(" ") && !s3Key.match(/\.\w{2,4}$/)) {
+        const fixedKey = s3Key.replace(/\s+/g, "") + ".mp4";
+        console.log(`[by-article] AUTO-FIX: Key "${s3Key}" looks broken. Updating DB to "${fixedKey}"`);
+        try {
+          await pool.query(
+            `UPDATE media SET "fileKey" = $1 WHERE id = $2`,
+            [fixedKey, media.id]
+          );
+          s3Key = fixedKey;
+        } catch (dbErr) {
+          console.error(`[by-article] AUTO-FIX failed:`, dbErr);
+        }
+      }
+    } else {
+      console.log(`[by-article] No media found for articleId="${articleId}"`);
     }
 
     // 4. If no media found, check article.videoUrl
@@ -79,6 +104,7 @@ export async function GET(
 
       if (articleResult.rows && articleResult.rows.length > 0) {
         const article = articleResult.rows[0];
+        console.log(`[by-article] Fallback to article.videoUrl="${article.videoUrl}"`);
 
         if (article.videoUrl) {
           s3Key = extractS3Key(article.videoUrl);
@@ -91,34 +117,24 @@ export async function GET(
 
     // 5. Nothing found
     if (!s3Key && !directUrl) {
+      console.log(`[by-article] No video found for articleId="${articleId}" — neither in media nor in article.videoUrl`);
       return NextResponse.json(
-        { error: "Видео не найдено для данной статьи" },
+        { error: "Видео не найдено для данной статьи", articleId },
         { status: 404 }
       );
     }
 
     // 6. For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
     if (directUrl && !s3Key) {
-      const format = request.nextUrl.searchParams.get("format");
-      if (format === "json") {
-        return NextResponse.json({ url: directUrl });
-      }
-      return NextResponse.redirect(directUrl);
+      return respondWithUrl(directUrl, request);
     }
 
     // 7. S3 video — generate signed URL (pure computation, NO S3 API calls)
-    console.log(`[S3 DIAGNOSTIC] by-article/${articleId} | Parsed Key="${s3Key}"`);
+    console.log(`[by-article] articleId="${articleId}" | Parsed Key="${s3Key}"`);
     const signedUrl = await s3Provider.getSignedUrl(s3Key!, 3600);
-    console.log(`[S3 DIAGNOSTIC] by-article/${articleId} | Signed URL (first 120): "${signedUrl.substring(0, 120)}..."`);
+    console.log(`[by-article] articleId="${articleId}" | Signed URL (first 120): "${signedUrl.substring(0, 120)}..."`);
 
-    // Return format
-    const format = request.nextUrl.searchParams.get("format");
-    if (format === "json") {
-      return NextResponse.json({ url: signedUrl });
-    }
-
-    // 302 redirect — browser streams directly from Selectel
-    return NextResponse.redirect(signedUrl, { status: 302 });
+    return respondWithUrl(signedUrl, request);
   } catch (error) {
     console.error("[video/by-article] Error:", error);
     return NextResponse.json(
@@ -126,4 +142,15 @@ export async function GET(
       { status: 500 }
     );
   }
+}
+
+/**
+ * Отдаёт URL клиенту: JSON или 302 редирект
+ */
+function respondWithUrl(url: string, request: NextRequest): NextResponse {
+  const format = request.nextUrl.searchParams.get("format");
+  if (format === "json") {
+    return NextResponse.json({ url });
+  }
+  return NextResponse.redirect(url, { status: 302 });
 }

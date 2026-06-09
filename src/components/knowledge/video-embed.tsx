@@ -99,11 +99,15 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
 
   /**
    * Запрос signed URL через JSON API.
-   * Жёсткая обработка ошибок: отличаем HTTP-ошибку от невалидного JSON
-   * от пустого ответа — и всё показываем в UI.
+   * ВАЖНО: Используем apiPath НАПРЯМУЮ как URL для fetch, а НЕ извлекаем
+   * последний сегмент. Причина: apiPath может быть:
+   *   /api/knowledge/video/{mediaId}       → роут video/[id]
+   *   /api/knowledge/video/by-article/{id} → роут video/by-article/[articleId]
+   * Если извлечь последний сегмент из by-article, получится article ID,
+   * а роут video/[id] ищет по media ID → 404!
    */
-  const fetchSignedUrl = useCallback((mediaId: string): Promise<string> => {
-    return fetch(`/api/knowledge/video/${mediaId}?format=json`)
+  const fetchSignedUrl = useCallback((apiPath: string): Promise<string> => {
+    return fetch(`${apiPath}?format=json`)
       .then(async (res) => {
         // Сначала пробуем распарсить JSON — даже при ошибке сервер может вернуть { error }
         let data: Record<string, unknown>;
@@ -135,14 +139,13 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
     setError(null);
     setSignedUrl(null);
 
-    const mediaId = apiPath.split("/").pop();
-    if (!mediaId) {
-      setError("Некорректный путь к видео: не удалось извлечь ID из пути");
+    if (!apiPath || !apiPath.startsWith("/api/knowledge/video/")) {
+      setError("Некорректный путь к видео");
       setLoading(false);
       return;
     }
 
-    fetchSignedUrl(mediaId)
+    fetchSignedUrl(apiPath)
       .then((url) => {
         if (!cancelled) {
           setSignedUrl(url);
@@ -166,10 +169,9 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
     setError(null);
     setLoading(true);
 
-    const mediaId = apiPath.split("/").pop();
-    if (!mediaId) return;
+    if (!apiPath) return;
 
-    fetchSignedUrl(mediaId)
+    fetchSignedUrl(apiPath)
       .then((url) => {
         setSignedUrl(url);
         setLoading(false);
