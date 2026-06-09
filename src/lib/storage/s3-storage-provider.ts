@@ -13,10 +13,10 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  GetObjectCommand,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { StorageProvider, UploadResult } from "./storage-provider";
 
 // ── Конфигурация из env ──────────────────────────────────────
@@ -113,10 +113,10 @@ function getPresigningClient(): S3Client {
   // This prevents `x-amz-checksum-mode=ENABLED` from appearing in signed URLs.
   client.middlewareStack.addRelativeTo(
     (next) => async (args) => {
-      // @ts-expect-error — accessing internal command input
-      if (args.input?.ChecksumMode) {
-        // @ts-expect-error — mutating internal command input
-        delete args.input.ChecksumMode;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((args as any).input?.ChecksumMode) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (args as any).input.ChecksumMode;
       }
       return next(args);
     },
@@ -383,6 +383,75 @@ export class S3StorageProvider implements StorageProvider {
     }
 
     return null;
+  }
+
+  /**
+   * Стриминг файла напрямую из S3 через AWS SDK GetObjectCommand.
+   * НЕ использует signed URLs — работает напрямую через SDK,
+   * что решает проблемы с кодировкой кириллицы в ключах
+   * и избегает ERR_CONNECTION_RESET от Selectel.
+   *
+   * Поддерживает HTTP Range-запросы для видео-перемотки.
+   *
+   * @param key S3-ключ файла (после resolveKey)
+   * @param range HTTP Range-заголовок (например, "bytes=0-1048575")
+   * @returns Объект с потоком данных и заголовками ответа
+   */
+  async streamObject(
+    key: string,
+    range?: string
+  ): Promise<{
+    body: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength: number;
+    contentRange?: string;
+    totalSize: number;
+    statusCode: number;
+  }> {
+    const { client, bucket } = getS3Client();
+
+    const input: any = {
+      Bucket: bucket,
+      Key: key,
+    };
+
+    if (range) {
+      input.Range = range;
+    }
+
+    const command = new GetObjectCommand(input);
+    const response = await client.send(command);
+
+    if (!response.Body) {
+      throw new Error(`S3 GetObject returned empty body for key: ${key}`);
+    }
+
+    // Node.js Readable stream from AWS SDK
+    const body = response.Body as NodeJS.ReadableStream;
+
+    const contentType = response.ContentType ?? "application/octet-stream";
+    const contentLength = response.ContentLength ?? 0;
+    const contentRange = response.ContentRange ?? undefined;
+
+    // Parse total size from ContentRange header (format: "bytes START-END/TOTAL")
+    let totalSize = contentLength;
+    if (contentRange) {
+      const match = contentRange.match(/\/(\d+)$/);
+      if (match) {
+        totalSize = parseInt(match[1], 10);
+      }
+    }
+
+    const statusCode = response.$metadata.httpStatusCode ?? (range ? 206 : 200);
+
+    return {
+      body,
+      contentType,
+      contentLength,
+      contentRange,
+      totalSize,
+      statusCode: statusCode === 206 ? 206 : 200,
+    };
   }
 
   /**

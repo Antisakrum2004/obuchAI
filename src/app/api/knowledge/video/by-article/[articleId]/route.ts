@@ -3,22 +3,20 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
+import { Readable } from "stream";
 
 /**
  * GET /api/knowledge/video/by-article/[articleId]
  *
- * Returns a signed S3 URL for the video of an article.
- * Searches in TWO places:
- * 1. media table (uploaded video attachments)
- * 2. article.videoUrl field (URL set directly on the article)
+ * Streams video from S3 directly through AWS SDK GetObjectCommand.
+ * Does NOT use signed URLs — works directly through SDK,
+ * which solves Cyrillic key encoding issues and avoids ERR_CONNECTION_RESET from Selectel.
  *
- * Now uses resolveKey() to verify the file actually exists in S3
- * and auto-corrects the key if it contains Cyrillic/special chars.
+ * Supports HTTP Range requests for video seeking.
+ * The browser never connects to S3 directly.
  *
  * ?format=json → { url: signedUrl } for JS client (backward compatibility)
  * no param → STREAM the video from S3 through our server (proxy mode)
- *            Supports HTTP Range requests for video seeking.
- *            The browser never connects to S3 directly — avoids ERR_CONNECTION_RESET.
  */
 
 const s3Provider = new S3StorageProvider();
@@ -156,118 +154,149 @@ export async function GET(
       );
     }
 
-    // 7. Generate signed URL or use direct URL
-    let videoUrl: string;
+    // 7. For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
+    if (directUrl) {
+      const format = request.nextUrl.searchParams.get("format");
+      if (format === "json") {
+        return NextResponse.json({ url: directUrl });
+      }
+      return NextResponse.redirect(directUrl);
+    }
 
-    if (s3Key) {
-      console.log(`[video/by-article] Resolving S3 key: "${s3Key}"`);
+    // 8. S3 video — resolve key and stream
+    console.log(`[video/by-article] Resolving S3 key: "${s3Key}"`);
 
-      // Use resolveKey to verify the file exists and auto-correct the key
-      // This handles Cyrillic, spaces, + signs and other special chars
-      const resolved = await s3Provider.resolveKey(s3Key);
+    const resolved = await s3Provider.resolveKey(s3Key!);
 
-      if (resolved) {
-        const actualKey = resolved.key;
-        const fileSizeMB = Math.round(resolved.size / 1024 / 1024);
-        console.log(`[video/by-article] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
+    let actualKey: string;
+    let fileSizeMB = 0;
 
-        // If the resolved key differs from what we had, update the DB for next time
-        if (actualKey !== s3Key) {
-          console.log(`[video/by-article] Key corrected: "${s3Key}" → "${actualKey}"`);
-          // Update article.videoUrl with the correct key (strip s3:// prefix for clean storage)
-          try {
-            await pool.query(
-              `UPDATE articles SET "videoUrl" = $2 WHERE id = $1 AND "videoUrl" LIKE '%${s3Key.replace(/'/g, "''")}%'`,
-              [articleId, actualKey]
-            );
-          } catch (updateErr) {
-            console.warn('[video/by-article] Failed to update videoUrl in DB:', updateErr);
-          }
+    if (resolved) {
+      actualKey = resolved.key;
+      fileSizeMB = Math.round(resolved.size / 1024 / 1024);
+      console.log(`[video/by-article] Key resolved: "${actualKey}" (${fileSizeMB}MB)`);
+
+      // If the resolved key differs from what we had, update the DB for next time
+      if (actualKey !== s3Key) {
+        console.log(`[video/by-article] Key corrected: "${s3Key}" → "${actualKey}"`);
+        try {
+          await pool.query(
+            `UPDATE articles SET "videoUrl" = $2 WHERE id = $1`,
+            [articleId, actualKey]
+          );
+        } catch (updateErr) {
+          console.warn('[video/by-article] Failed to update videoUrl in DB:', updateErr);
         }
 
-        // Generate signed URL with 1 hour expiration (for large videos)
-        videoUrl = await s3Provider.getSignedUrl(actualKey, 3600);
-        console.log(`[video/by-article] Signed URL generated (${fileSizeMB}MB, 1h expiry, length: ${videoUrl.length})`);
-      } else {
-        // File not found in S3 — try generating signed URL anyway (might work with some providers)
-        console.warn(`[video/by-article] Key not found in S3, trying signed URL anyway: "${s3Key}"`);
-        videoUrl = await s3Provider.getSignedUrl(s3Key, 3600);
+        // Also update media.fileKey if media was found
+        if (mediaResult.rows && mediaResult.rows.length > 0) {
+          try {
+            await pool.query(
+              `UPDATE media SET "fileKey" = $2 WHERE id = $1`,
+              [mediaResult.rows[0].id, actualKey]
+            );
+          } catch (updateErr) {
+            console.warn('[video/by-article] Failed to update media fileKey in DB:', updateErr);
+          }
+        }
       }
     } else {
-      videoUrl = directUrl!;
+      // Key not found in S3 — try streaming with the original key as last resort
+      console.warn(`[video/by-article] Key not found in S3, trying direct stream: "${s3Key}"`);
+      actualKey = s3Key!;
     }
-
-    // 8. Return result
-    const format = request.nextUrl.searchParams.get("format");
 
     // Backward compatibility: return signed URL as JSON
+    const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
-      return NextResponse.json({ url: videoUrl });
-    }
-
-    // For non-S3 URLs (YouTube, Rutube, etc.) — redirect directly
-    if (directUrl) {
-      return NextResponse.redirect(videoUrl);
+      const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+      return NextResponse.json({ url: signedUrl });
     }
 
     // ── Streaming proxy mode (S3 only) ──────────────────────
-    // Instead of redirecting the browser to S3 (which causes ERR_CONNECTION_RESET
-    // with Selectel), we fetch from S3 server-side and stream the response to the browser.
-    // This also avoids exposing the signed URL to the client.
+    // Instead of generating a signed URL and then fetching it with Node.js fetch
+    // (which causes issues with Cyrillic key encoding and ERR_CONNECTION_RESET),
+    // we use AWS SDK GetObjectCommand directly to stream from S3.
+    // This is much more reliable for files with Cyrillic/special characters.
 
     const rangeHeader = request.headers.get("Range");
-    const fetchHeaders: Record<string, string> = {};
-    if (rangeHeader) {
-      fetchHeaders["Range"] = rangeHeader;
+    console.log(`[video/by-article] Streaming via SDK: "${actualKey}"${rangeHeader ? ` (Range: ${rangeHeader})` : ""}`);
+
+    try {
+      const s3Stream = await s3Provider.streamObject(actualKey, rangeHeader || undefined);
+
+      // Build response headers
+      const responseHeaders = new Headers();
+      responseHeaders.set("Accept-Ranges", "bytes");
+      responseHeaders.set("Content-Type", s3Stream.contentType || "video/mp4");
+      responseHeaders.set("Content-Length", String(s3Stream.contentLength));
+
+      if (s3Stream.contentRange) {
+        responseHeaders.set("Content-Range", s3Stream.contentRange);
+      }
+
+      // Cache control — allow browser caching for 1 hour
+      responseHeaders.set("Cache-Control", "private, max-age=3600");
+
+      // Convert Node.js Readable to Web ReadableStream
+      const webStream = Readable.toWeb(s3Stream.body as Readable) as ReadableStream;
+
+      console.log(`[video/by-article] Streaming response: ${s3Stream.statusCode} Content-Length=${s3Stream.contentLength}${s3Stream.contentRange ? ` Range=${s3Stream.contentRange}` : ""}`);
+
+      return new Response(webStream, {
+        status: s3Stream.statusCode,
+        headers: responseHeaders,
+      });
+    } catch (streamErr) {
+      console.error(`[video/by-article] SDK stream failed for key "${actualKey}":`, streamErr);
+
+      // Fallback: try signed URL + fetch as last resort
+      console.log(`[video/by-article] Falling back to signed URL + fetch`);
+      try {
+        const signedUrl = await s3Provider.getSignedUrl(actualKey, 3600);
+
+        const fetchHeaders: Record<string, string> = {};
+        if (rangeHeader) {
+          fetchHeaders["Range"] = rangeHeader;
+        }
+
+        const s3Response = await fetch(signedUrl, {
+          headers: fetchHeaders,
+          redirect: "follow",
+        });
+
+        if (!s3Response.ok && s3Response.status !== 206) {
+          console.error(`[video/by-article] Fallback fetch also failed: ${s3Response.status}`);
+          return NextResponse.json(
+            { error: "Не удалось получить видео из хранилища", details: `S3 returned ${s3Response.status}` },
+            { status: s3Response.status === 404 ? 404 : 502 }
+          );
+        }
+
+        const responseHeaders = new Headers();
+        responseHeaders.set("Accept-Ranges", "bytes");
+        const contentType = s3Response.headers.get("Content-Type");
+        responseHeaders.set("Content-Type", contentType || "video/mp4");
+        const contentLength = s3Response.headers.get("Content-Length");
+        if (contentLength) responseHeaders.set("Content-Length", contentLength);
+        const contentRange = s3Response.headers.get("Content-Range");
+        if (contentRange) responseHeaders.set("Content-Range", contentRange);
+        responseHeaders.set("Cache-Control", "private, max-age=3600");
+
+        const status = s3Response.status === 206 ? 206 : 200;
+
+        return new Response(s3Response.body, {
+          status,
+          headers: responseHeaders,
+        });
+      } catch (fallbackErr) {
+        console.error(`[video/by-article] Both streaming methods failed:`, fallbackErr);
+        return NextResponse.json(
+          { error: "Не удалось получить видео из хранилища", details: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) },
+          { status: 502 }
+        );
+      }
     }
-
-    console.log(`[video/by-article] Streaming proxy: fetching from S3${rangeHeader ? ` (Range: ${rangeHeader})` : ""}`);
-
-    const s3Response = await fetch(videoUrl, {
-      headers: fetchHeaders,
-      redirect: "follow",
-    });
-
-    if (!s3Response.ok && s3Response.status !== 206) {
-      console.error(`[video/by-article] S3 fetch failed: ${s3Response.status} ${s3Response.statusText}`);
-      return NextResponse.json(
-        { error: "Не удалось получить видео из хранилища", details: `S3 returned ${s3Response.status}` },
-        { status: s3Response.status === 404 ? 404 : 502 }
-      );
-    }
-
-    // Build response headers from S3 response
-    const responseHeaders = new Headers();
-    responseHeaders.set("Accept-Ranges", "bytes");
-
-    // Content-Type
-    const contentType = s3Response.headers.get("Content-Type");
-    responseHeaders.set("Content-Type", contentType || "video/mp4");
-
-    // Content-Length
-    const contentLength = s3Response.headers.get("Content-Length");
-    if (contentLength) {
-      responseHeaders.set("Content-Length", contentLength);
-    }
-
-    // Content-Range (for 206 Partial Content responses)
-    const contentRange = s3Response.headers.get("Content-Range");
-    if (contentRange) {
-      responseHeaders.set("Content-Range", contentRange);
-    }
-
-    // Cache control — allow browser caching for 1 hour (signed URL lifetime)
-    responseHeaders.set("Cache-Control", "private, max-age=3600");
-
-    // Status: 206 if S3 returned partial content, 200 otherwise
-    const status = s3Response.status === 206 ? 206 : 200;
-
-    // Stream the response body directly — no buffering!
-    // This is critical for large video files (300-500MB+)
-    return new Response(s3Response.body, {
-      status,
-      headers: responseHeaders,
-    });
   } catch (error) {
     console.error("[video/by-article] Error:", error);
     return NextResponse.json(
