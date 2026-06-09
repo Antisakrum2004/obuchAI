@@ -16,7 +16,7 @@ import {
   GetObjectCommand,
   S3ClientConfig,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createHmac, createHash } from "crypto";
 import type { StorageProvider, UploadResult } from "./storage-provider";
 
 // ── Конфигурация из env ──────────────────────────────────────
@@ -77,58 +77,6 @@ function getS3Client(): { client: S3Client; bucket: string } {
   }
 
   return { client: globalForS3.s3Client, bucket: globalForS3.s3Bucket };
-}
-
-// ── Presigning S3Client (removes ChecksumMode to avoid Selectel issues) ──
-
-const globalForPresigning = globalThis as unknown as {
-  presigningClient: S3Client | undefined;
-};
-
-/**
- * Creates an S3Client specifically for presigning URLs.
- * This client has middleware that removes the `ChecksumMode` parameter
- * from GetObjectCommand before presigning. Without this, AWS SDK v3
- * automatically adds `x-amz-checksum-mode=ENABLED` to signed URLs,
- * which Selectel S3 does not support and causes ERR_CONNECTION_RESET.
- */
-function getPresigningClient(): S3Client {
-  if (globalForPresigning.presigningClient) {
-    return globalForPresigning.presigningClient;
-  }
-
-  const config = getS3Config();
-
-  const client = new S3Client({
-    region: config.region,
-    endpoint: config.endpoint,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-    forcePathStyle: true,
-  });
-
-  // Remove ChecksumMode from GetObjectCommand inputs before presigning.
-  // This prevents `x-amz-checksum-mode=ENABLED` from appearing in signed URLs.
-  client.middlewareStack.addRelativeTo(
-    (next) => async (args) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((args as any).input?.ChecksumMode) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (args as any).input.ChecksumMode;
-      }
-      return next(args);
-    },
-    {
-      name: "removeChecksumMode",
-      relation: "before",
-      toMiddleware: "presignInterceptMiddleware",
-    }
-  );
-
-  globalForPresigning.presigningClient = client;
-  return client;
 }
 
 // ── S3StorageProvider ────────────────────────────────────────
@@ -240,43 +188,74 @@ export class S3StorageProvider implements StorageProvider {
   /**
    * Генерация Signed URL для приватного доступа к файлу.
    * Ссылка истекает через expiresIn секунд.
-   * Используется для стриминга видео через HTML5 <video>.
    *
-   * Для больших файлов (видео 500МБ+) браузер делает много range-запросов,
-   * поэтому нужно больше времени (1 час вместо 15 мин).
+   * ВАЖНО: Мы генерируем Signed URL ВРУЧНУЮ через AWS Signature V4,
+   * а НЕ через @aws-sdk/s3-request-presigner. Причина: AWS SDK v3
+   * автоматически добавляет x-amz-checksum-mode=ENABLED и x-id=GetObject
+   * в presigned URL, и НИКАКОЙ middleware не может это предотвратить.
+   * Selectel S3 не поддерживает x-amz-checksum-mode и возвращает
+   * ERR_CONNECTION_RESET. Поэтому мы подписываем URL вручную, без этих
+   * лишних параметров.
    */
   async getSignedUrl(
     key: string,
-    expiresIn: number = 3600 // 1 час по умолчанию (было 15 мин — мало для больших видео)
+    expiresIn: number = 3600
   ): Promise<string> {
-    const { client, bucket } = getS3Client();
+    const config = getS3Config();
 
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      // NOTE: ResponseContentType removed — it adds `response-content-type` to the signed URL
-      // which may cause issues with Selectel S3. The Content-Type is now set by the streaming
-      // proxy in the API route, so this is no longer needed.
-    });
+    const now = new Date();
+    const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const dateOnly = dateStamp.substring(0, 8);
 
-    // Use the presigning client (with middleware to remove ChecksumMode)
-    const presigningClient = getPresigningClient();
-    let signedUrl = await getSignedUrl(presigningClient, command, { expiresIn });
+    const endpointUrl = new URL(config.endpoint);
+    const host = endpointUrl.host;
+    // Path-style access: /bucket/key
+    const path = "/" + config.bucket + "/" + key;
 
-    // CRITICAL FIX: Remove x-amz-checksum-mode=ENABLED from the signed URL.
-    // AWS SDK v3 automatically adds this parameter even when ChecksumMode is deleted
-    // from the command input, because the serializer adds it during presigning.
-    // Selectel S3 does NOT support this parameter and returns ERR_CONNECTION_RESET.
-    // We must strip it from the final URL.
-    signedUrl = signedUrl
-      .replace(/([&?])x-amz-checksum-mode=ENABLED/, '$1')
-      .replace(/([&?])x-amz-checksum-mode=[^&]+/, '$1')
-      // Clean up empty params (e.g. "&&" or trailing "&")
-      .replace(/&&/g, '&')
-      .replace(/[?]&/, '?')
-      .replace(/&$/, '');
+    // Canonical query string — NO x-amz-checksum-mode, NO x-id
+    const queryParams: [string, string][] = [
+      ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+      ["X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD"],
+      ["X-Amz-Credential", config.accessKeyId + "/" + dateOnly + "/" + config.region + "/s3/aws4_request"],
+      ["X-Amz-Date", dateStamp],
+      ["X-Amz-Expires", String(expiresIn)],
+      ["X-Amz-SignedHeaders", "host"],
+    ];
 
-    return signedUrl;
+    const canonicalQuerystring = queryParams
+      .map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v))
+      .join("&");
+
+    // Canonical request
+    const canonicalRequest = [
+      "GET",
+      path,
+      canonicalQuerystring,
+      "host:" + host,
+      "",
+      "host",
+      "UNSIGNED-PAYLOAD",
+    ].join("\n");
+
+    // String to sign
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      dateStamp,
+      dateOnly + "/" + config.region + "/s3/aws4_request",
+      createHash("sha256").update(canonicalRequest).digest("hex"),
+    ].join("\n");
+
+    // Signing key
+    const kDate = createHmac("sha256", "AWS4" + config.secretAccessKey).update(dateOnly).digest();
+    const kRegion = createHmac("sha256", kDate).update(config.region).digest();
+    const kService = createHmac("sha256", kRegion).update("s3").digest();
+    const kSigning = createHmac("sha256", kService).update("aws4_request").digest();
+
+    // Signature
+    const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
+
+    // Final URL
+    return config.endpoint + path + "?" + canonicalQuerystring + "&X-Amz-Signature=" + signature;
   }
 
   /**
