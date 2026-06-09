@@ -22,32 +22,12 @@ const FILE_FIELD_MAP: Record<string, string> = {
 };
 
 /**
- * Ensure the articles table allows NULL categoryId.
- * This runs once and is a no-op if already nullable.
- */
-async function ensureCategoryIdNullable() {
-  try {
-    await pool.query(`
-      DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_name = 'articles' AND column_name = 'categoryId' AND is_nullable = 'NO') THEN
-          ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL;
-        END IF;
-      END $$;
-    `);
-  } catch (e) {
-    console.warn("[bulk-upload] Could not alter categoryId nullable:", e);
-  }
-}
-
-/**
  * POST /api/knowledge/bulk-upload
  * Bulk upload multiple files (PDF, PPTX, DOCX, video, images).
  * Each file becomes a separate article with the file attached.
  * Admin only.
  *
- * categoryId is optional — if not provided, AI will auto-classify
- * each article into the best matching category during processing.
+ * spaceId is required. categoryId is optional (legacy, ignored if spaceId provided).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -65,27 +45,45 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const categoryId = (formData.get("categoryId") as string) || null;
+    const spaceId = (formData.get("spaceId") as string) || null;
+    const categoryId = (formData.get("categoryId") as string) || null; // legacy
     const autoProcess = formData.get("autoProcess") === "true";
     const autoCategorize = formData.get("autoCategorize") === "true";
 
-    // categoryId is optional — if not provided, AI will classify later
-    if (categoryId) {
-      // Verify category exists (only if provided)
-      const catResult = await pool.query(
-        `SELECT id, name FROM categories WHERE id = $1`,
-        [categoryId]
-      );
-      if (catResult.rows.length === 0) {
-        return NextResponse.json(
-          { error: "Категория не найдена" },
-          { status: 404 }
+    // Resolve spaceId: prefer explicit, fallback to categoryId -> category.spaceId
+    let resolvedSpaceId = spaceId;
+    if (!resolvedSpaceId && categoryId) {
+      try {
+        const catResult = await pool.query(
+          `SELECT "spaceId" FROM categories WHERE id = $1`,
+          [categoryId]
         );
+        if (catResult.rows.length > 0) {
+          resolvedSpaceId = catResult.rows[0].spaceId;
+        }
+      } catch {
+        // categories table may not exist, ignore
       }
     }
 
-    // Ensure categoryId can be NULL in the database
-    await ensureCategoryIdNullable();
+    if (!resolvedSpaceId) {
+      return NextResponse.json(
+        { error: "spaceId обязателен" },
+        { status: 400 }
+      );
+    }
+
+    // Verify space exists
+    const spaceResult = await pool.query(
+      `SELECT id FROM knowledge_spaces WHERE id = $1`,
+      [resolvedSpaceId]
+    );
+    if (spaceResult.rows.length === 0) {
+      return NextResponse.json(
+        { error: "Раздел знаний не найден" },
+        { status: 404 }
+      );
+    }
 
     // Collect all files from formData
     const files: File[] = [];
@@ -109,7 +107,7 @@ export async function POST(request: NextRequest) {
       fileName: string;
       fileType: string;
       status: string;
-      categoryId: string | null;
+      spaceId: string;
     }> = [];
     const errors: Array<{ fileName: string; error: string }> = [];
 
@@ -138,11 +136,10 @@ export async function POST(request: NextRequest) {
         const fileCategory = validation.category || "other";
         const articleField = FILE_FIELD_MAP[fileCategory] || "sourceUrl";
 
-        // Create article with placeholder content
-        // categoryId may be null — AI will assign it later
+        // Create article with spaceId
         await pool.query(
           `INSERT INTO articles (
-            id, title, slug, content, summary, "categoryId",
+            id, title, slug, content, summary, "spaceId",
             "isPublished", status, "sourceType",
             "${articleField}",
             "createdAt", "updatedAt"
@@ -153,7 +150,7 @@ export async function POST(request: NextRequest) {
             slug,
             `# ${title}\n\n*Содержимое будет добавлено после обработки.*`,
             `Загружен файл: ${file.name}`,
-            categoryId,
+            resolvedSpaceId,
             false,
             "pending",
             "direct",
@@ -172,10 +169,9 @@ export async function POST(request: NextRequest) {
             file.type
           );
           fileUrl = uploadResult.url;
-          fileKey = uploadResult.key || null; // Ключ для генерации Signed URLs
+          fileKey = uploadResult.key || null;
         } catch (storageErr) {
           console.warn(`[bulk-upload] Storage upload failed for ${file.name}:`, storageErr);
-          // Continue without file URL — the article is still created
         }
 
         // Update article with file URL (if upload succeeded)
@@ -186,7 +182,7 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Create media record (even if storage failed, record the file metadata)
+        // Create media record
         try {
           const mediaId = genId("med-");
           const userId = (session.user as Record<string, unknown>).id as string;
@@ -211,18 +207,15 @@ export async function POST(request: NextRequest) {
           );
         } catch (mediaErr) {
           console.warn(`[bulk-upload] Media record failed for ${file.name}:`, mediaErr);
-          // Continue — article is still created
         }
 
         // Create processing queue entries
-        // Always add content_extract for PDF files, and ai_metadata for categorization
         const queueTypes = ["ai_metadata"];
         if (autoProcess) {
           queueTypes.push("glossary_extract");
         }
-        // Add content extraction for PDF files
         if (fileCategory === "pdf") {
-          queueTypes.unshift("content_extract"); // first: extract content before metadata
+          queueTypes.unshift("content_extract");
         }
 
         for (const type of queueTypes) {
@@ -241,7 +234,7 @@ export async function POST(request: NextRequest) {
                   fileName: file.name,
                   fileCategory,
                   autoCategorize: autoCategorize || !categoryId,
-                  originalCategoryId: categoryId,
+                  spaceId: resolvedSpaceId,
                 }),
                 0,
               ]
@@ -258,7 +251,7 @@ export async function POST(request: NextRequest) {
           fileName: file.name,
           fileType: getFileIcon(validation.fileType || "document", file.type),
           status: "pending",
-          categoryId,
+          spaceId: resolvedSpaceId,
         });
       } catch (fileErr) {
         console.error(`[bulk-upload] Error processing file ${file.name}:`, fileErr);
@@ -267,7 +260,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If ALL files failed, return error
     if (results.length === 0 && errors.length > 0) {
       return NextResponse.json({
         error: `Не удалось загрузить ни одного файла`,
@@ -275,14 +267,11 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    const categorizeNote = !categoryId || autoCategorize
-      ? " AI автоматически определит категории." : "";
-
     const storageWarning = errors.some(e => e.error.includes("Storage") || e.error.includes("BLOB"))
       ? " Внимание: хранилище файлов не настроено (BLOB_READ_WRITE_TOKEN)." : "";
 
     return NextResponse.json({
-      message: `Загружено ${results.length} из ${files.length} файлов.${categorizeNote}${storageWarning}`,
+      message: `Загружено ${results.length} из ${files.length} файлов.${storageWarning}`,
       articles: results,
       errors: errors.length > 0 ? errors : undefined,
     }, { status: results.length > 0 ? 201 : 500 });

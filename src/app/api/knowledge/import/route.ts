@@ -15,8 +15,8 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const categoryId = formData.get("categoryId") as string | null;
     const spaceId = formData.get("spaceId") as string | null;
+    const categoryId = formData.get("categoryId") as string | null; // legacy
 
     if (!file) {
       return NextResponse.json(
@@ -25,37 +25,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!categoryId) {
+    // Resolve spaceId: prefer explicit, fallback to categoryId -> category.spaceId
+    let resolvedSpaceId = spaceId;
+    if (!resolvedSpaceId && categoryId) {
+      try {
+        const catResult = await pool.query(
+          `SELECT "spaceId" FROM categories WHERE id = $1`,
+          [categoryId]
+        );
+        if (catResult.rows.length > 0) {
+          resolvedSpaceId = catResult.rows[0].spaceId;
+        }
+      } catch {
+        // categories table may not exist
+      }
+    }
+
+    if (!resolvedSpaceId) {
       return NextResponse.json(
-        { error: "categoryId обязателен" },
+        { error: "spaceId обязателен" },
         { status: 400 }
       );
     }
 
-    // Verify category exists
-    const catCheck = await pool.query(
-      `SELECT id FROM categories WHERE id = $1`,
-      [categoryId]
+    // Verify space exists
+    const spaceCheck = await pool.query(
+      `SELECT id FROM knowledge_spaces WHERE id = $1`,
+      [resolvedSpaceId]
     );
-    if (catCheck.rows.length === 0) {
+    if (spaceCheck.rows.length === 0) {
       return NextResponse.json(
-        { error: "Категория не найдена" },
+        { error: "Раздел знаний не найден" },
         { status: 404 }
       );
-    }
-
-    // If spaceId provided, verify it exists
-    if (spaceId) {
-      const spaceCheck = await pool.query(
-        `SELECT id FROM knowledge_spaces WHERE id = $1`,
-        [spaceId]
-      );
-      if (spaceCheck.rows.length === 0) {
-        return NextResponse.json(
-          { error: "Пространство знаний не найдено" },
-          { status: 404 }
-        );
-      }
     }
 
     // Read ZIP file into buffer
@@ -66,17 +68,14 @@ export async function POST(request: NextRequest) {
     const zip = await JSZip.loadAsync(buffer);
 
     // Build a map of folder -> files
-    // ZIP structure: each folder = a topic, containing video, PDF, PPTX, and optionally README.md
     const folderMap: Record<string, { video?: string; pdf?: string; pptx?: string; readme?: string }> = {};
 
     for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
       if (zipEntry.dir) continue;
 
-      // Normalize path separators
       const normalizedPath = relativePath.replace(/\\/g, "/");
       const parts = normalizedPath.split("/");
 
-      // If the file is at the root level (no folder), skip it
       if (parts.length < 2) continue;
 
       const folderName = parts[0];
@@ -120,7 +119,7 @@ export async function POST(request: NextRequest) {
         .replace(/^-|-$/g, "")
         .substring(0, 80);
 
-      // Check slug uniqueness — append suffix if needed
+      // Check slug uniqueness
       let finalSlug = slug;
       let slugSuffix = 1;
       let slugExists = true;
@@ -151,10 +150,10 @@ export async function POST(request: NextRequest) {
       if (files.pdf) inputData.pdf = files.pdf;
       if (files.pptx) inputData.pptx = files.pptx;
 
-      // Create article
+      // Create article with spaceId
       const articleId = genId("art_");
       const articleResult = await pool.query(
-        `INSERT INTO articles (id, title, slug, content, "categoryId", "authorId", "isPublished", status, "videoUrl", "pdfUrl", "pptxUrl", "viewCount", "createdAt", "updatedAt")
+        `INSERT INTO articles (id, title, slug, content, "spaceId", "authorId", "isPublished", status, "videoUrl", "pdfUrl", "pptxUrl", "viewCount", "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6, false, 'pending', $7, $8, $9, 0, NOW(), NOW())
          RETURNING *`,
         [
@@ -162,7 +161,7 @@ export async function POST(request: NextRequest) {
           folderName,
           finalSlug,
           content,
-          categoryId,
+          resolvedSpaceId,
           authorId,
           files.video || null,
           files.pdf || null,
