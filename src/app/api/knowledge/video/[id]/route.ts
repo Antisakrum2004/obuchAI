@@ -96,7 +96,19 @@ export async function GET(
       const bucket = process.env.S3_BUCKET_NAME || "";
       const prefix = `${endpoint}/${bucket}/`;
 
-      if (url.startsWith(prefix)) {
+      if (url.startsWith("s3://")) {
+        // Handle s3://bucket/key format (e.g. from S3 console)
+        const withoutProtocol = url.slice(5);
+        const slashIndex = withoutProtocol.indexOf("/");
+        if (slashIndex > 0) {
+          s3Key = withoutProtocol.slice(slashIndex + 1);
+        } else {
+          return NextResponse.json(
+            { error: "Некорректный формат s3:// URI" },
+            { status: 400 }
+          );
+        }
+      } else if (url.startsWith(prefix)) {
         s3Key = url.slice(prefix.length);
       } else if (!url.startsWith("http")) {
         // Уже ключ (не URL)

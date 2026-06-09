@@ -786,7 +786,8 @@ export default function ArticlePage({
               {article.videoUrl && (() => {
                 // Detect if videoUrl points to our private S3 bucket (Selectel)
                 // If so, route through signed-URL API instead of direct URL (bucket is private → 403)
-                const isS3Url = article.videoUrl.includes("storage.selcloud.ru") ||
+                const isS3Url = article.videoUrl.startsWith("s3://") ||
+                                article.videoUrl.includes("storage.selcloud.ru") ||
                                 article.videoUrl.includes("s3.") && article.videoUrl.includes(".storage.");
                 const videoSrc = isS3Url
                   ? `/api/knowledge/video/by-article/${article.id}`

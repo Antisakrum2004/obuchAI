@@ -36,9 +36,24 @@ async function ensureFileKeyColumn(): Promise<void> {
 }
 
 /**
- * Extract S3 key from a URL or return null if not an S3 URL
+ * Extract S3 key from various URL formats:
+ * - s3://bucket/key → key
+ * - https://endpoint/bucket/key → key
+ * - plain key (no protocol) → key
+ * - non-S3 URL → null
  */
 function extractS3Key(url: string): string | null {
+  // Handle s3://bucket/key format (e.g. from S3 console)
+  if (url.startsWith("s3://")) {
+    const withoutProtocol = url.slice(5); // "ati-lab/knowledge/articles/01 SDD.mp4"
+    const slashIndex = withoutProtocol.indexOf("/");
+    if (slashIndex > 0) {
+      return withoutProtocol.slice(slashIndex + 1); // "knowledge/articles/01 SDD.mp4"
+    }
+    // Invalid s3:// URI — no key after bucket
+    return null;
+  }
+
   const endpoint = process.env.S3_ENDPOINT || "";
   const bucket = process.env.S3_BUCKET_NAME || "";
   const prefix = `${endpoint}/${bucket}/`;

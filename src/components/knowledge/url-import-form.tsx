@@ -21,12 +21,16 @@ interface UrlImportFormProps {
 
 function detectSourceType(url: string): string | null {
   if (!url) return null;
+  // Handle s3:// URIs — private S3 storage (e.g. from S3 console)
+  if (url.startsWith("s3://")) return "s3";
   try {
     const hostname = new URL(url).hostname.toLowerCase();
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
     if (hostname.includes("rutube.ru")) return "rutube";
     if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
     if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    // Detect S3 HTTPS URLs (Selectel Object Storage)
+    if (hostname.includes("storage.selcloud.ru") || (hostname.includes("s3.") && hostname.includes(".storage."))) return "s3";
     if (hostname.includes(".pdf")) return "pdf";
     return "other";
   } catch {
@@ -39,6 +43,7 @@ const sourceTypeBadgeConfig: Record<string, { label: string; color: string }> = 
   rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   yandex_disk: { label: "Яндекс Диск", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
+  s3: { label: "S3 Хранилище", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   pdf: { label: "PDF", color: "border-orange-500/30 text-orange-400 bg-orange-500/10" },
   other: { label: "Ссылка", color: "border-white/10 text-muted-foreground" },
 };
@@ -94,7 +99,7 @@ export function UrlImportForm({ articleId, initialData, onSave }: UrlImportFormP
   };
 
   const fields = [
-    { key: "videoUrl", label: "Ссылка на видео", value: videoUrl, setter: setVideoUrl, placeholder: "https://youtube.com/watch?v=..." },
+    { key: "videoUrl", label: "Ссылка на видео", value: videoUrl, setter: setVideoUrl, placeholder: "https://youtube.com/... или s3://bucket/key" },
     { key: "pdfUrl", label: "Ссылка на PDF", value: pdfUrl, setter: setPdfUrl, placeholder: "https://example.com/file.pdf" },
     { key: "pptxUrl", label: "Ссылка на презентацию", value: pptxUrl, setter: setPptxUrl, placeholder: "https://example.com/file.pptx" },
     { key: "sourceUrl", label: "Источник", value: sourceUrl, setter: setSourceUrl, placeholder: "https://example.com/article" },

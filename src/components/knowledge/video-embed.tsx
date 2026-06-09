@@ -13,6 +13,8 @@ interface VideoEmbedProps {
 }
 
 function detectSourceType(url: string): string {
+  // Handle s3:// URIs — private S3 storage
+  if (url.startsWith("s3://")) return "direct";
   try {
     const hostname = new URL(url).hostname.toLowerCase();
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
