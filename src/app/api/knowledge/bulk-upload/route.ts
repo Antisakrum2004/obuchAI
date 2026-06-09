@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
 
         // Upload file to storage (with fallback)
         let fileUrl = "";
+        let fileKey: string | null = null;
         try {
           const storageKey = generateStorageKey("article", articleId, file.name);
           const uploadResult = await storageProvider.upload(
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
             file.type
           );
           fileUrl = uploadResult.url;
+          fileKey = uploadResult.key || null; // Ключ для генерации Signed URLs
         } catch (storageErr) {
           console.warn(`[bulk-upload] Storage upload failed for ${file.name}:`, storageErr);
           // Continue without file URL — the article is still created
@@ -191,8 +193,8 @@ export async function POST(request: NextRequest) {
           await pool.query(
             `INSERT INTO media (
               id, "fileName", "fileType", "mimeType", "fileSize",
-              url, "thumbnailUrl", duration, "articleId", "uploadedBy", "createdAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+              url, "thumbnailUrl", duration, "articleId", "uploadedBy", "fileKey", "createdAt"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
             [
               mediaId,
               file.name,
@@ -204,6 +206,7 @@ export async function POST(request: NextRequest) {
               null,
               articleId,
               userId,
+              fileKey,
             ]
           );
         } catch (mediaErr) {

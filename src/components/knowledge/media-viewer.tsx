@@ -10,6 +10,8 @@ import {
   Trash2,
   Loader2,
   ZoomIn,
+  X,
+  ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatFileSize, getFileIcon } from "@/lib/media-utils";
@@ -19,6 +21,19 @@ import {
   VideoModal,
   hasVideoPosition,
 } from "@/components/knowledge/media-lightbox";
+
+/**
+ * Генерация URL для защищённого доступа к видео через Signed URLs.
+ * Вместо прямой ссылки на S3 (которая была бы публичной) используем
+ * наш API-маршрут, который проверяет авторизацию и генерирует
+ * временную подписанную ссылку (15 минут).
+ *
+ * HTML5 <video> плеер автоматически следует 302 редиректу
+ * от /api/knowledge/video/{id} → signed S3 URL.
+ */
+function getProtectedVideoUrl(mediaId: string): string {
+  return `/api/knowledge/video/${mediaId}`;
+}
 
 // Keep videoPositions in sync with the lightbox module
 const videoPositionsLocal = new Map<string, number>();
@@ -360,7 +375,7 @@ export function MediaViewer({
             <div className="rounded-xl overflow-hidden border border-white/10 bg-black">
               <video
                 ref={videoRef}
-                src={modalVideo.url}
+                src={getProtectedVideoUrl(modalVideo.id)}
                 controls
                 autoPlay
                 className="w-full max-h-[80vh]"
@@ -371,8 +386,12 @@ export function MediaViewer({
                 {modalVideo.fileName}
               </p>
               <div className="flex items-center gap-3 ml-3">
+                <span className="text-[10px] text-emerald-400/60 flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  Защищённый доступ
+                </span>
                 <a
-                  href={modalVideo.url}
+                  href={getProtectedVideoUrl(modalVideo.id)}
                   download={modalVideo.fileName}
                   onClick={(e) => e.stopPropagation()}
                   className="text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1"

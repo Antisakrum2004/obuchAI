@@ -68,9 +68,17 @@ export const MediaService = {
     const id = generateId();
     const articleId = entityType === "article" ? entityId : null;
 
+    // Сохраняем fileKey — ключ в хранилище для генерации Signed URLs
+    // Для S3: result.key (например, "knowledge/articles/xxx/video.mp4")
+    // Для Vercel Blob: result.key (pathname)
+    const fileKey = result.key || null;
+
+    // Убедимся, что колонка fileKey существует (runtime migration, как принято в проекте)
+    await ensureFileKeyColumn();
+
     await pool.query(
-      `INSERT INTO media (id, "fileName", "fileType", "mimeType", "fileSize", url, "thumbnailUrl", duration, "articleId", "uploadedBy", "createdAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+      `INSERT INTO media (id, "fileName", "fileType", "mimeType", "fileSize", url, "thumbnailUrl", duration, "articleId", "uploadedBy", "fileKey", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
       [
         id,
         file.name,
@@ -82,6 +90,7 @@ export const MediaService = {
         duration,
         articleId,
         uploadedBy || null,
+        fileKey,
       ]
     );
 
@@ -110,11 +119,12 @@ export const MediaService = {
       url: string;
       thumbnailUrl: string | null;
       duration: number | null;
+      fileKey: string | null;
       createdAt: string;
     }>
   > {
     const result = await pool.query(
-      `SELECT id, "fileName", "fileType", "mimeType", "fileSize", url, "thumbnailUrl", duration, "createdAt"
+      `SELECT id, "fileName", "fileType", "mimeType", "fileSize", url, "thumbnailUrl", duration, "fileKey", "createdAt"
        FROM media
        WHERE "articleId" = $1
        ORDER BY "createdAt" ASC`,
@@ -122,6 +132,7 @@ export const MediaService = {
     );
     return result.rows.map((row) => ({
       ...row,
+      fileKey: row.fileKey || null,
       createdAt: row.createdAt.toISOString(),
     }));
   },
@@ -207,4 +218,24 @@ function generateId(): string {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 10);
   return `cl${timestamp}${random}`;
+}
+
+/**
+ * Runtime migration: добавляем колонку "fileKey" в таблицу media,
+ * если она ещё не существует. Паттерн ensureColumns(), как принято в проекте.
+ */
+let fileKeyEnsured = false;
+
+async function ensureFileKeyColumn(): Promise<void> {
+  if (fileKeyEnsured) return;
+
+  try {
+    await pool.query(
+      `ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`
+    );
+    fileKeyEnsured = true;
+  } catch {
+    // Колонка уже существует или другая ошибка — не критично
+    fileKeyEnsured = true;
+  }
 }
