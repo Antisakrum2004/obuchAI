@@ -214,6 +214,9 @@ export class S3StorageProvider implements StorageProvider {
     const rawPath = "/" + config.bucket + "/" + key;
     const encodedPath = rawPath.split("/").map((s) => encodeURIComponent(s)).join("/");
 
+    // Диагностика: видно если ключ пустой или содержит неожиданные символы
+    console.log(`[S3 DIAGNOSTIC] getSignedUrl | key="${key}" | rawPath="${rawPath}" | encodedPath="${encodedPath}" | host="${host}"`);
+
     // Canonical query string — NO x-amz-checksum-mode, NO x-id
     // Parameters MUST be sorted by key name for AWS Signature V4
     const queryParams: Record<string, string> = {

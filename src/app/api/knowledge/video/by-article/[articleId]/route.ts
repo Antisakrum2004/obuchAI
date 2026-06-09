@@ -107,8 +107,9 @@ export async function GET(
     }
 
     // 7. S3 video — generate signed URL (pure computation, NO S3 API calls)
-    console.log(`[video/by-article/${articleId}] S3 key resolved: "${s3Key}"`);
+    console.log(`[S3 DIAGNOSTIC] by-article/${articleId} | Parsed Key="${s3Key}"`);
     const signedUrl = await s3Provider.getSignedUrl(s3Key!, 3600);
+    console.log(`[S3 DIAGNOSTIC] by-article/${articleId} | Signed URL (first 120): "${signedUrl.substring(0, 120)}..."`);
 
     // Return format
     const format = request.nextUrl.searchParams.get("format");

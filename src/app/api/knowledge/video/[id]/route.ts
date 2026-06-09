@@ -84,12 +84,15 @@ export async function GET(
       );
     }
 
-    console.log(`[video/${id}] S3 key resolved: "${s3Key}"`);
+    // ── 4. Диагностика: логируем распарсенный ключ ──
+    console.log(`[S3 DIAGNOSTIC] video/${id} | fileKey="${media.fileKey}" | url="${media.url}" | Parsed Key="${s3Key}"`);
 
-    // ── 4. Генерируем Signed URL (чистая криптография, без сети) ──
+    // ── 5. Генерируем Signed URL (чистая криптография, без сети) ──
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 3600);
 
-    // ── 5. Отдаём результат ──
+    console.log(`[S3 DIAGNOSTIC] video/${id} | Signed URL generated (first 120 chars): "${signedUrl.substring(0, 120)}..."`);
+
+    // ── 6. Отдаём результат ──
     const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
       return NextResponse.json({ url: signedUrl });

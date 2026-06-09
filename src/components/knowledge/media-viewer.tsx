@@ -22,20 +22,31 @@ import { Lightbox } from "@/components/knowledge/media-lightbox";
 
 /**
  * Получение signed URL для видео через JSON API.
- * Вместо 302-редиректа (который часто не работает с <video>),
- * получаем signed URL через ?format=json и устанавливаем как src.
+ * Жёсткая обработка ошибок: отличаем HTTP-ошибку, невалидный JSON,
+ * пустой ответ — всё пробрасываем в UI для диагностики.
  */
 async function fetchVideoSignedUrl(mediaId: string): Promise<string> {
   const res = await fetch(`/api/knowledge/video/${mediaId}?format=json`);
+
+  // Пробуем распарсить JSON — даже при ошибке сервер может вернуть { error }
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Сервер вернул не-JSON (HTTP ${res.status}). Проверьте авторизацию и попробуйте обновить страницу.`);
+  }
+
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Ошибка сервера (${res.status})`);
+    const msg = (data.error as string) || (data.details as string) || `Ошибка сервера (HTTP ${res.status})`;
+    throw new Error(msg);
   }
-  const data = await res.json();
-  if (!data.url) {
-    throw new Error("Сервер не вернул ссылку на видео");
+
+  if (!data.url || typeof data.url !== "string") {
+    throw new Error("Сервер не вернул ссылку на видео (пустой url в ответе)");
   }
-  return data.url;
+
+  console.log("[MediaViewer] Signed URL obtained, first 100 chars:", (data.url as string).substring(0, 100));
+  return data.url as string;
 }
 
 // Keep videoPositions in sync across component

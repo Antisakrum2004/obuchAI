@@ -97,7 +97,38 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
   const [buffering, setBuffering] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Fetch signed URL via JSON API (one lightweight call, no video data through Vercel)
+  /**
+   * Запрос signed URL через JSON API.
+   * Жёсткая обработка ошибок: отличаем HTTP-ошибку от невалидного JSON
+   * от пустого ответа — и всё показываем в UI.
+   */
+  const fetchSignedUrl = useCallback((mediaId: string): Promise<string> => {
+    return fetch(`/api/knowledge/video/${mediaId}?format=json`)
+      .then(async (res) => {
+        // Сначала пробуем распарсить JSON — даже при ошибке сервер может вернуть { error }
+        let data: Record<string, unknown>;
+        try {
+          data = await res.json();
+        } catch {
+          // Сервер вернул не JSON (HTML-ошибка, 302-редирект на HTML и т.д.)
+          throw new Error(`Сервер вернул не-JSON (HTTP ${res.status}). Проверьте авторизацию и попробуйте обновить страницу.`);
+        }
+
+        if (!res.ok) {
+          const msg = (data.error as string) || (data.details as string) || `Ошибка сервера (HTTP ${res.status})`;
+          throw new Error(msg);
+        }
+
+        if (!data.url || typeof data.url !== "string") {
+          throw new Error("Сервер не вернул ссылку на видео (пустой url в ответе)");
+        }
+
+        console.log("[ProtectedVideoPlayer] Signed URL obtained, first 100 chars:", (data.url as string).substring(0, 100));
+        return data.url as string;
+      });
+  }, []);
+
+  // Fetch signed URL on mount
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -106,31 +137,29 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
 
     const mediaId = apiPath.split("/").pop();
     if (!mediaId) {
-      setError("Некорректный путь к видео");
+      setError("Некорректный путь к видео: не удалось извлечь ID из пути");
       setLoading(false);
       return;
     }
 
-    fetch(`/api/knowledge/video/${mediaId}?format=json`)
-      .then((res) => {
-        if (!res.ok) return res.json().then((d) => { throw new Error(d.error || `Ошибка ${res.status}`); });
-        return res.json();
-      })
-      .then((data) => {
-        if (!cancelled && data.url) {
-          setSignedUrl(data.url);
+    fetchSignedUrl(mediaId)
+      .then((url) => {
+        if (!cancelled) {
+          setSignedUrl(url);
           setLoading(false);
         }
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+          const msg = err instanceof Error ? err.message : "Не удалось загрузить видео";
+          console.error("[ProtectedVideoPlayer] fetchSignedUrl error:", msg);
+          setError(msg);
           setLoading(false);
         }
       });
 
     return () => { cancelled = true; };
-  }, [apiPath]);
+  }, [apiPath, fetchSignedUrl]);
 
   const handleRetry = () => {
     setSignedUrl(null);
@@ -140,25 +169,24 @@ function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; 
     const mediaId = apiPath.split("/").pop();
     if (!mediaId) return;
 
-    fetch(`/api/knowledge/video/${mediaId}?format=json`)
-      .then((res) => {
-        if (!res.ok) return res.json().then((d) => { throw new Error(d.error || `Ошибка ${res.status}`); });
-        return res.json();
-      })
-      .then((data) => {
-        if (data.url) {
-          setSignedUrl(data.url);
-          setLoading(false);
-        }
+    fetchSignedUrl(mediaId)
+      .then((url) => {
+        setSignedUrl(url);
+        setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+        const msg = err instanceof Error ? err.message : "Не удалось загрузить видео";
+        setError(msg);
         setLoading(false);
       });
   };
 
   const handleVideoError = () => {
-    setError("Не удалось воспроизвести видео. Попробуйте обновить страницу.");
+    // Диагностика: показываем первые символы URL, по которому не загрузилось видео
+    const urlHint = signedUrl ? signedUrl.substring(0, 80) + "..." : "(нет URL)";
+    const msg = `Не удалось воспроизвести видео. URL: ${urlHint}. Возможно, ссылка истекла или файл не найден в S3.`;
+    console.error("[ProtectedVideoPlayer] <video> onError:", msg);
+    setError(msg);
     setLoading(false);
   };
 
