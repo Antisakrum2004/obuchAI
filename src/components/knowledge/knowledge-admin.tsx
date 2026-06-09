@@ -24,6 +24,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Video,
+  Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -789,9 +791,17 @@ export function KnowledgeAdmin() {
                         {catName(art.categoryId)} · {art.viewCount} просм.
                       </p>
                     </div>
-                    <Badge variant="outline" className={cn("text-[10px] bg-white/5 border-white/5", art.isPublished ? "text-emerald-400" : "text-muted-foreground")}>
-                      {art.isPublished ? "Опубликована" : "Черновик"}
-                    </Badge>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {art.videoUrl && (
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-blue-500/30 text-white bg-blue-500/80">
+                          <Video className="h-2.5 w-2.5 mr-0.5" />
+                          Видео
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className={cn("text-[10px] bg-white/5 border-white/5", art.isPublished ? "text-emerald-400" : "text-muted-foreground")}>
+                        {art.isPublished ? "Опубликована" : "Черновик"}
+                      </Badge>
+                    </div>
                     <Button size="sm" variant="ghost" onClick={() => toggleArticlePublished(art)} className="h-7 w-7 p-0" title={art.isPublished ? "Скрыть" : "Опубликовать"}>
                       {art.isPublished ? <ToggleRight className="h-4 w-4 text-emerald-400" /> : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
                     </Button>
