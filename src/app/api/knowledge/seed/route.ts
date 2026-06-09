@@ -177,36 +177,30 @@ export async function POST() {
     // First, ensure tables exist
     await ensureKnowledgeTables();
 
-    // Clean existing knowledge data using raw SQL
-    await pool.query(`DELETE FROM media WHERE "articleId" IS NOT NULL`);
-    await pool.query(`DELETE FROM articles`);
+    // Clean only seed-generated data, preserving user-uploaded articles with media
+    // Articles with sourceType='s3' or with media attachments are user-uploaded and should be kept
+    await pool.query(`DELETE FROM media WHERE "articleId" IN (SELECT id FROM articles WHERE "sourceType" IS NULL OR "sourceType" != 's3')`);
+    await pool.query(`DELETE FROM articles WHERE "sourceType" IS NULL OR "sourceType" != 's3'`);
     await pool.query(`DELETE FROM glossary_terms`);
-    await pool.query(`DELETE FROM knowledge_spaces`);
+    // Only delete spaces that don't have user articles
+    await pool.query(`DELETE FROM knowledge_spaces WHERE id NOT IN (SELECT DISTINCT "spaceId" FROM articles WHERE "sourceType" = 's3')`);
 
-    // ═══ Knowledge Spaces ═══
-    const space1Id = genId();
-    await pool.query(
-      `INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [space1Id, "Prompt Engineering", "prompt-engineering", "Техники и стратегии написания эффективных промптов для AI-моделей", "prompting", 1, true]
-    );
+    // ═══ Knowledge Spaces (idempotent — use existing or create new) ═══
+    async function ensureSpace(slug: string, name: string, description: string, icon: string, order: number): Promise<string> {
+      const existing = await pool.query(`SELECT id FROM knowledge_spaces WHERE slug = $1`, [slug]);
+      if (existing.rows.length > 0) return existing.rows[0].id;
+      const id = genId();
+      await pool.query(
+        `INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, name, slug, description, icon, order, true]
+      );
+      return id;
+    }
 
-    const space2Id = genId();
-    await pool.query(
-      `INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [space2Id, "AI Инструменты", "ai-tools", "Обзор AI-инструментов для разработчиков: Cursor, Claude Code, Copilot и другие", "tools", 2, true]
-    );
-
-    const space3Id = genId();
-    await pool.query(
-      `INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [space3Id, "AI для 1С", "ai-for-1c", "Применение искусственного интеллекта в разработке на платформе 1С:Предприятие", "1c", 3, true]
-    );
-
-    const space4Id = genId();
-    await pool.query(
-      `INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [space4Id, "AI Агенты и Автоматизация", "ai-agents", "Создание AI-агентов и автоматизация рутинных задач разработчика", "agents", 4, true]
-    );
+    const space1Id = await ensureSpace("prompt-engineering", "Prompt Engineering", "Техники и стратегии написания эффективных промптов для AI-моделей", "prompting", 1);
+    const space2Id = await ensureSpace("ai-tools", "AI Инструменты", "Обзор AI-инструментов для разработчиков: Cursor, Claude Code, Copilot и другие", "tools", 2);
+    const space3Id = await ensureSpace("ai-for-1c", "AI для 1С", "Применение искусственного интеллекта в разработке на платформе 1С:Предприятие", "1c", 3);
+    const space4Id = await ensureSpace("ai-agents", "AI Агенты и Автоматизация", "Создание AI-агентов и автоматизация рутинных задач разработчика", "agents", 4);
 
     // ═══ Articles — now using spaceId directly (2-level hierarchy: space → articles) ═══
 
