@@ -101,7 +101,14 @@ export async function GET(
     // ── 3. Генерация Signed URL (15 минут) ──────────────────────────
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
 
-    // ── 4. Редирект на Signed URL ───────────────────────────────────
+    // ── 4. Return signed URL ────────────────────────────────────────
+    // ?format=json → { url: signedUrl } для JS-клиента (надёжнее, чем 302 редирект)
+    // без параметра → 302 редирект (обратная совместимость)
+    const format = request.nextUrl.searchParams.get("format");
+    if (format === "json") {
+      return NextResponse.json({ url: signedUrl });
+    }
+
     // HTML5 <video src="/api/knowledge/video/xxx"> → 302 → signed S3 URL
     return NextResponse.redirect(signedUrl);
   } catch (error) {

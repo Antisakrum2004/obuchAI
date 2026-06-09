@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, Loader2, RefreshCw } from "lucide-react";
+import { ExternalLink, Play, Loader2, RefreshCw, AlertCircle, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -59,17 +59,10 @@ function extractRutubeId(url: string): string | null {
 }
 
 /**
- * Invidious instances that proxy YouTube content — work without VPN in Russia.
- * We try them in order; if the first fails, fallback to the next.
- */
-/**
  * YouTube player strategy:
  * 1. youtube-nocookie.com (privacy-enhanced, less tracking, less browser blocking)
  * 2. Direct youtube.com embed (fallback)
  * 3. Link to YouTube (if embeds completely fail)
- *
- * Invidious/Piped instances are unreliable (CAPTCHAs, dead, rate-limited)
- * so we don't use them as primary strategy.
  */
 
 const sourceTypeLabels: Record<string, string> = {
@@ -80,6 +73,126 @@ const sourceTypeLabels: Record<string, string> = {
   direct: "Видео",
   other: "Ссылка",
 };
+
+// ─── Protected Video Player (S3 signed URLs via JSON API) ───
+
+/**
+ * Компонент для воспроизведения видео из приватного S3-хранилища.
+ * Вместо 302-редиректа (который часто не работает с <video> элементом),
+ * получает signed URL через JSON API и устанавливает его как src.
+ *
+ * Поддерживает:
+ * - Загрузку с индикацией прогресса
+ * - Обработку ошибок с возможностью повтора
+ * - Авто-обновление истёкших signed URLs
+ */
+function ProtectedVideoPlayer({ apiPath, title, className }: { apiPath: string; title?: string; className?: string }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const fetchSignedUrl = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const separator = apiPath.includes("?") ? "&" : "?";
+      const res = await fetch(`${apiPath}${separator}format=json`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Ошибка сервера (${res.status})`);
+      }
+      const data = await res.json();
+      if (!data.url) {
+        throw new Error("Сервер не вернул ссылку на видео");
+      }
+      setSignedUrl(data.url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Не удалось загрузить видео";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [apiPath]);
+
+  useEffect(() => {
+    fetchSignedUrl();
+  }, [fetchSignedUrl, retryCount]);
+
+  const handleRetry = () => {
+    setRetryCount((c) => c + 1);
+  };
+
+  const handleVideoError = () => {
+    // Если signed URL истёк или не работает — пробуем получить новый
+    if (retryCount < 3) {
+      setRetryCount((c) => c + 1);
+    } else {
+      setError("Не удалось воспроизвести видео. Попробуйте обновить страницу.");
+    }
+  };
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div className="flex items-center gap-2 mb-2">
+        <Play className="h-4 w-4 text-emerald-400" />
+        <span className="text-sm font-medium">Видео</span>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10">
+          Защищённое
+        </Badge>
+        <span className="text-[10px] text-emerald-400/60 flex items-center gap-1 ml-auto">
+          <ShieldCheck className="h-3 w-3" />
+          Приватный доступ
+        </span>
+      </div>
+
+      {loading && (
+        <div className="glass rounded-xl p-2 border-white/5">
+          <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 gap-3">
+              <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+              <span className="text-sm text-muted-foreground">Загрузка видео...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="glass rounded-xl p-5 border-white/5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-muted-foreground mb-3">
+                Не удалось загрузить видео: {error}
+              </p>
+              <button
+                onClick={handleRetry}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-xs font-medium"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Повторить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && signedUrl && (
+        <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">
+          <video
+            src={signedUrl}
+            controls
+            className="w-full rounded-lg"
+            preload="metadata"
+            onError={handleVideoError}
+          >
+            Ваш браузер не поддерживает воспроизведение видео.
+          </video>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── YouTube Player with nocookie + direct fallback ───
 
@@ -271,8 +384,6 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
       )}
 
       {!loading && strategy === "iframe" && !iframeFailed && (() => {
-        // Convert Yandex Disk share URL to player embed URL
-        // e.g. https://disk.yandex.ru/d/XXXX → https://disk.yandex.ru/player/d/XXXX
         let playerSrc = url;
         try {
           const parsed = new URL(url);
@@ -348,6 +459,12 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
+  // ── Protected S3 video (our API route) → fetch signed URL via JS ──
+  // If URL starts with /api/knowledge/video — it's a protected S3 video
+  if (url.startsWith("/api/knowledge/video/")) {
+    return <ProtectedVideoPlayer apiPath={url} title={title} className={className} />;
+  }
+
   // YouTube → nocookie + direct fallback
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
@@ -408,6 +525,28 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
   }
 
   // direct / other — show video player
+  // If URL is a direct S3 URL (not through our API), route through protected player
+  if (url.includes("storage.selcloud.ru") || (url.includes("s3.") && url.includes(".storage."))) {
+    // This shouldn't happen anymore (article page should route through /api/knowledge/video/by-article/),
+    // but handle it as a fallback — redirect through our API
+    return (
+      <div className={cn("space-y-2", className)}>
+        <div className="flex items-center gap-2 mb-2">
+          <Play className="h-4 w-4 text-emerald-400" />
+          <span className="text-sm font-medium">Видео</span>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-white/10 text-muted-foreground">
+            {sourceTypeLabels[type] || sourceTypeLabels.other}
+          </Badge>
+        </div>
+        <div className="glass rounded-xl p-5 border-white/5">
+          <p className="text-sm text-muted-foreground mb-3">
+            Видео хранится в защищённом хранилище. Для воспроизведения обновите страницу.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">

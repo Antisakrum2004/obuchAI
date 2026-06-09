@@ -12,30 +12,33 @@ import {
   ZoomIn,
   X,
   ShieldCheck,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatFileSize, getFileIcon } from "@/lib/media-utils";
 import { cn } from "@/lib/utils";
-import {
-  Lightbox,
-  VideoModal,
-  hasVideoPosition,
-} from "@/components/knowledge/media-lightbox";
+import { Lightbox } from "@/components/knowledge/media-lightbox";
 
 /**
- * Генерация URL для защищённого доступа к видео через Signed URLs.
- * Вместо прямой ссылки на S3 (которая была бы публичной) используем
- * наш API-маршрут, который проверяет авторизацию и генерирует
- * временную подписанную ссылку (15 минут).
- *
- * HTML5 <video> плеер автоматически следует 302 редиректу
- * от /api/knowledge/video/{id} → signed S3 URL.
+ * Получение signed URL для видео через JSON API.
+ * Вместо 302-редиректа (который часто не работает с <video>),
+ * получаем signed URL через ?format=json и устанавливаем как src.
  */
-function getProtectedVideoUrl(mediaId: string): string {
-  return `/api/knowledge/video/${mediaId}`;
+async function fetchVideoSignedUrl(mediaId: string): Promise<string> {
+  const res = await fetch(`/api/knowledge/video/${mediaId}?format=json`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Ошибка сервера (${res.status})`);
+  }
+  const data = await res.json();
+  if (!data.url) {
+    throw new Error("Сервер не вернул ссылку на видео");
+  }
+  return data.url;
 }
 
-// Keep videoPositions in sync with the lightbox module
+// Keep videoPositions in sync across component
 const videoPositionsLocal = new Map<string, number>();
 
 interface MediaItem {
@@ -71,6 +74,9 @@ export function MediaViewer({
   // Modal state
   const [lightboxImage, setLightboxImage] = useState<MediaItem | null>(null);
   const [modalVideo, setModalVideo] = useState<MediaItem | null>(null);
+  const [videoSignedUrl, setVideoSignedUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -87,22 +93,70 @@ export function MediaViewer({
       .finally(() => setLoading(false));
   }, [articleId]);
 
+  // Fetch signed URL when modal video changes
+  useEffect(() => {
+    if (!modalVideo) {
+      setVideoSignedUrl(null);
+      setVideoError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setVideoLoading(true);
+    setVideoError(null);
+
+    fetchVideoSignedUrl(modalVideo.id)
+      .then((url) => {
+        if (!cancelled) {
+          setVideoSignedUrl(url);
+          setVideoLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setVideoError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+          setVideoLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modalVideo]);
+
+  // Restore video position on open
+  useEffect(() => {
+    if (modalVideo && videoRef.current && videoSignedUrl) {
+      const saved = videoPositionsLocal.get(modalVideo.id);
+      if (saved && saved > 0) {
+        videoRef.current.currentTime = saved;
+      }
+    }
+  }, [modalVideo, videoSignedUrl]);
+
   // Save video position when closing
   const closeVideoModal = useCallback(() => {
     if (videoRef.current && modalVideo) {
       videoPositionsLocal.set(modalVideo.id, videoRef.current.currentTime);
     }
     setModalVideo(null);
+    setVideoSignedUrl(null);
+    setVideoError(null);
   }, [modalVideo]);
 
-  // Restore video position on open
-  useEffect(() => {
-    if (modalVideo && videoRef.current) {
-      const saved = videoPositionsLocal.get(modalVideo.id);
-      if (saved && saved > 0) {
-        videoRef.current.currentTime = saved;
-      }
-    }
+  const handleVideoRetry = useCallback(() => {
+    if (!modalVideo) return;
+    setVideoLoading(true);
+    setVideoError(null);
+    fetchVideoSignedUrl(modalVideo.id)
+      .then((url) => {
+        setVideoSignedUrl(url);
+        setVideoLoading(false);
+      })
+      .catch((err) => {
+        setVideoError(err instanceof Error ? err.message : "Не удалось загрузить видео");
+        setVideoLoading(false);
+      });
   }, [modalVideo]);
 
   const handleDelete = async (mediaId: string) => {
@@ -303,7 +357,6 @@ export function MediaViewer({
                 onClick={() => setLightboxImage(img)}
                 className="relative group glass rounded-lg overflow-hidden border-white/5 hover:border-emerald-500/20 transition-all text-left w-full"
               >
-                { }
                 <img
                   src={img.url}
                   alt={img.fileName}
@@ -373,13 +426,36 @@ export function MediaViewer({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="rounded-xl overflow-hidden border border-white/10 bg-black">
-              <video
-                ref={videoRef}
-                src={getProtectedVideoUrl(modalVideo.id)}
-                controls
-                autoPlay
-                className="w-full max-h-[80vh]"
-              />
+              {videoLoading && (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <Loader2 className="h-10 w-10 text-emerald-400 animate-spin" />
+                  <span className="text-sm text-white/60">Загрузка видео...</span>
+                </div>
+              )}
+
+              {videoError && (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <AlertCircle className="h-10 w-10 text-amber-400" />
+                  <span className="text-sm text-white/60 text-center px-8">{videoError}</span>
+                  <button
+                    onClick={handleVideoRetry}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Повторить
+                  </button>
+                </div>
+              )}
+
+              {!videoLoading && !videoError && videoSignedUrl && (
+                <video
+                  ref={videoRef}
+                  src={videoSignedUrl}
+                  controls
+                  autoPlay
+                  className="w-full max-h-[80vh]"
+                />
+              )}
             </div>
             <div className="mt-3 flex items-center justify-between px-1">
               <p className="text-sm text-white/80 truncate flex-1">
@@ -390,15 +466,6 @@ export function MediaViewer({
                   <ShieldCheck className="h-3 w-3" />
                   Защищённый доступ
                 </span>
-                <a
-                  href={getProtectedVideoUrl(modalVideo.id)}
-                  download={modalVideo.fileName}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1"
-                >
-                  <Download className="h-3 w-3" />
-                  Скачать
-                </a>
                 {canDelete && (
                   <button
                     onClick={(e) => {

@@ -83,7 +83,14 @@ export async function GET(
     // 4. Generate signed URL (15 min)
     const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
 
-    // 5. Redirect to signed URL
+    // 5. Return signed URL
+    // ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
+    // no param → 302 redirect (backward compatibility)
+    const format = request.nextUrl.searchParams.get("format");
+    if (format === "json") {
+      return NextResponse.json({ url: signedUrl });
+    }
+
     return NextResponse.redirect(signedUrl);
   } catch (error) {
     console.error("[video/by-article] Error generating signed URL:", error);
