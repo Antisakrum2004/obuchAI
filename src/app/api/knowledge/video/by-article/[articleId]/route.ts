@@ -7,9 +7,14 @@ import { S3StorageProvider } from "@/lib/storage/s3-storage-provider";
 /**
  * GET /api/knowledge/video/by-article/[articleId]
  *
- * Returns a signed S3 URL for the first video media of an article.
- * Used by VideoEmbed on the article page — the S3 bucket is private,
- * so direct URLs return 403. This route generates a 15-min presigned URL.
+ * Returns a signed S3 URL for the video of an article.
+ * Searches in TWO places:
+ * 1. media table (uploaded video attachments)
+ * 2. article.videoUrl field (URL set directly on the article)
+ *
+ * This is needed because videos can be set either:
+ * - As media attachments (uploaded via MediaUpload component)
+ * - As article.videoUrl (set via admin URL import or manual edit)
  *
  * ?format=json → { url: signedUrl } for JS client (more reliable than 302 redirect)
  * no param → 302 redirect (backward compatibility)
@@ -28,6 +33,27 @@ async function ensureFileKeyColumn(): Promise<void> {
     // Column already exists — not critical
   }
   fileKeyEnsured = true;
+}
+
+/**
+ * Extract S3 key from a URL or return null if not an S3 URL
+ */
+function extractS3Key(url: string): string | null {
+  const endpoint = process.env.S3_ENDPOINT || "";
+  const bucket = process.env.S3_BUCKET_NAME || "";
+  const prefix = `${endpoint}/${bucket}/`;
+
+  if (url.startsWith(prefix)) {
+    return url.slice(prefix.length);
+  }
+
+  // Already a key (no http prefix)
+  if (!url.startsWith("http")) {
+    return url;
+  }
+
+  // Not an S3 URL
+  return null;
 }
 
 export async function GET(
@@ -50,10 +76,11 @@ export async function GET(
     // 2. Ensure fileKey column exists
     await ensureFileKeyColumn();
 
-    // 3. Find the first video media for this article
+    // 3. Resolve articleId
     const { articleId } = await params;
 
-    const result = await pool.query(
+    // 4. Try to find video in media table first
+    const mediaResult = await pool.query(
       `SELECT id, "fileName", url, "fileKey"
        FROM media
        WHERE "articleId" = $1 AND "fileType" = 'video'
@@ -62,57 +89,71 @@ export async function GET(
       [articleId]
     );
 
-    if (!result.rows || result.rows.length === 0) {
+    let s3Key: string | null = null;
+    let directUrl: string | null = null;
+
+    if (mediaResult.rows && mediaResult.rows.length > 0) {
+      const media = mediaResult.rows[0];
+
+      if (media.fileKey) {
+        s3Key = media.fileKey;
+      } else if (media.url) {
+        const extracted = extractS3Key(media.url);
+        if (extracted) {
+          s3Key = extracted;
+        } else {
+          // Not an S3 URL — use directly
+          directUrl = media.url;
+        }
+      }
+    }
+
+    // 5. If no media found, check article.videoUrl
+    if (!s3Key && !directUrl) {
+      const articleResult = await pool.query(
+        `SELECT id, "videoUrl" FROM articles WHERE id = $1`,
+        [articleId]
+      );
+
+      if (articleResult.rows && articleResult.rows.length > 0) {
+        const article = articleResult.rows[0];
+
+        if (article.videoUrl) {
+          const extracted = extractS3Key(article.videoUrl);
+          if (extracted) {
+            s3Key = extracted;
+          } else {
+            // Not an S3 URL (YouTube, Rutube, etc.) — use directly
+            directUrl = article.videoUrl;
+          }
+        }
+      }
+    }
+
+    // 6. Nothing found
+    if (!s3Key && !directUrl) {
       return NextResponse.json(
         { error: "Видео не найдено для данной статьи" },
         { status: 404 }
       );
     }
 
-    const media = result.rows[0];
+    // 7. Generate signed URL or use direct URL
+    let videoUrl: string;
 
-    // 4. Determine S3 key
-    let s3Key: string;
-
-    if (media.fileKey) {
-      s3Key = media.fileKey;
+    if (s3Key) {
+      videoUrl = await s3Provider.getSignedUrl(s3Key, 900);
     } else {
-      const url = media.url as string;
-      if (!url) {
-        return NextResponse.json(
-          { error: "У видео отсутствует ссылка на файл" },
-          { status: 500 }
-        );
-      }
-
-      const endpoint = process.env.S3_ENDPOINT || "";
-      const bucket = process.env.S3_BUCKET_NAME || "";
-      const prefix = `${endpoint}/${bucket}/`;
-
-      if (url.startsWith(prefix)) {
-        s3Key = url.slice(prefix.length);
-      } else if (!url.startsWith("http")) {
-        s3Key = url;
-      } else {
-        // Not an S3 URL — redirect directly
-        const format = request.nextUrl.searchParams.get("format");
-        if (format === "json") {
-          return NextResponse.json({ url });
-        }
-        return NextResponse.redirect(url);
-      }
+      videoUrl = directUrl!;
     }
 
-    // 5. Generate signed URL (15 min)
-    const signedUrl = await s3Provider.getSignedUrl(s3Key, 900);
-
-    // 6. Return signed URL
+    // 8. Return result
     const format = request.nextUrl.searchParams.get("format");
     if (format === "json") {
-      return NextResponse.json({ url: signedUrl });
+      return NextResponse.json({ url: videoUrl });
     }
 
-    return NextResponse.redirect(signedUrl);
+    return NextResponse.redirect(videoUrl);
   } catch (error) {
     console.error("[video/by-article] Error generating signed URL:", error);
     return NextResponse.json(
