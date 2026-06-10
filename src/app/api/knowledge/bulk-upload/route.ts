@@ -217,10 +217,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Create processing queue entries
-        // Only add content_extract if we actually have a PDF URL (storage upload succeeded)
-        const hasPdfUrl = fileCategory === "pdf" && fileUrl;
+        // Always add content_extract for PDF files — even if storage upload failed,
+        // the user can retry after fixing storage config
+        const isPdf = fileCategory === "pdf";
         const queueTypes: string[] = [];
-        if (hasPdfUrl) {
+        if (isPdf) {
           queueTypes.push("content_extract");
         }
         queueTypes.push("ai_metadata");

@@ -702,13 +702,10 @@ async function processContentExtraction(
   }
 
   if (!pdfUrl) {
-    // Instead of throwing, mark as done with a warning — the PDF may not have been uploaded to storage
-    console.warn(`[Content] Article ${articleId} has no PDF URL — skipping content extraction`);
-    await pool.query(
-      `UPDATE processing_queue SET status = 'done', result = $1, progress = 100, "completedAt" = NOW(), "updatedAt" = NOW() WHERE id = $2`,
-      [JSON.stringify({ skipped: true, reason: "No PDF URL available" }), queueId]
-    );
-    return;
+    // Mark as error so the user can retry after fixing storage configuration
+    // (Previously was marked as "done" which prevented retries)
+    console.warn(`[Content] Article ${articleId} has no PDF URL — cannot extract content`);
+    throw new Error("PDF не загружен в хранилище — нет URL для скачивания. Проверьте настройки хранилища (S3 или Vercel Blob).");
   }
 
   // Download the PDF — for S3 private buckets, use signed URL or streamObject

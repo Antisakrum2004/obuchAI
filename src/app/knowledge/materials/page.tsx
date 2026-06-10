@@ -363,7 +363,7 @@ function EditableArticleCard({
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <button
-                  onClick={(e) => { e.stopPropagation(); }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 transition-colors text-muted-foreground"
                   title="Удалить"
                 >
@@ -563,6 +563,71 @@ export default function MaterialsPage() {
   });
 
   const pendingCount = articles.filter((a) => a.status === "pending").length;
+
+  // Auto-trigger AI processing for pending articles when page loads (if AI is configured)
+  useEffect(() => {
+    if (!isAdmin || pendingCount === 0) return;
+
+    let cancelled = false;
+
+    const autoProcess = async () => {
+      // Check if AI is configured
+      try {
+        const statusRes = await fetch("/api/knowledge/ai/status");
+        const statusData = await statusRes.json();
+        if (!statusData.available || cancelled) return;
+
+        // Get pending queue items
+        const queueRes = await fetch("/api/knowledge/queue?status=pending");
+        if (!queueRes.ok || cancelled) return;
+        const queueItems = await queueRes.json();
+        if (!Array.isArray(queueItems) || queueItems.length === 0) return;
+
+        console.log(`[Auto-process] Found ${queueItems.length} pending queue items, starting processing...`);
+
+        // Group by articleId and process each article sequentially
+        const articleIds = [...new Set(queueItems.map((item: { articleId: string }) => item.articleId))];
+
+        for (const articleId of articleIds) {
+          if (cancelled) break;
+
+          // Get queue items for this article
+          const articleItems = queueItems.filter((item: { articleId: string }) => item.articleId === articleId);
+          const types = articleItems.map((item: { type: string }) => {
+            const map: Record<string, string> = {
+              content_extract: "content",
+              ai_metadata: "metadata",
+              glossary_extract: "glossary",
+              graph_build: "graph",
+            };
+            return map[item.type] || "metadata";
+          });
+
+          for (const type of types) {
+            if (cancelled) break;
+            try {
+              await fetch("/api/knowledge/ai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ articleId, type }),
+              });
+            } catch {
+              // Silently continue on error
+            }
+          }
+        }
+
+        // Refresh articles after auto-processing
+        if (!cancelled) fetchArticles();
+      } catch {
+        // Silently fail
+      }
+    };
+
+    autoProcess();
+
+    return () => { cancelled = true; };
+  }, [isAdmin, pendingCount, fetchArticles]);
 
   // Handle inline update from card
   const handleArticleUpdate = useCallback((id: string, fields: Partial<MaterialArticle>) => {
