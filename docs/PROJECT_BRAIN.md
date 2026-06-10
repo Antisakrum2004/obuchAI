@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-10 (обновлено до v0.15.1 — НАЙДЕНА И ИСПРАВЛЕНА корневая причина неработающей навигации: конфликт slug-имён `[slug]` vs `[spaceId]`). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-11 (обновлено до v0.15.2 — ИСПРАВЛЕНА React error #310 в ArticleClient: useMemo после ранних return = нарушение Rules of Hooks). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -355,7 +355,7 @@ src/
 - **Компонентов**: 92+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
-- **Текущая версия**: 0.15.1
+- **Текущая версия**: 0.15.2
 
 ### Реализовано и работает стабильно
 - Аутентификация (Google OAuth + demo вход + admin вход)
@@ -1205,3 +1205,11 @@ Next.js 16 (Turbopack) требует, чтобы все динамически�
 - [ ] Автоматическое определение типа файла по расширению при вставке s3:// ссылки
 - [ ] Превью видео (thumbnailUrl) — отложено до FFmpeg
 - [ ] HLS-трансляция для больших видео — отложено до VPS
+
+### 🔴 React error #310 при открытии статей — ✅ ИСПРАВЛЕНО v0.15.0
+
+> **Статус**: ✅ РЕШЕНО — исправлено в v0.15.0 (commit 03f46c0)
+> **Симптом**: После перехода на `/knowledge/article/[id]` отображалось «Критическая ошибка сервера: Minified React error #310»
+> **Корневая причина**: Нарушение Rules of Hooks в `article-client.tsx` — два вызова `useMemo` (строки 339 и 346) находились ПОСЛЕ условных ранних `return` (строки 295 и 311). На первом рендере (loading=true) хуки не вызывались; на повторном (loading=false) — вызывались. Несогласованный порядок вызова хуков между рендерами вызывал React error #310.
+> **Исправление**: Перенос обоих `useMemo` (headings, markdownComponents) до ранних return. Замена `article.content` на `article?.content` с optional chaining для null safety. Нехуковые вычисления (isPlaceholderContent, hasPdf, keyConceptsList) оставлены после return (безопасно).
+> **Урок**: ВСЕ React-хуки (useState, useMemo, useCallback, useEffect, useRef) должны вызываться на КАЖДОМ рендере в ОДИНАКОВОМ порядке. Условный return до хука = гарантированный краш.
