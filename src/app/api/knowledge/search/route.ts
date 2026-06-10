@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
       WHERE a."isPublished" = true
         AND (a.title ILIKE $1 OR a.summary ILIKE $1 OR a.tags::text ILIKE $1)
-      ORDER BY a."order"
+      ORDER BY a."createdAt" DESC
       LIMIT 20`,
       [searchTerm],
     );

@@ -82,11 +82,7 @@ export async function GET(
     }
 
     // Find related glossary terms (by matching tags or key topics)
-    const tags = article.tags ? JSON.parse(article.tags) : [];
-    const keyTopics = article.keyTopics ? JSON.parse(article.keyTopics) : [];
-
-    const searchTerms = [...tags, ...keyTopics].filter(Boolean).slice(0, 5);
-
+    // Wrapped in try/catch so glossary failures don't prevent article from loading
     let relatedGlossary: Array<{
       id: string;
       term: string;
@@ -94,71 +90,104 @@ export async function GET(
       category: string | null;
     }> = [];
 
-    if (searchTerms.length > 0) {
-      // Build ILIKE conditions for each search term
-      const conditions = searchTerms
-        .map((_: string, i: number) => `term ILIKE $${i + 1}`)
-        .join(" OR ");
-      const likeParams = searchTerms.map((term: string) => `%${term}%`);
+    try {
+      const tags = article.tags ? JSON.parse(article.tags) : [];
+      const keyTopics = article.keyTopics ? JSON.parse(article.keyTopics) : [];
 
-      const { rows: glossaryRows } = await pool.query(
-        `SELECT id, term, "shortDefinition", category
-         FROM glossary_terms
-         WHERE ${conditions}
-         LIMIT 8`,
-        likeParams
-      );
+      const searchTerms = [...tags, ...keyTopics].filter(Boolean).slice(0, 5);
 
-      relatedGlossary = glossaryRows.map((g: any) => ({
-        id: g.id as string,
-        term: g.term as string,
-        shortDefinition: g.shortDefinition as string | null,
-        category: g.category as string | null,
-      }));
+      if (searchTerms.length > 0) {
+        // Build ILIKE conditions for each search term
+        const conditions = searchTerms
+          .map((_: string, i: number) => `term ILIKE $${i + 1}`)
+          .join(" OR ");
+        const likeParams = searchTerms.map((term: string) => `%${term}%`);
 
-      // If no matches by tag, return some general glossary terms
-      if (relatedGlossary.length === 0) {
-        const { rows: fallbackRows } = await pool.query(
+        const { rows: glossaryRows } = await pool.query(
           `SELECT id, term, "shortDefinition", category
            FROM glossary_terms
-           ORDER BY order ASC
-           LIMIT 5`
+           WHERE ${conditions}
+           LIMIT 8`,
+          likeParams
         );
 
-        relatedGlossary = fallbackRows.map((g: any) => ({
+        relatedGlossary = glossaryRows.map((g: any) => ({
           id: g.id as string,
           term: g.term as string,
           shortDefinition: g.shortDefinition as string | null,
           category: g.category as string | null,
         }));
+
+        // If no matches by tag, return some general glossary terms
+        if (relatedGlossary.length === 0) {
+          const { rows: fallbackRows } = await pool.query(
+            `SELECT id, term, "shortDefinition", category
+             FROM glossary_terms
+             ORDER BY "order" ASC
+             LIMIT 5`
+          );
+
+          relatedGlossary = fallbackRows.map((g: any) => ({
+            id: g.id as string,
+            term: g.term as string,
+            shortDefinition: g.shortDefinition as string | null,
+            category: g.category as string | null,
+          }));
+        }
       }
+    } catch (glossaryErr) {
+      console.warn('[Article API] Glossary query failed, skipping:', glossaryErr);
+      // Continue without glossary — article should still load
     }
 
     // Check if there's a PDF in the media table (for articles where pdfUrl is empty but PDF was uploaded)
     let hasMediaPdf = false;
     let mediaPdfUrl: string | null = null;
-    if (!article.pdfUrl) {
-      const { rows: mediaCheck } = await pool.query(
-        `SELECT id, url, "fileKey" FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
-        [id]
-      );
-      hasMediaPdf = mediaCheck.length > 0;
-      if (hasMediaPdf) {
-        mediaPdfUrl = await getAccessibleUrl(mediaCheck[0].url, mediaCheck[0].fileKey);
+    try {
+      if (!article.pdfUrl) {
+        const { rows: mediaCheck } = await pool.query(
+          `SELECT id, url, "fileKey" FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
+          [id]
+        );
+        hasMediaPdf = mediaCheck.length > 0;
+        if (hasMediaPdf) {
+          mediaPdfUrl = await getAccessibleUrl(mediaCheck[0].url, mediaCheck[0].fileKey);
+        }
       }
+    } catch (mediaErr) {
+      console.warn('[Article API] Media PDF check failed:', mediaErr);
     }
 
     // Generate accessible URLs for article file fields (S3 signed URLs if needed)
-    const accessiblePdfUrl = article.pdfUrl
-      ? await getAccessibleUrl(article.pdfUrl, null)
-      : mediaPdfUrl;
-    const accessiblePptxUrl = article.pptxUrl
-      ? await getAccessibleUrl(article.pptxUrl, null)
-      : null;
+    // Each wrapped individually so one failure doesn't break the others
+    let accessiblePdfUrl: string | null = null;
+    let accessiblePptxUrl: string | null = null;
+    let accessibleSourceUrl: string | null = null;
+    try {
+      accessiblePdfUrl = article.pdfUrl
+        ? await getAccessibleUrl(article.pdfUrl, null)
+        : mediaPdfUrl;
+    } catch (err) {
+      console.warn('[Article API] PDF URL generation failed:', err);
+      accessiblePdfUrl = article.pdfUrl || mediaPdfUrl;
+    }
+    try {
+      accessiblePptxUrl = article.pptxUrl
+        ? await getAccessibleUrl(article.pptxUrl, null)
+        : null;
+    } catch (err) {
+      console.warn('[Article API] PPTX URL generation failed:', err);
+      accessiblePptxUrl = article.pptxUrl;
+    }
     const accessibleVideoUrl = article.videoUrl;
-    const accessibleSourceUrl = article.sourceUrl
-      ? await getAccessibleUrl(article.sourceUrl, null)
-      : null;
+    try {
+      accessibleSourceUrl = article.sourceUrl
+        ? await getAccessibleUrl(article.sourceUrl, null)
+        : null;
+    } catch (err) {
+      console.warn('[Article API] Source URL generation failed:', err);
+      accessibleSourceUrl = article.sourceUrl;
+    }
 
     const result = {
       id: article.id,
