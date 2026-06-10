@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -50,7 +50,6 @@ import ReactMarkdown from "react-markdown";
 import { VideoEmbed } from "@/components/knowledge/video-embed";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { ArticleData } from "./page";
 
 // ─── Config ──────────────────────────────────────────────────────
 const statusConfig: Record<string, { label: string; color: string }> = {
@@ -99,7 +98,7 @@ function extractTextFromChildren(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(extractTextFromChildren).join("");
   if (children && typeof children === "object" && "props" in children) {
-    return extractTextFromChildren((children as React.ReactElement).props.children);
+    return extractTextFromChildren(((children as React.ReactElement).props as { children?: React.ReactNode }).children);
   }
   return "";
 }
@@ -123,15 +122,43 @@ function extractHeadings(markdown: string): HeadingItem[] {
   return headings;
 }
 
+// ─── Article data type (from API) ────────────────────────────────
+interface ArticleData {
+  id: string;
+  title: string;
+  slug: string;
+  content: string;
+  summary: string | null;
+  tags: string[];
+  keyTopics: string[];
+  viewCount: number;
+  createdAt: string;
+  updatedAt: string;
+  space: { id: string; name: string; slug: string } | null;
+  difficulty: string | null;
+  estimatedTime: string | null;
+  status: string;
+  aiGenerated: boolean;
+  videoUrl: string | null;
+  pdfUrl: string | null;
+  pptxUrl: string | null;
+  sourceUrl: string | null;
+  sourceType: string | null;
+  keyConcepts: string[];
+  hasMediaPdf: boolean;
+}
+
 // ─── Client Component ────────────────────────────────────────────
 export function ArticleClient({
-  article,
-  isAdmin,
+  articleId,
 }: {
-  article: ArticleData;
-  isAdmin: boolean;
+  articleId: string;
 }) {
   const router = useRouter();
+  const [article, setArticle] = useState<ArticleData | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
 
   // Inline editing state
@@ -147,8 +174,48 @@ export function ArticleClient({
 
   const headingIdCountsRef = useRef<Map<string, number>>(new Map());
 
+  // ─── Fetch article data on mount ────────────────────────────────
+  useEffect(() => {
+    async function loadArticle() {
+      try {
+        setLoading(true);
+        // Fetch article data via API (client-side, no serverless timeout)
+        const [articleRes, sessionRes] = await Promise.all([
+          fetch(`/api/knowledge/articles/${encodeURIComponent(articleId)}?all=true`),
+          fetch("/api/auth/session"),
+        ]);
+
+        if (!articleRes.ok) {
+          if (articleRes.status === 404) {
+            setError("Статья не найдена");
+          } else {
+            setError("Ошибка загрузки статьи");
+          }
+          return;
+        }
+
+        const data: ArticleData = await articleRes.json();
+        setArticle(data);
+
+        // Check admin status
+        if (sessionRes.ok) {
+          const session = await sessionRes.json();
+          const role = (session?.user as Record<string, string | undefined>)?.role;
+          setIsAdmin(role === "admin");
+        }
+      } catch (err) {
+        console.error("[Article Page] Failed to load:", err);
+        setError("Не удалось загрузить статью");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadArticle();
+  }, [articleId]);
+
   // ─── Save handler ────────────────────────────────────────────
   const handleInlineSave = useCallback(async (field: string, value: string) => {
+    if (!article) return;
     setSavingField(field);
     try {
       let body: Record<string, unknown> = {};
@@ -166,7 +233,8 @@ export function ArticleClient({
       });
       if (res.ok) {
         toast.success("Сохранено");
-        router.refresh();
+        // Update local state
+        setArticle((prev) => prev ? { ...prev, [field]: field === "tags" ? JSON.parse(value || "[]") : value } : prev);
       } else {
         const data = await res.json();
         toast.error(data.error || "Ошибка сохранения");
@@ -176,10 +244,11 @@ export function ArticleClient({
     } finally {
       setSavingField(null);
     }
-  }, [article.id, router]);
+  }, [article]);
 
   // ─── Delete handler ──────────────────────────────────────────
   const handleDeleteArticle = async () => {
+    if (!article) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
@@ -201,6 +270,7 @@ export function ArticleClient({
 
   // ─── Extract content ─────────────────────────────────────────
   const handleExtractContent = async () => {
+    if (!article) return;
     setExtracting(true);
     try {
       const res = await fetch("/api/knowledge/ai", {
@@ -210,7 +280,6 @@ export function ArticleClient({
       });
       if (res.ok) {
         toast.success("Контент извлекается из PDF...");
-        router.refresh();
       } else {
         const data = await res.json();
         toast.error(data.details || data.error || "Ошибка извлечения");
@@ -221,6 +290,43 @@ export function ArticleClient({
       setExtracting(false);
     }
   };
+
+  // ─── Loading state ──────────────────────────────────────────
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="mx-auto max-w-5xl">
+          <div className="flex items-center justify-center h-[50vh]">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+              <p className="text-sm text-muted-foreground">Загрузка статьи...</p>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // ─── Error state ────────────────────────────────────────────
+  if (error || !article) {
+    return (
+      <AppLayout>
+        <div className="mx-auto max-w-5xl">
+          <div className="flex items-center justify-center h-[50vh]">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="text-4xl">📄</div>
+              <h2 className="text-xl font-bold">{error || "Статья не найдена"}</h2>
+              <Link href="/knowledge">
+                <Button variant="outline" className="border-white/10">
+                  Вернуться к базе знаний
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // ─── Derived state ───────────────────────────────────────────
   const isPlaceholderContent = article.content
@@ -238,26 +344,26 @@ export function ArticleClient({
   const keyConceptsList = article.keyConcepts || [];
 
   const markdownComponents = useMemo(() => ({
-    h2: ({ children }: { children: React.ReactNode }) => {
+    h2: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
       const text = extractTextFromChildren(children);
       let id = slugifyHeading(text);
       const counts = headingIdCountsRef.current;
       const count = counts.get(id) || 0;
       counts.set(id, count + 1);
       if (count > 0) id = `${id}-${count + 1}`;
-      return <h2 id={id} className="scroll-mt-20">{children}</h2>;
+      return <h2 id={id} className="scroll-mt-20" {...props}>{children}</h2>;
     },
-    h3: ({ children }: { children: React.ReactNode }) => {
+    h3: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
       const text = extractTextFromChildren(children);
       let id = slugifyHeading(text);
       const counts = headingIdCountsRef.current;
       const count = counts.get(id) || 0;
       counts.set(id, count + 1);
       if (count > 0) id = `${id}-${count + 1}`;
-      return <h3 id={id} className="scroll-mt-20">{children}</h3>;
+      return <h3 id={id} className="scroll-mt-20" {...props}>{children}</h3>;
     },
-    img: ({ src, alt }: { src?: string; alt?: string }) => (
-      <img src={src} alt={alt} className="w-full rounded-lg border border-white/10 my-4" />
+    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+      <img src={src} alt={alt} className="w-full rounded-lg border border-white/10 my-4" {...props} />
     ),
   }), []);
 
