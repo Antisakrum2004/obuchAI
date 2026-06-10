@@ -100,6 +100,10 @@ interface ArticleDetail {
   processedAt: string | null;
   errorMessage: string | null;
   hasMediaPdf?: boolean;
+  // Sprint 7: Interactive lesson fields
+  quiz: Record<string, unknown> | null;
+  practical_task: Record<string, unknown> | null;
+  timecodes: Record<string, unknown> | null;
 }
 
 interface GlossaryItem {
@@ -760,27 +764,15 @@ export default function ArticlePage({
               </div>
 
               {/* ─── Video Embed Section ─── */}
-              {article.videoUrl && (() => {
-                // Detect if videoUrl points to our private S3 bucket (Selectel)
-                // If so, route through signed-URL API instead of direct URL (bucket is private → 403)
-                const isS3Url = article.videoUrl.startsWith("s3://") ||
-                                article.videoUrl.includes("storage.selcloud.ru") ||
-                                article.videoUrl.includes("s3.") && article.videoUrl.includes(".storage.");
-                const videoSrc = isS3Url
-                  ? `/api/knowledge/video/by-article/${article.id}`
-                  : article.videoUrl;
-                const videoSourceType = isS3Url ? "direct" : (article.sourceType || undefined);
-
-                return (
-                  <div className="mb-6">
-                    <VideoEmbed
-                      url={videoSrc}
-                      sourceType={videoSourceType}
-                      title={article.title}
-                    />
-                  </div>
-                );
-              })()}
+              {article.videoUrl && (
+                <div className="mb-6">
+                  <VideoEmbed
+                    url={article.videoUrl}
+                    sourceType={article.sourceType || undefined}
+                    title={article.title}
+                  />
+                </div>
+              )}
 
               {/* ─── Source Links Section ─── */}
               {(article.pdfUrl || article.pptxUrl || article.sourceUrl) && (

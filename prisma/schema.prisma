@@ -332,6 +332,11 @@ model Article {
   sourceUrl     String?    // General source link
   sourceType    String?    // "youtube" | "rutube" | "vk" | "yandex_disk" | "direct" | "other"
 
+  // Sprint 7: Interactive lesson fields
+  quiz           Json?      // JSONB — array of quiz questions for the lesson
+  practical_task Json?      // JSONB — practical task with hidden solution
+  timecodes      Json?      // JSONB — structured video timecodes
+
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 

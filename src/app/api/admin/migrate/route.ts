@@ -358,6 +358,11 @@ export async function POST(request: Request) {
         // GlossaryTerm extension
         `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
 
+        // Sprint 7: Interactive lesson fields (quiz, practical_task, timecodes)
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB;`,
+        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB;`,
+
         // Sprint 6.1: Allow categoryId to be NULL (AI auto-categorization)
         // PostgreSQL doesn't support ALTER COLUMN in IF NOT EXISTS, so we use a DO block
         `DO $$ BEGIN

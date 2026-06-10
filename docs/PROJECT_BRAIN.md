@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-09 (обновлено до v0.8.3). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-10 (обновлено до v0.9.0 — Sprint 7: переход на облачные ссылки, интерактивные уроки). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -55,7 +55,7 @@
 | `S3_REGION` | `ru-7` |
 | `S3_BUCKET_NAME` | `ati-lab` (приватный бакет) |
 
-> ⚠️ **Важно**: Бакет `ati-lab` полностью приватный. Файлы доступны ТОЛЬКО через Signed URLs (15 мин), генерируемые API-роутом `/api/knowledge/video/[id]`. Прямые ссылки на S3 не работают.
+> ⚠️ **Важно**: Начиная с Sprint 7 (v0.9.0), мы отказались от хранения видео на S3 Selectel из-за перерасхода трафика и проблем с проксированием. Видео теперь размещается через внешние облачные ссылки (Яндекс.Диск, YouTube, Rutube, VK). S3 Signed URL роуты удалены.
 
 ---
 
@@ -301,32 +301,24 @@ src/
 
 ### 3.16 Storage & Media (`src/lib/storage/`, `src/lib/media-service.ts`, `src/lib/media-utils.ts`)
 - **StorageProvider**: Интерфейс (upload, delete, getUrl) — абстракция над файловым хранилищем
-- **S3StorageProvider**: Реализация через @aws-sdk/client-s3 + @aws-sdk/s3-request-presigner → **Selectel Object Storage** (активный провайдер)
+- **S3StorageProvider**: Реализация через @aws-sdk/client-s3 → **Selectel Object Storage** (используется для PDF/документов/изображений, но **НЕ для видео** с Sprint 7)
 - **VercelBlobStorageProvider**: Реализация через @vercel/blob (MVP, более не используется)
 - **MediaService**: Бизнес-логика загрузки/удаления/привязки файлов, не знает про конкретное хранилище
-- **media-utils.ts**: Клиентские утилиты (formatFileSize, getFileIcon, validateFile, detectFileType, generateStorageKey, ALLOWED_FILE_TYPES) — БЕЗ серверных импортов. Клиентские компоненты импортируют отсюда.
-- **Поддерживаемые типы**: видео (MP4/WebM/MOV до 2 ГБ), PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ)
+- **media-utils.ts**: Клиентские утилиты (formatFileSize, getFileIcon, validateFile, detectFileType, generateStorageKey, ALLOWED_FILE_TYPES) — БЕЗ серверных импортов
+- **Поддерживаемые типы**: PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ). Видео — только через внешние облачные ссылки.
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
-- **Защищённый видео-стриминг**: ДВА режима доступа: (1) 302 redirect — устаревший, HTML5 `<video>` не всегда следует редиректам на cross-origin S3; (2) `?format=json` → `{ url: signedUrl }` — JS fetch получает signed URL и устанавливает как `<video src>` — НАДЁЖНЫЙ способ, используется по умолчанию
-- **Видео из двух источников**: API `/api/knowledge/video/by-article/[articleId]` ищет видео в ДВУХ местах: сначала в таблице `media` (загруженные вложения), затем в `article.videoUrl` (прямая ссылка). Это нужно потому, что видео можно добавить двумя путями: загрузить через MediaUpload ИЛИ указать URL в поле videoUrl
-- **Поддерживаемые форматы videoUrl**: HTTPS URL (YouTube, Rutube, VK, Яндекс Диск), HTTPS S3 URL (storage.selcloud.ru), `s3://bucket/key` URI (из консоли S3), обычный S3-ключ без протокола
-- **S3 URI → Signed URL**: `s3://ati-lab/knowledge/articles/file.mp4` автоматически конвертируется: (1) извлекается ключ `knowledge/articles/file.mp4` (без bucket), (2) генерируется Signed URL через `getSignedUrl()`, (3) возвращается как JSON `{ url: signedUrl }`
-- **fileKey**: Колонка в таблице media для хранения S3-ключа (нужна для генерации Signed URLs). Runtime migration через `ensureFileKeyColumn()`.
-- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (видеоплеер, документы, изображения + лайтбокс + видео-модалка)
-- **Lightbox**: Изображения увеличиваются в модалке (клик/Escape/крестик), картинки в Markdown тоже кликабельны
-- **Video Modal**: Видео открываются в модалке поверх страницы, продолжение с того же места после закрытия. Бейдж «🛡 Защищённый доступ» под плеером.
-- **Inline Glossary Search**: Строка поиска по глоссарию прямо на странице База знаний
-- **Ctrl+Л**: Русская раскладка поддерживается для глобального поиска (Ctrl+K / Ctrl+Л)
+- **Видео через облачные ссылки**: Начиная с Sprint 7, видео НЕ загружается на S3. Админ указывает `videoUrl` (YouTube, Rutube, Яндекс Диск, VK) через UrlImportForm. Плеер VideoEmbed автоматически определяет тип ссылки и рендерит соответствующий iframe (YouTube, Rutube, VK) или кнопку-заглушку «Смотреть видеоурок в облаке» (Яндекс Диск, прочие).
+- **S3 Signed URL роуты УДАЛЕНЫ**: `/api/knowledge/video/[id]` и `/api/knowledge/video/by-article/[articleId]` удалены в Sprint 7. Больше нет проксирования через Vercel.
+- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (документы, изображения + лайтбокс + видео-модалка), VideoEmbed (YouTube/Rutube/VK/Яндекс Диск/прямая ссылка)
 - **Переключение хранилища**: env var STORAGE_PROVIDER → **s3** (активный, Selectel) / vercel-blob / minio (будущие)
-- **Blob Store**: Selectel S3 (ati-lab, приватный, region ru-7) — **реализовано**
-- **Защита контента**: Все видеокурсы строго приватны. Стриминг идёт через Signed URLs (15 мин) через роут `/api/knowledge/video/[id]`. Без авторизации → 401. Без валидного fileKey → 404. Ссылки истекают — невозможно слить.
+- **Blob Store**: Selectel S3 (ati-lab, приватный, region ru-7) — для документов/изображений
 
 ### 3.17 AI Content Processing Pipeline — Sprint 6 (`src/app/api/knowledge/`, `src/components/knowledge/`)
 - **Видение**: НЕ строить курсы вручную. Загрузить сырые материалы → AI анализирует → глоссарий → граф знаний → курсы появляются автоматически
 - **Поток**: Materials → AI Analysis → Glossary → Knowledge Graph → Learning Path → Course
-- **Хранилище видео**: Selectel S3 (приватный бакет ati-lab, Signed URLs 15 мин) — Яндекс Диск и YouTube не работают в РФ без VPN
-- **Article расширения**: 15 новых колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage)
+- **Хранилище видео**: Внешние облачные ссылки (YouTube, Rutube, Яндекс Диск, VK) — с Sprint 7 отказались от S3 Selectel из-за перерасхода трафика
+- **Article расширения**: 18+ колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage, quiz, practical_task, timecodes)
 - **ProcessingQueue**: Новая таблица для асинхронной обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft)
 - **API маршруты** (5 новых):
   - `/api/knowledge/import` — ZIP-импорт (JSZip extraction, auto-create articles)
@@ -340,13 +332,13 @@ src/
   - `ZipUpload` — Загрузка ZIP-архива с drag-and-drop
   - `ProcessingQueue` — Отображение очереди обработки с прогрессом
   - Materials Library (`/knowledge/materials`) — Страница библиотеки материалов с фильтрами
-- **VideoEmbed**: Универсальный видео-плеер с авто-детектом источника по URL:
-  - **S3 Protected** (`/api/knowledge/video/*`): `ProtectedVideoPlayer` — fetch `?format=json` для получения signed URL, loading spinner, error + retry, auto-retry при истёкших URLs (до 3 раз), бейдж «Защищённое / Приватный доступ»
-  - **YouTube**: `YouTubePlayer` — 3 стратегии fallback: (1) youtube-nocookie.com (privacy), (2) youtube.com (direct), (3) ссылка-кнопка (8s timeout для auto-fallback)
+- **VideoEmbed**: Универсальный видео-плеер с авто-детектом источника по URL (Sprint 7 — без S3):
+  - **YouTube**: `YouTubePlayer` — 3 стратегии fallback: (1) youtube-nocookie.com (privacy), (2) youtube.com (direct), (3) ссылка-кнопка (8s timeout)
   - **Rutube**: iframe embed `rutube.ru/play/embed/{id}`
   - **VK**: iframe embed
-  - **Яндекс Диск**: `YandexDiskPlayer` — 3 стратегии: (1) API resolve через `/api/knowledge/video` POST → direct URL, (2) iframe `disk.yandex.ru/player{path}`, (3) ссылка-кнопка
-  - **Direct/Other**: Нативный `<video>` элемент
+  - **Яндекс Диск**: `YandexDiskPlayer` — iframe → fallback на кнопку «Смотреть видеоурок в облаке»
+  - **Direct/Other**: Нативный `<video>` элемент или `CloudLinkButton`
+  - **CloudLinkButton**: Красивая кнопка-заглушка «Смотреть видеоурок в облаке» с прямой ссылкой — используется когда iframe невозможно встроить
 - **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
 - **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах
 
@@ -384,11 +376,11 @@ src/
 - **Knowledge Hub** — База знаний (4 пространства, 6 категорий, статьи, медиа)
 - **AI-Глоссарий** — ⌘K глобальный поиск по терминам (10 предзагруженных терминов)
 - **Умный поиск** — /api/knowledge/search — поиск по статьям, глоссарию, задачам
-- **Файловое хранилище** — Selectel S3 (ati-lab) через StorageProvider абстракцию + Signed URLs для приватного стриминга видео
+- **Файловое хранилище** — Selectel S3 (ati-lab) через StorageProvider абстракцию (документы/изображения; видео — через облачные ссылки с Sprint 7)
 - **MediaUpload** — Drag&drop загрузка файлов с прогрессом, привязка к статьям
-- **MediaViewer** — Видеоплеер, документы, изображения + лайтбокс + видео-модалка с resume
-- **Видеоплеер с Signed URLs** — ProtectedVideoPlayer через JSON API (`?format=json`), loading/error/retry, auto-retry при истёкших URL
-- **Поддержка s3:// URI** — Админ может вставить `s3://bucket/key` из консоли S3, система автоматически извлекает ключ и генерирует Signed URL
+- **MediaViewer** — Документы, изображения + лайтбокс + видео-модалка
+- **Видеоплеер через облачные ссылки** — VideoEmbed автоматически определяет YouTube/Rutube/VK/Яндекс Диск/прямую ссылку и рендерит iframe или кнопку «Смотреть видеоурок в облаке». S3 Signed URL роуты удалены (Sprint 7).
+- **Интерактивные поля статей** — quiz (JSONB), practical_task (JSONB), timecodes (JSONB) для генерации интерактивных уроков (Sprint 7)
 - **Inline-редактирование статей** — Админ может редактировать заголовок, описание, теги, контент прямо на странице статьи без перехода в админку
 - **Удаление статей** — Кнопка «Удалить» с подтверждением на странице статьи (админ)
 - **«Опубликовать без AI»** — Быстрая публикация статьи без AI-обработки (статус → done)
@@ -408,11 +400,12 @@ src/
 - **Тесты** (0 тестовых файлов, playwright установлен)
 - **Error boundaries** (любой рантайм краш = белый экран)
 - **Rate limiting** (API без защиты от спама)
-- ~~**Загрузка файлов S3**~~ — **Реализовано**: Selectel S3 (ati-lab) с Signed URLs через `/api/knowledge/video/[id]`
+- ~~**Загрузка файлов S3**~~ — **Реализовано**: Selectel S3 (ati-lab) для документов/изображений. Видео — через облачные ссылки с Sprint 7
 - **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
 - **Превью видео** (thumbnailUrl — отложено до FFmpeg)
 - ~~**AI-анализ материалов**~~ (реализовано в Sprint 6 — AI metadata/glossary/graph через z-ai-web-dev-sdk)
-- **Learning Path** (дорожные карты онбординга)
+- **Learning Path** (дорожные карты онбординга) — запланировано на Sprint 7 Этап 3
+- **Интерактивный урок** (страница /knowledge/[spaceId]/learn/[articleId] с 5 блоками) — запланировано на Sprint 7 Этап 3
 
 ### Синхронизация кодовых баз
 - **Workspace → Vercel (obuch-ai)**: Деплоится через `vercel deploy --prod`, содержит весь функционал

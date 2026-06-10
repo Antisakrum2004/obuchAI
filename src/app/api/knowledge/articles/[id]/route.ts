@@ -19,6 +19,7 @@ export async function GET(
               a.difficulty, a."estimatedTime", a.status, a."aiGenerated",
               a."processedAt", a."errorMessage", a."keyConcepts",
               a.prerequisites, a."nextTopics",
+              a.quiz, a.practical_task, a.timecodes,
               json_build_object(
                 'id', ks.id,
                 'name', ks.name,
@@ -138,6 +139,10 @@ export async function GET(
       keyConcepts: article.keyConcepts,
       prerequisites: article.prerequisites,
       nextTopics: article.nextTopics,
+      // Sprint 7: Interactive lesson fields
+      quiz: article.quiz,
+      practical_task: article.practical_task,
+      timecodes: article.timecodes,
       hasMediaPdf,
     };
 
@@ -172,7 +177,10 @@ export async function PUT(
       "difficulty", "estimatedTime", "status", "aiGenerated",
       "errorMessage",
     ];
-    const jsonFields = ["tags", "keyTopics", "keyConcepts", "prerequisites", "nextTopics"];
+    const jsonFields = ["tags", "keyTopics", "keyConcepts", "prerequisites", "nextTopics",
+      // Sprint 7: JSONB fields for interactive lessons
+      "quiz", "practical_task", "timecodes",
+    ];
     const fields: string[] = [];
     const values: unknown[] = [];
     let idx = 1;

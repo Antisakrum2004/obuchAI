@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Play,
   FileText,
@@ -11,43 +11,12 @@ import {
   Loader2,
   ZoomIn,
   X,
-  ShieldCheck,
-  AlertCircle,
-  RefreshCw,
+  Cloud,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatFileSize, getFileIcon } from "@/lib/media-utils";
 import { cn } from "@/lib/utils";
 import { Lightbox } from "@/components/knowledge/media-lightbox";
-
-/**
- * Получение signed URL для видео через JSON API.
- * Жёсткая обработка ошибок: отличаем HTTP-ошибку, невалидный JSON,
- * пустой ответ — всё пробрасываем в UI для диагностики.
- */
-async function fetchVideoSignedUrl(mediaId: string): Promise<string> {
-  const res = await fetch(`/api/knowledge/video/${mediaId}?format=json`);
-
-  // Пробуем распарсить JSON — даже при ошибке сервер может вернуть { error }
-  let data: Record<string, unknown>;
-  try {
-    data = await res.json();
-  } catch {
-    throw new Error(`Сервер вернул не-JSON (HTTP ${res.status}). Проверьте авторизацию и попробуйте обновить страницу.`);
-  }
-
-  if (!res.ok) {
-    const msg = (data.error as string) || (data.details as string) || `Ошибка сервера (HTTP ${res.status})`;
-    throw new Error(msg);
-  }
-
-  if (!data.url || typeof data.url !== "string") {
-    throw new Error("Сервер не вернул ссылку на видео (пустой url в ответе)");
-  }
-
-  console.log("[MediaViewer] Signed URL obtained, first 100 chars:", (data.url as string).substring(0, 100));
-  return data.url as string;
-}
 
 // Keep videoPositions in sync across component
 const videoPositionsLocal = new Map<string, number>();
@@ -85,9 +54,6 @@ export function MediaViewer({
   // Modal state
   const [lightboxImage, setLightboxImage] = useState<MediaItem | null>(null);
   const [modalVideo, setModalVideo] = useState<MediaItem | null>(null);
-  const [videoSignedUrl, setVideoSignedUrl] = useState<string | null>(null);
-  const [videoLoading, setVideoLoading] = useState(false);
-  const [videoError, setVideoError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -104,46 +70,15 @@ export function MediaViewer({
       .finally(() => setLoading(false));
   }, [articleId]);
 
-  // Fetch signed URL when modal video changes
-  useEffect(() => {
-    if (!modalVideo) {
-      setVideoSignedUrl(null);
-      setVideoError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setVideoLoading(true);
-    setVideoError(null);
-
-    fetchVideoSignedUrl(modalVideo.id)
-      .then((url) => {
-        if (!cancelled) {
-          setVideoSignedUrl(url);
-          setVideoLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setVideoError(err instanceof Error ? err.message : "Не удалось загрузить видео");
-          setVideoLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [modalVideo]);
-
   // Restore video position on open
   useEffect(() => {
-    if (modalVideo && videoRef.current && videoSignedUrl) {
+    if (modalVideo && videoRef.current) {
       const saved = videoPositionsLocal.get(modalVideo.id);
       if (saved && saved > 0) {
         videoRef.current.currentTime = saved;
       }
     }
-  }, [modalVideo, videoSignedUrl]);
+  }, [modalVideo]);
 
   // Save video position when closing
   const closeVideoModal = useCallback(() => {
@@ -151,23 +86,6 @@ export function MediaViewer({
       videoPositionsLocal.set(modalVideo.id, videoRef.current.currentTime);
     }
     setModalVideo(null);
-    setVideoSignedUrl(null);
-    setVideoError(null);
-  }, [modalVideo]);
-
-  const handleVideoRetry = useCallback(() => {
-    if (!modalVideo) return;
-    setVideoLoading(true);
-    setVideoError(null);
-    fetchVideoSignedUrl(modalVideo.id)
-      .then((url) => {
-        setVideoSignedUrl(url);
-        setVideoLoading(false);
-      })
-      .catch((err) => {
-        setVideoError(err instanceof Error ? err.message : "Не удалось загрузить видео");
-        setVideoLoading(false);
-      });
   }, [modalVideo]);
 
   const handleDelete = async (mediaId: string) => {
@@ -437,35 +355,34 @@ export function MediaViewer({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="rounded-xl overflow-hidden border border-white/10 bg-black">
-              {videoLoading && (
-                <div className="flex flex-col items-center justify-center py-20 gap-3">
-                  <Loader2 className="h-10 w-10 text-emerald-400 animate-spin" />
-                  <span className="text-sm text-white/60">Загрузка видео...</span>
-                </div>
-              )}
-
-              {videoError && (
-                <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <AlertCircle className="h-10 w-10 text-amber-400" />
-                  <span className="text-sm text-white/60 text-center px-8">{videoError}</span>
-                  <button
-                    onClick={handleVideoRetry}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Повторить
-                  </button>
-                </div>
-              )}
-
-              {!videoLoading && !videoError && videoSignedUrl && (
+              {/* Direct video URL — native player */}
+              {modalVideo.url && !isExternalVideoUrl(modalVideo.url) && (
                 <video
                   ref={videoRef}
-                  src={videoSignedUrl}
+                  src={modalVideo.url}
                   controls
                   autoPlay
                   className="w-full max-h-[80vh]"
                 />
+              )}
+
+              {/* External video URL — cloud link button in modal */}
+              {modalVideo.url && isExternalVideoUrl(modalVideo.url) && (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <Cloud className="h-10 w-10 text-blue-400" />
+                  <span className="text-sm text-white/60 text-center px-8">
+                    Видео хранится в облаке. Перейдите по ссылке для просмотра.
+                  </span>
+                  <a
+                    href={modalVideo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg px-5 py-3 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+                  >
+                    <Cloud className="h-4 w-4" />
+                    Смотреть видео в облаке
+                  </a>
+                </div>
               )}
             </div>
             <div className="mt-3 flex items-center justify-between px-1">
@@ -473,10 +390,6 @@ export function MediaViewer({
                 {modalVideo.fileName}
               </p>
               <div className="flex items-center gap-3 ml-3">
-                <span className="text-[10px] text-emerald-400/60 flex items-center gap-1">
-                  <ShieldCheck className="h-3 w-3" />
-                  Защищённый доступ
-                </span>
                 {canDelete && (
                   <button
                     onClick={(e) => {
@@ -497,6 +410,27 @@ export function MediaViewer({
       )}
     </div>
   );
+}
+
+/**
+ * Проверяет, является ли URL внешним видео (YouTube, Rutube, Яндекс Диск и т.д.)
+ * Для таких URL показываем кнопку перехода вместо <video>
+ */
+function isExternalVideoUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return (
+      hostname.includes("youtube.com") ||
+      hostname.includes("youtu.be") ||
+      hostname.includes("rutube.ru") ||
+      hostname.includes("vk.com") ||
+      hostname.includes("vkvideo") ||
+      hostname.includes("disk.yandex") ||
+      hostname.includes("yandex")
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
