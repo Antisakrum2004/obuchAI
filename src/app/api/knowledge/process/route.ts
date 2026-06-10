@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validTypes = ["metadata", "glossary", "graph"];
+    const validTypes = ["metadata", "glossary", "graph", "course"];
     const invalidTypes = types.filter((t: string) => !validTypes.includes(t));
     if (invalidTypes.length > 0) {
       return NextResponse.json(
@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       metadata: "ai_metadata",
       glossary: "glossary_extract",
       graph: "graph_build",
+      course: "course_draft",
     };
 
     const createdEntries: Record<string, unknown>[] = [];

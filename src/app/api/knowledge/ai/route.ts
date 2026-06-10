@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validTypes = ["content", "metadata", "glossary", "graph", "categorize"];
+    const validTypes = ["content", "metadata", "glossary", "graph", "categorize", "course"];
     if (!type || !validTypes.includes(type)) {
       return NextResponse.json(
         { error: `type обязателен и должен быть одним из: ${validTypes.join(", ")}` },
@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       glossary: "glossary_extract",
       graph: "graph_build",
       categorize: "ai_metadata",
+      course: "course_draft",
     };
     const queueType = queueTypeMap[type];
 
@@ -122,6 +123,8 @@ export async function POST(request: NextRequest) {
         await processGlossary(article, articleId, queueId);
       } else if (type === "graph") {
         await processGraph(articleId, queueId);
+      } else if (type === "course") {
+        await processCourseContent(article, articleId, queueId);
       }
 
       // Update article status to 'done'
@@ -752,5 +755,293 @@ async function processContentExtraction(
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
     [JSON.stringify({ extractedChars: rawText.length, finalChars: finalContent.length, pages: 0 }), queueId]
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COURSE CONTENT PROCESSOR (Sprint 7 — NotebookLM pipeline)
+// ═══════════════════════════════════════════════════════════════════
+
+interface CourseAIResponse {
+  summary: string;
+  difficulty: "easy" | "medium" | "hard";
+  keyConcepts: string[];
+  estimatedTime: string;
+  tags: string[];
+  keyTopics: string[];
+  timecodes: Array<{
+    time: string;        // "00:00" — таймкод в формате MM:SS или HH:MM:SS
+    title: string;       // Краткое название фрагмента
+    summary: string;     // 1-2 предложения о чём этот фрагмент
+  }>;
+  quiz: Array<{
+    question: string;
+    options: string[];   // 4 варианта ответа
+    correctIndex: number; // Индекс правильного ответа (0-3)
+    explanation: string;  // Объяснение почему этот ответ правильный
+  }>;
+  practical_task: {
+    title: string;
+    description: string;  // Подробное описание задания
+    hint: string;         // Подсказка (не раскрывает решение полностью)
+    solution: string;     // Полное решение (раскрывается после попытки)
+    difficulty: "easy" | "medium" | "hard";
+  };
+  prerequisites: string[]; // Массив ID статей-пререквизитов (из соседних статей в space)
+  rank: number;           // Топологический ранг (0 = базовый, чем выше — тем продвинутее)
+}
+
+/**
+ * Process course content: AI analyzes NotebookLM transcript and generates
+ * interactive lesson components (timecodes, quiz, practical task) + metadata.
+ *
+ * This is the core of the NotebookLM → Interactive Course pipeline.
+ * Input: raw transcript text (typically from NotebookLM or similar tool).
+ * Output: structured JSON with timecodes, quiz questions, practical task,
+ *         plus standard metadata (summary, difficulty, keyConcepts, etc.)
+ */
+async function processCourseContent(
+  article: Record<string, unknown>,
+  articleId: string,
+  queueId: string
+) {
+  await pool.query(
+    `UPDATE processing_queue SET progress = 5, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const content = (article.content as string) || "";
+  const title = (article.title as string) || "";
+  const spaceId = (article.spaceId as string) || null;
+
+  // ─── Step 1: Fetch course context (sibling articles in the same space) ───
+  let siblingArticles: Array<{ id: string; title: string; summary: string | null; difficulty: string | null }> = [];
+  if (spaceId) {
+    const { rows: siblings } = await pool.query(
+      `SELECT id, title, summary, difficulty
+       FROM articles
+       WHERE "spaceId" = $1 AND id != $2 AND status IN ('done', 'pending', 'processing')
+       ORDER BY "createdAt" ASC
+       LIMIT 30`,
+      [spaceId, articleId]
+    );
+    siblingArticles = siblings;
+  }
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 15, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // ─── Step 2: Build context string for the AI ───
+  const courseContext = siblingArticles.length > 0
+    ? `\n\nКонтекст курса (другие уроки в этом разделе):\n${siblingArticles.map((a, i) =>
+        `${i + 1}. [${a.id}] "${a.title}" (${a.difficulty || "нет сложности"}): ${a.summary || "без описания"}`
+      ).join("\n")}`
+    : "\n\nКонтекст курса: это единственный урок в разделе.";
+
+  // ─── Step 3: Main AI prompt for NotebookLM processing ───
+  const systemPrompt = `Ты — AI-ассистент для создания интерактивных образовательных уроков из подробных конспектов (NotebookLM-транскриптов).
+
+Твоя задача — проанализировать конспект урока и создать структурированный интерактивный урок с несколькими компонентами.
+
+ВАЖНО: Конспект может быть очень подробным и длинным — это нормально. Ты должен извлечь из него самое важное и структурировать.
+
+Верни ТОЛЬКО валидный JSON со следующими полями:
+
+{
+  "summary": "Краткое описание урока (2-3 предложения, что изучим и зачем)",
+  "difficulty": "easy" | "medium" | "hard",
+  "keyConcepts": ["концепция 1", "концепция 2", ...],  // до 10 ключевых концепций
+  "estimatedTime": "30 мин",  // предполагаемое время изучения
+  "tags": ["тег1", "тег2", ...],  // до 8 тегов
+  "keyTopics": ["тема1", "тема2", ...],  // до 5 ключевых тем
+
+  "timecodes": [
+    {
+      "time": "00:00",  // таймкод ММ:СС или ЧЧ:ММ:СС
+      "title": "Название фрагмента",
+      "summary": "1-2 предложения о чём этот фрагмент"
+    }
+  ],  // 5-15 таймкодов, разбивающих урок на логические части
+
+  "quiz": [
+    {
+      "question": "Вопрос по материалу урока",
+      "options": ["Вариант А", "Вариант Б", "Вариант В", "Вариант Г"],
+      "correctIndex": 0,  // индекс правильного ответа (0-3)
+      "explanation": "Объяснение почему этот ответ правильный"
+    }
+  ],  // 3-5 вопросов с 4 вариантами ответа
+
+  "practical_task": {
+    "title": "Название практического задания",
+    "description": "Подробное описание задания (что нужно сделать, какие инструменты использовать)",
+    "hint": "Подсказка (не раскрывает решение полностью, направляет мысль)",
+    "solution": "Полное решение с пошаговым объяснением",
+    "difficulty": "easy" | "medium" | "hard"
+  },  // Практическое задание для закрепления материала
+
+  "prerequisites": ["id1", "id2"],  // ID статей из контекста курса, которые нужно пройти ДО этого урока
+  "rank": 0  // Топологический ранг: 0 = базовый (для начинающих), чем выше — тем продвинутее
+}
+
+ПРАВИЛА ДЛЯ ТАЙМКОДОВ:
+- Разбей конспект на 5-15 логических фрагментов
+- Таймкоды указывай в формате ММ:СС (если урок < 1 часа) или ЧЧ:ММ:СС (если > 1 часа)
+- Начинай с 00:00
+- Каждый фрагмент — это отдельная тема/идея/шаг
+- Title — краткое название (до 50 символов), Summary — 1-2 предложения
+
+ПРАВИЛА ДЛЯ КВИЗА:
+- 3-5 вопросов по ключевым темам урока
+- Вопросы должны проверять ПОНИМАНИЕ, а не запоминание
+- 4 варианта ответа, один правильный
+- Explanation — 1-2 предложения, объясняющие правильный ответ
+- Избегайте тривиальных вопросов («какой цвет кнопки»)
+
+ПРАВИЛА ДЛЯ ПРАКТИЧЕСКОГО ЗАДАНИЯ:
+- Задание должно быть выполнимым на основе материала урока
+- Description — чёткое описание что нужно сделать
+- Hint — направление мысли без прямого ответа
+- Solution — пошаговое решение с объяснением каждого шага
+- Difficulty должна соответствовать сложности урока
+
+ПРАВИЛА ДЛЯ РАНЖИРОВАНИЯ:
+- rank = 0: вводный урок, не требует предварительных знаний
+- rank = 1: базовый, требует общих знаний предмета
+- rank = 2: средний, требует прохождения 1-2 базовых уроков
+- rank = 3+: продвинутый, требует нескольких пройденных тем
+- Используй prerequisites для ссылок на конкретные уроки из контекста курса
+- Если контекст курса пуст, ставь rank = 0 и пустой prerequisites
+
+Верни ТОЛЬКО валидный JSON, без markdown-блоков и пояснений.`;
+
+  const userPrompt = `Название урока: ${title}
+
+Конспект (NotebookLM-транскрипт):
+${content.substring(0, 16000)}
+${courseContext}`;
+
+  console.log(`[Course] Processing article ${articleId}: ${content.length} chars content, ${siblingArticles.length} siblings`);
+
+  const completion = await createChatCompletion([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ], { temperature: 0.2, max_tokens: 8192 });
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 60, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  const result = completion.choices[0]?.message?.content;
+  if (!result) {
+    throw new Error("AI не вернул результат для обработки курса");
+  }
+
+  // ─── Step 4: Parse AI response ───
+  let parsed: CourseAIResponse;
+  try {
+    const cleaned = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error(`Не удалось разобрать ответ AI для курса: ${result.substring(0, 300)}`);
+  }
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 75, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // ─── Step 5: Validate prerequisites (only keep IDs that exist) ───
+  const validSiblingIds = new Set(siblingArticles.map((a) => a.id));
+  const validPrerequisites = (parsed.prerequisites || []).filter((id: string) => validSiblingIds.has(id));
+
+  // ─── Step 6: Sanitize and validate quiz data ───
+  const validQuiz = (parsed.quiz || [])
+    .filter((q) =>
+      q.question &&
+      Array.isArray(q.options) && q.options.length >= 2 &&
+      typeof q.correctIndex === "number" && q.correctIndex >= 0 && q.correctIndex < q.options.length &&
+      q.explanation
+    )
+    .slice(0, 10); // Max 10 questions
+
+  // ─── Step 7: Sanitize practical task ───
+  const validPracticalTask = parsed.practical_task?.title && parsed.practical_task?.description
+    ? {
+        title: parsed.practical_task.title,
+        description: parsed.practical_task.description,
+        hint: parsed.practical_task.hint || "",
+        solution: parsed.practical_task.solution || "",
+        difficulty: ["easy", "medium", "hard"].includes(parsed.practical_task.difficulty)
+          ? parsed.practical_task.difficulty
+          : (parsed.difficulty || "medium"),
+      }
+    : null;
+
+  // ─── Step 8: Sanitize timecodes ───
+  const validTimecodes = (parsed.timecodes || [])
+    .filter((tc) => tc.time && tc.title)
+    .map((tc) => ({
+      time: tc.time,
+      title: tc.title,
+      summary: tc.summary || "",
+    }))
+    .slice(0, 30);
+
+  // ─── Step 9: Save everything to the article ───
+  await pool.query(
+    `UPDATE articles SET
+      summary = COALESCE($1, summary),
+      difficulty = COALESCE($2, difficulty),
+      "keyConcepts" = COALESCE($3, "keyConcepts"),
+      "estimatedTime" = COALESCE($4, "estimatedTime"),
+      tags = COALESCE($5, tags),
+      "keyTopics" = COALESCE($6, "keyTopics"),
+      quiz = $7,
+      practical_task = $8,
+      timecodes = $9,
+      prerequisites = COALESCE($10, prerequisites),
+      "aiGenerated" = true,
+      "updatedAt" = NOW()
+    WHERE id = $11`,
+    [
+      parsed.summary || null,
+      parsed.difficulty || null,
+      parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
+      parsed.estimatedTime || null,
+      parsed.tags ? JSON.stringify(parsed.tags) : null,
+      parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
+      validQuiz.length > 0 ? JSON.stringify(validQuiz) : null,
+      validPracticalTask ? JSON.stringify(validPracticalTask) : null,
+      validTimecodes.length > 0 ? JSON.stringify(validTimecodes) : null,
+      validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
+      articleId,
+    ]
+  );
+
+  console.log(`[Course] Article ${articleId} processed: ${validQuiz.length} quiz questions, ${validTimecodes.length} timecodes, practical: ${!!validPracticalTask}, prerequisites: ${validPrerequisites.length}`);
+
+  await pool.query(
+    `UPDATE processing_queue SET progress = 90, "updatedAt" = NOW() WHERE id = $1`,
+    [queueId]
+  );
+
+  // ─── Step 10: Update queue result ───
+  await pool.query(
+    `UPDATE processing_queue SET result = $1, progress = 95, "updatedAt" = NOW() WHERE id = $2`,
+    [
+      JSON.stringify({
+        quizCount: validQuiz.length,
+        timecodesCount: validTimecodes.length,
+        hasPracticalTask: !!validPracticalTask,
+        prerequisitesCount: validPrerequisites.length,
+        difficulty: parsed.difficulty,
+        rank: parsed.rank,
+      }),
+      queueId,
+    ]
   );
 }

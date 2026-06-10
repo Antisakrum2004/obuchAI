@@ -621,7 +621,7 @@ src/
 | **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
 | **Sprint 6** | AI Content Processing Pipeline | ✅ ЗАВЕРШЁН | Расширение Article (15 новых колонок), ProcessingQueue, ZIP Import, AI Metadata/Glossary/Graph, Materials Library, Video Embed, URL Import, Яндекс Диск |
 | **Bugfix 6+** | Видеоплеер и S3 интеграция | ✅ ЗАВЕРШЁН | JSON API для signed URLs, ProtectedVideoPlayer, s3:// URI поддержка, бейджи видео на карточках, inline-редактирование, удаление статей, «Опубликовать без AI» |
-| **Sprint 7** | Облачные ссылки + Интерактивные уроки | 🔄 В ПРОЦЕССЕ | Этап 1 ✅: S3 video удалён, VideoEmbed переписан, DB migration (quiz/practical_task/timecodes). Этап 2 📋: ai_metadata промпт для NotebookLM. Этап 3 📋: Интерактивный урок + топологическая сортировка |
+| **Sprint 7** | Облачные ссылки + Интерактивные уроки | 🔄 В ПРОЦЕССЕ | Этап 1 ✅: S3 video удалён, VideoEmbed переписан, DB migration. Этап 2 ✅: processCourseContent + NotebookLM prompt + quiz/timecodes/practical_task. Этап 3 📋: Интерактивный урок + топологическая сортировка |
 | **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
 
 ### Проблемы, с которыми столкнулись, и решения (для предотвращения повторов)
@@ -835,12 +835,15 @@ src/
 - [x] Роут `recover-videos` деактивирован (410 Gone — S3 recovery не нужен)
 - [x] `npm run build` — компиляция успешна
 
-**Этап 2 — AI промпт для NotebookLM** 📋 ПЛАН
-- [ ] Обновить обработчик очереди `ai_metadata` с контекстом курса
-- [ ] Новый system prompt для Gemini Flash (обработка NotebookLM-конспектов)
-- [ ] Генерация timecodes, quiz, practical_task через AI
-- [ ] Топологический рейтинг (prerequisites → difficulty sorting)
-- [ ] Сохранение результатов в article fields, статус → done
+**Этап 2 — AI промпт для NotebookLM** ✅ ЗАВЕРШЁН
+- [x] Добавлен тип обработки `"course"` в `/api/knowledge/ai` и `/api/knowledge/process`
+- [x] Очередь `course_draft` для NotebookLM-пайплайна
+- [x] Новый обработчик `processCourseContent()` с инъекцией контекста курса
+- [x] System prompt для Gemini Flash: генерация timecodes (5-15), quiz (3-5 вопросов с 4 опциями), practical_task (с hint/solution), metadata (summary, difficulty, keyConcepts, tags, estimatedTime)
+- [x] Топологический рейтинг (rank 0-3+) + prerequisites (ID статей-пререквизитов из того же space)
+- [x] Валидация AI-ответа: фильтрация quiz/prerequisites/timecodes, санитизация practical_task
+- [x] Сохранение результатов в article fields (quiz, practical_task, timecodes, prerequisites) + стандартные метаданные
+- [x] `npm run build` — компиляция успешна
 
 **Этап 3 — Интерактивный урок** 📋 ПЛАН
 - [ ] Страница `/knowledge/[spaceId]/learn/[articleId]` с 5 блоками: summary → materials → article → quiz → practice
