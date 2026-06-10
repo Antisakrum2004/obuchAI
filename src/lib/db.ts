@@ -2,7 +2,19 @@ import { PrismaClient } from '@prisma/client'
 import { Pool, neonConfig } from '@neondatabase/serverless'
 import { PrismaNeon } from '@prisma/adapter-neon'
 
-// ---- Neon Pool (for raw SQL queries, works reliably on Vercel serverless) ----
+// ---- WebSocket setup for Neon (Node.js local dev only) ----
+// On Vercel serverless, Neon uses fetch-based connections — no WebSocket needed
+if (typeof WebSocket === 'undefined') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ws = require('ws')
+    neonConfig.webSocketConstructor = ws
+  } catch {
+    // ws not available, Neon will use fetch-based connections
+  }
+}
+
+// ---- Neon Pool (for raw SQL queries — used by 40+ API routes) ----
 const globalForPool = globalThis as unknown as {
   pool: Pool | undefined
 }
@@ -11,19 +23,20 @@ function createPool(): Pool {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) throw new Error('DATABASE_URL environment variable is not set')
 
-  // Only set ws for Node.js environments (local dev)
-  // On Vercel serverless, Neon uses fetch-based connections without WebSocket
-  if (typeof WebSocket === 'undefined') {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const ws = require('ws')
-      neonConfig.webSocketConstructor = ws
-    } catch {
-      // ws not available, Neon will use fetch-based connections
-    }
-  }
-
-  return new Pool({ connectionString: databaseUrl })
+  return new Pool({
+    connectionString: databaseUrl,
+    // CRITICAL: Timeout so DB queries don't hang forever on Vercel serverless.
+    // If Neon doesn't respond in 5s, the connection FAILS instead of blocking the lambda.
+    connectionTimeoutMillis: 5000,
+    // Close idle connections after 30s — prevents connection leaks in serverless
+    idleTimeoutMillis: 30000,
+    // Limit max connections per lambda to avoid exhausting Neon's pool
+    max: 10,
+    // SSL must be explicitly configured for Vercel → Neon connections
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  })
 }
 
 export const pool = globalForPool.pool ?? createPool()
@@ -44,19 +57,9 @@ function createPrismaClient(): PrismaClient {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) throw new Error('DATABASE_URL environment variable is not set')
 
-  if (typeof WebSocket === 'undefined') {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const ws = require('ws')
-      neonConfig.webSocketConstructor = ws
-    } catch {
-      // ws not available, Neon will use fetch-based connections
-    }
-  }
-
-  // Use a separate Pool for Prisma adapter (not the same as the raw query pool)
-  const adapterPool = new Pool({ connectionString: databaseUrl }) as unknown as import('@neondatabase/serverless').PoolConfig
-  const adapter = new PrismaNeon(adapterPool)
+  // Reuse the SAME global pool for Prisma adapter — no second pool leak!
+  // The pool already has all the timeouts and SSL configured above.
+  const adapter = new PrismaNeon(pool as unknown as import('@neondatabase/serverless').PoolConfig)
 
   return new PrismaClient({
     adapter,
