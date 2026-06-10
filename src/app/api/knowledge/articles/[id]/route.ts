@@ -224,14 +224,23 @@ export async function GET(
       accessibleSourceUrl = article.sourceUrl;
     }
 
+    // Parse JSON-string fields from PostgreSQL → JS arrays for the client
+    function safeParseJson(val: unknown): unknown[] {
+      if (Array.isArray(val)) return val;
+      if (typeof val === "string") {
+        try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch { return []; }
+      }
+      return [];
+    }
+
     const result = {
       id: article.id,
       title: article.title,
       slug: article.slug,
       content: article.content,
       summary: article.summary,
-      tags: article.tags,
-      keyTopics: article.keyTopics,
+      tags: safeParseJson(article.tags),
+      keyTopics: safeParseJson(article.keyTopics),
       isPublished: article.isPublished,
       viewCount: article.viewCount,
       createdAt: new Date(article.createdAt).toISOString(),
@@ -251,9 +260,9 @@ export async function GET(
       aiGenerated: article.aiGenerated,
       processedAt: article.processedAt ? new Date(article.processedAt).toISOString() : null,
       errorMessage: article.errorMessage,
-      keyConcepts: article.keyConcepts,
-      prerequisites: article.prerequisites,
-      nextTopics: article.nextTopics,
+      keyConcepts: safeParseJson(article.keyConcepts),
+      prerequisites: safeParseJson(article.prerequisites),
+      nextTopics: safeParseJson(article.nextTopics),
       // Sprint 7: Interactive lesson fields (null if columns don't exist yet)
       quiz: hasSprint7 ? article.quiz : null,
       practical_task: hasSprint7 ? article.practical_task : null,

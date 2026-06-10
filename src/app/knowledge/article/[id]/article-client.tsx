@@ -194,7 +194,21 @@ export function ArticleClient({
           return;
         }
 
-        const data: ArticleData = await articleRes.json();
+        const rawData: Record<string, unknown> = await articleRes.json();
+        // Normalize JSON-string fields → arrays (API returns '["a","b"]' instead of ["a","b"])
+        function parseJsonArray(val: unknown): string[] {
+          if (Array.isArray(val)) return val;
+          if (typeof val === "string") {
+            try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch { return []; }
+          }
+          return [];
+        }
+        const data: ArticleData = {
+          ...rawData,
+          tags: parseJsonArray(rawData.tags),
+          keyTopics: parseJsonArray(rawData.keyTopics),
+          keyConcepts: parseJsonArray(rawData.keyConcepts),
+        } as ArticleData;
         setArticle(data);
 
         // Check admin status
@@ -366,7 +380,7 @@ export function ArticleClient({
 
   const hasPdf = !!(article.pdfUrl) || !!(article.hasMediaPdf);
 
-  const keyConceptsList = article.keyConcepts || [];
+  const keyConceptsList = Array.isArray(article.keyConcepts) ? article.keyConcepts : [];
 
   // ─── Render ──────────────────────────────────────────────────
   return (
@@ -523,7 +537,7 @@ export function ArticleClient({
                   <Calendar className="h-3.5 w-3.5" />
                   {formatDate(article.createdAt)}
                 </span>
-                {article.tags.length > 0 && (
+                {Array.isArray(article.tags) && article.tags.length > 0 && (
                   <span className="flex items-center gap-1.5 flex-wrap">
                     <Tag className="h-3.5 w-3.5 shrink-0" />
                     {article.tags.map((tag) => (
