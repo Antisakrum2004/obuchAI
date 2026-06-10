@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-10 (обновлено до v0.9.0 — Sprint 7: переход на облачные ссылки, интерактивные уроки). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-10 (обновлено до v0.14.0 — НЕРАЗРЕШЁННЫЙ БАГ: статьи и задачи не открываются по клику). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -204,10 +204,12 @@ src/
 - **Колбеки**: `signIn` (find-or-create user + referral processing), `jwt` (refresh from DB on every request), `session` (inject custom fields), `redirect` (prevent loops)
 - **Проблема**: Admin credentials захардкожены (`admin/admin123`), 8 `as unknown as Record` кастов
 
-### 3.2 Database (`src/lib/db.ts` — 69 строк)
+### 3.2 Database (`src/lib/db.ts` — 75 строк)
 - **Dual access**: `pool` (raw SQL через `@neondatabase/serverless`, 85% запросов) + `db` (PrismaClient через `PrismaNeon` adapter, admin/auth routes)
 - **Hot-reload protection**: Глобальные синглтоны через `globalThis` (не пересоздаётся при HMR)
-- **WebSocket fallback**: `ws` пакет для локальной разработки (Neon требует WebSocket в Node.js)
+- **WebSocket fallback**: `ws` пакет для локальной разработки (Neon требует WebSocket в Node.js) — вынесен на уровень модуля (v0.13.0)
+- **Connection pooling** (v0.13.0): `connectionTimeoutMillis: 5000`, `idleTimeoutMillis: 30000`, `max: 10`, `ssl: { rejectUnauthorized: false }`
+- **Shared pool** (v0.13.0): Prisma adapter переиспользует тот же глобальный пул (раньше создавался второй пул на каждый холодный старт)
 - **Проблема**: Pool/PrismaNeon type incompatibility — `as unknown as PoolConfig` каст
 
 ### 3.3 Gamification (`src/lib/gamification.ts` — 147 строк)
@@ -353,7 +355,7 @@ src/
 - **Компонентов**: 92+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
-- **Текущая версия**: 0.8.3
+- **Текущая версия**: 0.14.0
 
 ### Реализовано и работает стабильно
 - Аутентификация (Google OAuth + demo вход + admin вход)
@@ -417,10 +419,11 @@ src/
 ## 5. Known Issues & Problems
 
 ### Критические (P0)
-1. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
-2. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
-3. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
-4. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
+1. **🔴 СТАТЬИ И ЗАДАЧИ НЕ ОТКРЫВАЮТСЯ ПО КЛИКУ** — При нажатии на ссылку статьи (`/knowledge/article/art-xxx`) или задачи (`/challenges/xxx`) НИЧЕГО НЕ ПРОИСХОДИТ. Страница не рендерится, навигация блокируется. Проблема воспроизводится на production (obuch-ai.vercel.app) под админом. **РЕШЕНИЕ НЕ НАЙДЕНО** (v0.10.0–v0.14.0). Подробности всех попыток — см. секцию 6 «Attempts & Failures».
+2. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
+3. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
+4. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
+5. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
 
 ### Значимые (P1)
 5. **Schema drift** — Prisma schema не содержит 9+ колонок и 1 таблицу (`app_settings`), добавленных через `ALTER TABLE` в runtime
@@ -444,6 +447,55 @@ src/
 ---
 
 ## 6. Attempts & Failures
+
+### 🔴 СТАТЬИ И ЗАДАЧИ НЕ ОТКРЫВАЮТСЯ ПО КЛИКУ (НЕРАЗРЕШЁННОЕ)
+
+> **Статус**: ❌ НЕ РЕШЕНО. Проблема воспроизводится с v0.10.0 по v0.14.0.
+> **Симптом**: При нажатии на ссылку статьи или задачи на странице навигации — НИЧЕГО НЕ ПРОИСХОДИТ. Перехода нет, страница не рендерится, ошибок в консоли браузера нет.
+> **Маршруты**: `/knowledge/article/[id]`, `/challenges/[id]`, `/knowledge/[slug]`
+> **Окружение**: Vercel serverless (production), админ-аккаунт
+
+#### Что пробовали (ХРОНОЛОГИЧЕСКИ):
+
+**1. SQL-фиксы в API маршрутах (v0.10.0)**
+- Изменён JOIN → LEFT JOIN для knowledge_spaces (статьи без space возвращали 404)
+- Кавычки для `ORDER BY "order"` (зарезервированное слово SQL)
+- Индивидуальные try/catch для glossary/media/URL запросов
+- **Результат**: API маршруты теперь возвращают данные корректно, но страница всё равно не открывается при клике
+
+**2. DB pool: таймауты + SSL + лимит соединений (v0.13.0)**
+- Переписан `src/lib/db.ts` — добавлены `connectionTimeoutMillis: 5000`, `idleTimeoutMillis: 30000`, `max: 10`, `ssl: { rejectUnauthorized: false }`
+- Prisma adapter теперь переиспользует тот же глобальный пул (раньше создавался ВТОРОЙ пул на каждый холодный старт)
+- WebSocket setup вынесен на уровень модуля
+- **Гипотеза**: Пул БД висел намертво на Vercel из-за отсутствия таймаутов → серверный рендер зависал → роутер молча блокировал переход
+- **Результат**: БД-соединения теперь падают по таймауту вместо бесконечного зависания, но проблема навигации НЕ решена
+
+**3. «Тотальный иммунитет» — try/catch + ErrorBoundary + error.tsx (v0.14.0)**
+- `knowledge/article/[id]/page.tsx`: серверный компонент обёрнут в try/catch — ошибка показывается красным боксом вместо молчаливого краха
+- `challenges/[id]/page.tsx`: добавлен `ChallengeErrorBoundary` (React class component) — оборачивает весь контент
+- Созданы `error.tsx` для обоих маршрутов (Next.js route-level Error Boundary)
+- **Гипотеза**: Unhandled 500 ошибка на сервере → Next.js роутер перехватывает и молча блокирует навигацию
+- **Результат**: Если бы сервер падал с 500, теперь была бы видна ошибка на экране. Но страница ПО-ПРЕЖНЕМУ не открывается — значит, проблема НЕ в необработанных исключениях серверного рендеринга
+
+#### Что ещё можно попробовать (в будущем):
+
+- **Отладка на production**: Открыть DevTools → Network → кликнуть на ссылку → посмотреть, уходит ли запрос к серверу и какой ответ приходит
+- **Проверить Link-компонент**: Возможно, `<Link>` в списке статей/задач не имеет корректного `href` или перехватывается другим обработчиком
+- **Проверить middleware**: `src/middleware.ts` может блокировать переход для не-админов
+- **Проверить клиентский роутер**: Возможно, `router.push()` / `router.replace()` вызывается с некорректным URL
+- **Добавить console.log в page.tsx**: Посмотреть, вызывается ли серверная функция Page() вообще
+- **Проверить Vercel Edge middleware**: Возможно, конфиг Vercel блокирует dynamic routes
+- **Откатиться до рабочей версии**: Найти последний коммит, где навигация работала, и сравнить изменения
+
+#### Ключевые файлы для расследования:
+- `src/app/knowledge/article/[id]/page.tsx` — серверный компонент статьи
+- `src/app/knowledge/article/[id]/article-client.tsx` — клиентский компонент статьи
+- `src/app/challenges/[id]/page.tsx` — клиентский компонент задачи
+- `src/app/knowledge/[slug]/page.tsx` — страница пространства знаний
+- `src/components/layout/sidebar.tsx` — навигация (Link-компоненты)
+- `src/middleware.ts` — middleware (может блокировать маршруты)
+- `src/app/api/knowledge/articles/[id]/route.ts` — API статьи (GET)
+- `src/app/api/challenges/[id]/route.ts` — API задачи (GET)
 
 ### Мобильная производительность
 - **Проблема**: На мобильных анимации тормозили (~25+ анимированных элементов)
