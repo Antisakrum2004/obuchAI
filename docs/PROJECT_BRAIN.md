@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-11 (обновлено до v0.15.2 — ИСПРАВЛЕНА React error #310 в ArticleClient: useMemo после ранних return = нарушение Rules of Hooks). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-11 (обновлено до v0.15.4 — ИСПРАВЛЕН краш статьи: API возвращал JSON-строки вместо массивов для tags/keyConcepts/keyTopics, вызывая `tags.map is not a function`). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -355,7 +355,7 @@ src/
 - **Компонентов**: 92+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
-- **Текущая версия**: 0.15.2
+- **Текущая версия**: 0.15.4
 
 ### Реализовано и работает стабильно
 - Аутентификация (Google OAuth + demo вход + admin вход)
@@ -419,7 +419,7 @@ src/
 ## 5. Known Issues & Problems
 
 ### Критические (P0)
-1. **🟢 СТАТЬИ И ЗАДАЧИ НЕ ОТКРЫВАЛИСЬ ПО КЛИКУ — ИСПРАВЛЕНО в v0.15.1** — Корневая причина найдена и устранена: конфликт имён динамических сегментов `[slug]` vs `[spaceId]` в `/knowledge/` вызывал краш Next.js 16 Turbopack при SSR ВСЕХ динамических маршрутов. См. секцию 6 «Attempts & Failures».
+1. **🟢 СТАТЬИ И ЗАДАЧИ НЕ ОТКРЫВАЛИСЬ ПО КЛИКУ — ИСПРАВЛЕНО в v0.15.4** — Несколько корневых причин: (1) конфликт имён динамических сегментов `[slug]` vs `[spaceId]` в v0.15.1, (2) API возвращал JSON-строки вместо массивов для `tags`/`keyConcepts`/`keyTopics`, вызывая `tags.map is not a function` краш в ArticleClient (v0.15.4). См. секцию 6 «Attempts & Failures».
 2. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
 3. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
 4. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
