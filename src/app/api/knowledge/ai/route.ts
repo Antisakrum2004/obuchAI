@@ -6,6 +6,9 @@ import { genId } from "@/lib/gen-id";
 import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
 import { storageProvider, S3StorageProvider } from "@/lib/storage";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 120; // AI processing can take 30-90s per step
+
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
 export async function POST(request: NextRequest) {
   try {
@@ -58,6 +61,34 @@ export async function POST(request: NextRequest) {
     }
 
     const article = articleRows[0];
+
+    // ── Skip if article is already being processed by another request ──
+    // This prevents duplicate processing when both server-side waitUntil()
+    // and client-side trigger fire for the same article.
+    if (article.status === "processing" || article.status === "done") {
+      // Check if the queue entry for this type is already done/processing
+      const queueTypeMap: Record<string, string> = {
+        content: "content_extract",
+        metadata: "ai_metadata",
+        glossary: "glossary_extract",
+        graph: "graph_build",
+        categorize: "ai_metadata",
+        course: "course_draft",
+      };
+      const qt = queueTypeMap[type];
+      const { rows: activeQueue } = await pool.query(
+        `SELECT id, status FROM processing_queue WHERE "articleId" = $1 AND type = $2 AND status IN ('processing', 'done') LIMIT 1`,
+        [articleId, qt]
+      );
+      if (activeQueue.length > 0) {
+        console.log(`[AI] Skipping ${type} for article ${articleId} — already ${activeQueue[0].status}`);
+        return NextResponse.json({
+          message: `Задача '${type}' уже ${activeQueue[0].status === "done" ? "выполнена" : "выполняется"}`,
+          skipped: true,
+          articleId,
+        });
+      }
+    }
 
     // Update article status to 'processing'
     await pool.query(

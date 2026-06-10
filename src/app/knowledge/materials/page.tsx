@@ -363,7 +363,7 @@ function EditableArticleCard({
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); }}
                   className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 transition-colors text-muted-foreground"
                   title="Удалить"
                 >

@@ -9,7 +9,8 @@ import {
   generateStorageKey,
   getFileIcon,
 } from "@/lib/media-utils";
-import { isAIConfigured, createChatCompletion } from "@/lib/ai-provider";
+import { isAIConfigured } from "@/lib/ai-provider";
+import { waitUntil } from "@vercel/functions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow up to 60s for file uploads
@@ -281,36 +282,47 @@ export async function POST(request: NextRequest) {
 
     // ── Auto-process: if autoProcess is enabled and AI is configured,
     //    trigger AI processing for each uploaded article in the background.
-    //    This runs AFTER the response is sent (fire-and-forget).
+    //    Uses waitUntil() to keep the function alive on Vercel serverless
+    //    until the background processing completes or the function times out.
     // ────────────────────────────────────────────────────────────────────
     if (autoProcess && isAIConfigured() && results.length > 0) {
-      // Don't await — run in background so the upload response returns quickly
-      Promise.allSettled(
-        results.map(async (article) => {
-          try {
-            // Process each AI type sequentially: content → metadata → glossary
-            const aiTypes = ["content", "metadata", "glossary"];
-            for (const type of aiTypes) {
-              try {
-                await fetch(`${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"}/api/knowledge/ai`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    // Pass admin session cookie for auth
-                    Cookie: request.headers.get("cookie") || "",
-                  },
-                  body: JSON.stringify({ articleId: article.id, type }),
-                });
-                console.log(`[bulk-upload] Auto-processed '${type}' for article ${article.id}`);
-              } catch (aiErr) {
-                console.warn(`[bulk-upload] Auto-process '${type}' failed for ${article.id}:`, aiErr);
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+      const cookie = request.headers.get("cookie") || "";
+
+      waitUntil(
+        Promise.allSettled(
+          results.map(async (article) => {
+            try {
+              // Process each AI type sequentially: content → metadata → glossary
+              const aiTypes = ["content", "metadata", "glossary"];
+              for (const type of aiTypes) {
+                try {
+                  const res = await fetch(`${baseUrl}/api/knowledge/ai`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Cookie: cookie,
+                    },
+                    body: JSON.stringify({ articleId: article.id, type }),
+                  });
+                  if (res.ok) {
+                    console.log(`[bulk-upload] Auto-processed '${type}' for article ${article.id}`);
+                  } else {
+                    const errData = await res.json().catch(() => ({}));
+                    console.warn(`[bulk-upload] Auto-process '${type}' failed for ${article.id}: ${res.status}`, errData.error || "");
+                  }
+                } catch (aiErr) {
+                  console.warn(`[bulk-upload] Auto-process '${type}' error for ${article.id}:`, aiErr);
+                }
               }
+            } catch (err) {
+              console.warn(`[bulk-upload] Auto-processing failed for article ${article.id}:`, err);
             }
-          } catch (err) {
-            console.warn(`[bulk-upload] Auto-processing failed for article ${article.id}:`, err);
-          }
-        })
-      ).catch(() => {}); // Swallow any unhandled rejections
+          })
+        )
+      );
     }
 
     return NextResponse.json({

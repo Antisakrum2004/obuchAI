@@ -371,6 +371,37 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
           );
         }
         onUploadComplete?.();
+
+        // ── Client-side AI processing trigger (backup for server-side waitUntil) ──
+        // After upload completes, trigger AI processing for each article from the client.
+        // This ensures processing runs even if the server-side fire-and-forget fails
+        // (e.g. Vercel function terminates before waitUntil completes).
+        if (autoProcess && allArticles.length > 0) {
+          // Run in background — don't block the UI
+          (async () => {
+            for (const article of allArticles) {
+              try {
+                const aiTypes = ["content", "metadata", "glossary"];
+                for (const type of aiTypes) {
+                  try {
+                    const res = await fetch("/api/knowledge/ai", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ articleId: article.id, type }),
+                    });
+                    // If already processed (409/conflict) or AI not configured (503), skip
+                    if (res.status === 503) break; // AI not configured — stop
+                    // Silently continue on errors — server may have already processed
+                  } catch {
+                    // Network error — skip silently
+                  }
+                }
+              } catch {
+                // Skip this article on error
+              }
+            }
+          })();
+        }
       } else {
         setError(
           allErrors.map((e) => `${e.fileName}: ${e.error}`).join("; ")

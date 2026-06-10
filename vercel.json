@@ -20,6 +20,9 @@
     },
     "src/app/api/knowledge/import/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/knowledge/ai/route.ts": {
+      "maxDuration": 120
     }
   },
   "regions": ["iad1"]
