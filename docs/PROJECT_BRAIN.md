@@ -404,7 +404,7 @@ src/
 - **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
 - **Превью видео** (thumbnailUrl — отложено до FFmpeg)
 - ~~**AI-анализ материалов**~~ (реализовано в Sprint 6 — AI metadata/glossary/graph через z-ai-web-dev-sdk)
-- **Learning Path** (дорожные карты онбординга) — запланировано на Sprint 7 Этап 3
+- **Learning Path** (дорожные карты онбординга) — запланировано на Sprint 7 Этап 3 (API топологической сортировки + UI)
 - **Интерактивный урок** (страница /knowledge/[spaceId]/learn/[articleId] с 5 блоками) — запланировано на Sprint 7 Этап 3
 
 ### Синхронизация кодовых баз
@@ -621,7 +621,7 @@ src/
 | **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
 | **Sprint 6** | AI Content Processing Pipeline | ✅ ЗАВЕРШЁН | Расширение Article (15 новых колонок), ProcessingQueue, ZIP Import, AI Metadata/Glossary/Graph, Materials Library, Video Embed, URL Import, Яндекс Диск |
 | **Bugfix 6+** | Видеоплеер и S3 интеграция | ✅ ЗАВЕРШЁН | JSON API для signed URLs, ProtectedVideoPlayer, s3:// URI поддержка, бейджи видео на карточках, inline-редактирование, удаление статей, «Опубликовать без AI» |
-| **Sprint 7** | Наполнение контентом | 📋 СЛЕДУЮЩИЙ | Bulk-наполнение 30+ тем, новые категории, расширение глоссария |
+| **Sprint 7** | Облачные ссылки + Интерактивные уроки | 🔄 В ПРОЦЕССЕ | Этап 1 ✅: S3 video удалён, VideoEmbed переписан, DB migration (quiz/practical_task/timecodes). Этап 2 📋: ai_metadata промпт для NotebookLM. Этап 3 📋: Интерактивный урок + топологическая сортировка |
 | **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
 
 ### Проблемы, с которыми столкнулись, и решения (для предотвращения повторов)
@@ -821,16 +821,39 @@ src/
 | Стоимость | Бесплатно | По тарифу Selectel |
 | Signed URLs | Нет | **Да** (15 мин, `getSignedUrl`) |
 
-### Sprint 7 — Наполнение контентом (ПЛАН 📋)
-> После Sprint 6 у нас будет AI-пайплайн. Sprint 7 — загрузить реальные материалы через него.
+### Sprint 7 — Облачные ссылки + Интерактивные уроки (В ПРОЦЕССЕ 🔄)
+> Архитектурный пивот: отказ от S3 Selectel для видео, переход на внешние облачные ссылки (YouTube, Яндекс.Диск).
+> Запуск умного конвейера генерации курсов на основе NotebookLM-конспектов.
 
+**Этап 1 — Модификация БД и плеера** ✅ ЗАВЕРШЁН
+- [x] Удалены S3 Signed URL роуты (`/api/knowledge/video/[id]`, `/api/knowledge/video/by-article/[articleId]`)
+- [x] VideoEmbed переписан для внешних ссылок (YouTube/Rutube/VK/Yandex Disk/Direct/Other)
+- [x] MediaViewer поддерживает внешние видео URL через `isExternalVideoUrl()`
+- [x] Статья использует VideoEmbed напрямую с `url={article.videoUrl}` (без API-прокси)
+- [x] Prisma-схема расширена: `quiz` (Json), `practical_task` (Json), `timecodes` (Json) на Article
+- [x] Runtime migration: ALTER TABLE для quiz/practical_task/timecodes (JSONB)
+- [x] Роут `recover-videos` деактивирован (410 Gone — S3 recovery не нужен)
+- [x] `npm run build` — компиляция успешна
+
+**Этап 2 — AI промпт для NotebookLM** 📋 ПЛАН
+- [ ] Обновить обработчик очереди `ai_metadata` с контекстом курса
+- [ ] Новый system prompt для Gemini Flash (обработка NotebookLM-конспектов)
+- [ ] Генерация timecodes, quiz, practical_task через AI
+- [ ] Топологический рейтинг (prerequisites → difficulty sorting)
+- [ ] Сохранение результатов в article fields, статус → done
+
+**Этап 3 — Интерактивный урок** 📋 ПЛАН
+- [ ] Страница `/knowledge/[spaceId]/learn/[articleId]` с 5 блоками: summary → materials → article → quiz → practice
+- [ ] API-роут топологической сортировки `/api/knowledge/spaces/[id]/path`
+- [ ] UI для квиза с проверкой ответов
+- [ ] UI для практического задания с раскрываемым решением
+- [ ] Навигация между уроками в порядке топологической сортировки
+
+**Дополнительные задачи Sprint 7** 📋
 - [ ] Загрузить 30 тем через ZIP Import (видео + PDF + PPTX)
-- [ ] Запустить AI-обработку для всех загруженных тем
-- [ ] Проверить и подтвердить AI-сгенерированные метаданные
 - [ ] Расширить глоссарий: 30-50 терминов (AI + ручная проверка)
 - [ ] Новые категории: MCP серверы, Cursor правила, Copilot, Claude Code, AI Agents
 - [ ] Превью статьи перед публикацией (preview mode для admin)
-- [ ] Импорт дополнительных материалов по URL-ссылкам
 
 ### Sprint 8 — Умный поиск (ПЛАН 📋)
 > Базовый API поиска уже есть (/api/knowledge/search — ILIKE по статьям, глоссарию, задачам).
