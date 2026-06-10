@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
 import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
+import { storageProvider, S3StorageProvider } from "@/lib/storage";
 
 // POST /api/knowledge/ai — Execute AI processing for an article (admin only)
 export async function POST(request: NextRequest) {
@@ -654,15 +655,17 @@ async function processContentExtraction(
 
   let pdfUrl = (article.pdfUrl as string) || "";
   const title = (article.title as string) || "";
+  let pdfFileKey: string | null = null;
 
   // If pdfUrl is not set on the article, check the media table for PDF files
   if (!pdfUrl) {
     const { rows: mediaRows } = await pool.query(
-      `SELECT url FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
+      `SELECT url, "fileKey" FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
       [articleId]
     );
     if (mediaRows.length > 0 && mediaRows[0].url) {
       pdfUrl = mediaRows[0].url;
+      pdfFileKey = mediaRows[0].fileKey || null;
       console.log(`[Content] Using PDF from media table: ${pdfUrl.substring(0, 80)}...`);
     }
   }
@@ -677,14 +680,58 @@ async function processContentExtraction(
     return;
   }
 
-  // Download the PDF
-  console.log(`[Content] Downloading PDF from: ${pdfUrl.substring(0, 80)}...`);
-  const pdfResponse = await fetch(pdfUrl);
-  if (!pdfResponse.ok) {
-    throw new Error(`Не удалось скачать PDF (${pdfResponse.status}): ${pdfUrl.substring(0, 100)}`);
+  // Download the PDF — for S3 private buckets, use signed URL or streamObject
+  let pdfBuffer: Buffer;
+  if (storageProvider instanceof S3StorageProvider) {
+    // Use S3 streamObject to bypass signed URL issues with Selectel
+    const s3 = storageProvider as S3StorageProvider;
+    const key = pdfFileKey || s3.extractKeyFromUrl(pdfUrl);
+    if (key) {
+      console.log(`[Content] Streaming PDF from S3 key: ${key}`);
+      try {
+        // Resolve key first (handles encoding issues)
+        const resolved = await s3.resolveKey(key);
+        const actualKey = resolved?.key || key;
+        const stream = await s3.streamObject(actualKey);
+
+        // Convert stream to buffer
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream.body) {
+          chunks.push(Buffer.from(chunk));
+        }
+        pdfBuffer = Buffer.concat(chunks);
+        console.log(`[Content] PDF streamed from S3, size: ${pdfBuffer.length} bytes`);
+      } catch (streamErr) {
+        // Fallback: try with signed URL
+        console.warn(`[Content] S3 stream failed, trying signed URL:`, streamErr);
+        const resolvedKey = (await s3.resolveKey(key))?.key || key;
+        const signedUrl = await s3.getSignedUrl(resolvedKey, 600);
+        console.log(`[Content] Downloading PDF via signed URL: ${signedUrl.substring(0, 80)}...`);
+        const pdfResponse = await fetch(signedUrl);
+        if (!pdfResponse.ok) {
+          throw new Error(`Не удалось скачать PDF (${pdfResponse.status}): ${pdfUrl.substring(0, 100)}`);
+        }
+        pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+      }
+    } else {
+      // No key extracted, try direct URL
+      console.log(`[Content] No S3 key extracted, downloading PDF from: ${pdfUrl.substring(0, 80)}...`);
+      const pdfResponse = await fetch(pdfUrl);
+      if (!pdfResponse.ok) {
+        throw new Error(`Не удалось скачать PDF (${pdfResponse.status}): ${pdfUrl.substring(0, 100)}`);
+      }
+      pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
+    }
+  } else {
+    // Non-S3 storage (Vercel Blob, Memory) — direct URL access
+    console.log(`[Content] Downloading PDF from: ${pdfUrl.substring(0, 80)}...`);
+    const pdfResponse = await fetch(pdfUrl);
+    if (!pdfResponse.ok) {
+      throw new Error(`Не удалось скачать PDF (${pdfResponse.status}): ${pdfUrl.substring(0, 100)}`);
+    }
+    pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
   }
 
-  const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
   console.log(`[Content] PDF downloaded, size: ${pdfBuffer.length} bytes`);
 
   await pool.query(

@@ -348,9 +348,17 @@ export default function ArticlePage({
     if (!id) return;
 
     fetch(`/api/knowledge/articles/${encodeURIComponent(id)}?all=true`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          console.error("Article fetch failed:", r.status, await r.text());
+          return null;
+        }
+        return r.json();
+      })
       .then((data) => {
-        setArticle(data);
+        if (data && data.id) {
+          setArticle(data);
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));

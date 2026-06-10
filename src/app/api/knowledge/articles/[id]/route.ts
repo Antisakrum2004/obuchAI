@@ -2,6 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { storageProvider, S3StorageProvider } from "@/lib/storage";
+
+/**
+ * Get an accessible URL for a file stored in S3 or other storage.
+ * For S3 (private bucket): generates a signed URL so the file can be accessed.
+ * For other storage (Vercel Blob, Memory): returns the URL as-is.
+ */
+async function getAccessibleUrl(rawUrl: string | null, fileKey: string | null): Promise<string | null> {
+  if (!rawUrl) return null;
+
+  // If using S3 storage and the URL points to S3, generate a signed URL
+  if (storageProvider instanceof S3StorageProvider) {
+    try {
+      const key = fileKey || (storageProvider as S3StorageProvider).extractKeyFromUrl(rawUrl);
+      if (key) {
+        // Try to resolve the key first (handles encoding issues)
+        const resolved = await (storageProvider as S3StorageProvider).resolveKey(key);
+        const actualKey = resolved?.key || key;
+        const signedUrl = await (storageProvider as S3StorageProvider).getSignedUrl(actualKey, 3600);
+        console.log(`[Article API] Generated signed URL for key="${actualKey}"`);
+        return signedUrl;
+      }
+    } catch (err) {
+      console.warn(`[Article API] Failed to generate signed URL for ${rawUrl.substring(0, 80)}:`, err);
+      // Return proxy URL as fallback
+      return `/api/knowledge/files/proxy?url=${encodeURIComponent(rawUrl)}`;
+    }
+  }
+
+  return rawUrl;
+}
 
 export async function GET(
   request: NextRequest,
@@ -20,13 +51,16 @@ export async function GET(
               a."processedAt", a."errorMessage", a."keyConcepts",
               a.prerequisites, a."nextTopics",
               a.quiz, a.practical_task, a.timecodes,
-              json_build_object(
-                'id', ks.id,
-                'name', ks.name,
-                'slug', ks.slug
-              ) AS space
+              a."spaceId",
+              CASE WHEN ks.id IS NOT NULL THEN
+                json_build_object(
+                  'id', ks.id,
+                  'name', ks.name,
+                  'slug', ks.slug
+                )
+              ELSE NULL END AS space
        FROM articles a
-       JOIN knowledge_spaces ks ON a."spaceId" = ks.id
+       LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
        WHERE a.id = $1 ${all !== "true" ? 'AND a."isPublished" = true' : ""}`,
       [id]
     );
@@ -102,13 +136,29 @@ export async function GET(
 
     // Check if there's a PDF in the media table (for articles where pdfUrl is empty but PDF was uploaded)
     let hasMediaPdf = false;
+    let mediaPdfUrl: string | null = null;
     if (!article.pdfUrl) {
       const { rows: mediaCheck } = await pool.query(
-        `SELECT id FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' LIMIT 1`,
+        `SELECT id, url, "fileKey" FROM media WHERE "articleId" = $1 AND "mimeType" LIKE 'application/pdf%' ORDER BY "createdAt" DESC LIMIT 1`,
         [id]
       );
       hasMediaPdf = mediaCheck.length > 0;
+      if (hasMediaPdf) {
+        mediaPdfUrl = await getAccessibleUrl(mediaCheck[0].url, mediaCheck[0].fileKey);
+      }
     }
+
+    // Generate accessible URLs for article file fields (S3 signed URLs if needed)
+    const accessiblePdfUrl = article.pdfUrl
+      ? await getAccessibleUrl(article.pdfUrl, null)
+      : mediaPdfUrl;
+    const accessiblePptxUrl = article.pptxUrl
+      ? await getAccessibleUrl(article.pptxUrl, null)
+      : null;
+    const accessibleVideoUrl = article.videoUrl;
+    const accessibleSourceUrl = article.sourceUrl
+      ? await getAccessibleUrl(article.sourceUrl, null)
+      : null;
 
     const result = {
       id: article.id,
@@ -123,12 +173,13 @@ export async function GET(
       createdAt: new Date(article.createdAt).toISOString(),
       updatedAt: new Date(article.updatedAt).toISOString(),
       space: article.space,
+      spaceId: article.spaceId,
       relatedGlossary,
-      // Sprint 6: new fields
-      videoUrl: article.videoUrl,
-      pdfUrl: article.pdfUrl,
-      pptxUrl: article.pptxUrl,
-      sourceUrl: article.sourceUrl,
+      // Sprint 6: new fields — accessible URLs
+      videoUrl: accessibleVideoUrl,
+      pdfUrl: accessiblePdfUrl,
+      pptxUrl: accessiblePptxUrl,
+      sourceUrl: accessibleSourceUrl,
       sourceType: article.sourceType,
       difficulty: article.difficulty,
       estimatedTime: article.estimatedTime,

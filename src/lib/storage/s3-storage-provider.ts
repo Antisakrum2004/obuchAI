@@ -485,7 +485,7 @@ export class S3StorageProvider implements StorageProvider {
    * Формат URL: https://s3.ru-7.storage.selcloud.ru/ati-lab/knowledge/...
    * Ключ: knowledge/...
    */
-  private extractKeyFromUrl(url: string): string {
+  extractKeyFromUrl(url: string): string {
     try {
       const config = getS3Config();
       const prefix = `${config.endpoint}/${config.bucket}/`;

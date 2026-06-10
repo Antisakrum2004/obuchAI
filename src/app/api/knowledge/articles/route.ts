@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
                 a."videoUrl", a."sourceType",
                 ks.name as "spaceName", ks.slug as "spaceSlug", ks.icon as "spaceIcon"
          FROM articles a
-         JOIN knowledge_spaces ks ON a."spaceId" = ks.id
+         LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
          ${all !== "true" ? 'WHERE a."isPublished" = true' : ""}
          ORDER BY a."createdAt" DESC
          LIMIT $1`,

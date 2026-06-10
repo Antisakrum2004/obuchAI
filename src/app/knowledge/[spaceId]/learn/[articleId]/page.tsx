@@ -163,8 +163,8 @@ export default function LearnLessonPage({
 
     async function fetchData() {
       try {
-        // Fetch article (includes space info)
-        const artRes = await fetch(`/api/knowledge/articles/${articleId}`);
+        // Fetch article (includes space info) — pass all=true so unpublished articles are visible
+        const artRes = await fetch(`/api/knowledge/articles/${articleId}?all=true`);
         if (!artRes.ok) throw new Error("Статья не найдена");
         const artData = await artRes.json();
         setArticle(artData);
