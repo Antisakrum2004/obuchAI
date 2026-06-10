@@ -173,6 +173,10 @@ export async function POST(request: NextRequest) {
           fileKey = uploadResult.key || null;
         } catch (storageErr) {
           console.warn(`[bulk-upload] Storage upload failed for ${file.name}:`, storageErr);
+          // If storage is not configured, log a clear warning
+          if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.S3_ENDPOINT) {
+            console.warn(`[bulk-upload] No storage configured (BLOB_READ_WRITE_TOKEN / S3). File "${file.name}" will not be accessible for AI content extraction.`);
+          }
         }
 
         // Update article with file URL (if upload succeeded)
@@ -211,12 +215,15 @@ export async function POST(request: NextRequest) {
         }
 
         // Create processing queue entries
-        const queueTypes = ["ai_metadata"];
+        // Only add content_extract if we actually have a PDF URL (storage upload succeeded)
+        const hasPdfUrl = fileCategory === "pdf" && fileUrl;
+        const queueTypes: string[] = [];
+        if (hasPdfUrl) {
+          queueTypes.push("content_extract");
+        }
+        queueTypes.push("ai_metadata");
         if (autoProcess) {
           queueTypes.push("glossary_extract");
-        }
-        if (fileCategory === "pdf") {
-          queueTypes.unshift("content_extract");
         }
 
         for (const type of queueTypes) {

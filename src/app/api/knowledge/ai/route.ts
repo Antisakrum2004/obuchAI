@@ -668,7 +668,13 @@ async function processContentExtraction(
   }
 
   if (!pdfUrl) {
-    throw new Error("У статьи нет прикреплённого PDF для извлечения контента");
+    // Instead of throwing, mark as done with a warning — the PDF may not have been uploaded to storage
+    console.warn(`[Content] Article ${articleId} has no PDF URL — skipping content extraction`);
+    await pool.query(
+      `UPDATE processing_queue SET status = 'done', result = $1, progress = 100, "completedAt" = NOW(), "updatedAt" = NOW() WHERE id = $2`,
+      [JSON.stringify({ skipped: true, reason: "No PDF URL available" }), queueId]
+    );
+    return;
   }
 
   // Download the PDF

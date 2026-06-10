@@ -22,6 +22,8 @@ import {
   Video,
   GraduationCap,
 } from "lucide-react";
+import { useUserStore } from "@/store/user-store";
+import { useSession } from "next-auth/react";
 
 interface ArticleData {
   id: string;
@@ -56,6 +58,13 @@ export default function KnowledgeSpacePage({
   const [articles, setArticles] = useState<ArticleData[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Admin detection
+  const { role: storeRole } = useUserStore();
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
+  const sessionRole = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const isAdmin = storeRole === "admin" || sessionRole === "admin";
+
   useEffect(() => {
     params.then((p) => {
       const decoded = decodeURIComponent(p.slug);
@@ -81,9 +90,9 @@ export default function KnowledgeSpacePage({
 
         setSpace(spaceData);
 
-        // Fetch articles for this space
+        // Fetch articles for this space (include unpublished for admin)
         const artRes = await fetch(
-          `/api/knowledge/articles?spaceId=${encodeURIComponent(spaceData.id)}`
+          `/api/knowledge/articles?spaceId=${encodeURIComponent(spaceData.id)}${isAdmin ? "&all=true" : ""}`
         );
         const arts: ArticleData[] = await artRes.json();
         setArticles(arts);

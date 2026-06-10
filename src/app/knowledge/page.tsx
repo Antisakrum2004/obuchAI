@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, FileText, ArrowRight, Clock, Eye, Search, Video } from "lucide-react";
 import { useGlossaryOpen } from "@/components/knowledge/glossary-command";
+import { useUserStore } from "@/store/user-store";
+import { useSession } from "next-auth/react";
 
 interface KnowledgeSpaceData {
   id: string;
@@ -59,10 +61,17 @@ export default function KnowledgePage() {
   const [glossaryTerms, setGlossaryTerms] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null;aliases:string|null}[]>([]);
   const [glossaryResults, setGlossaryResults] = useState<{id:string;term:string;shortDefinition:string|null;category:string|null}[]>([]);
 
+  // Admin detection
+  const { role: storeRole } = useUserStore();
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
+  const sessionRole = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const isAdmin = storeRole === "admin" || sessionRole === "admin";
+
   useEffect(() => {
     Promise.all([
       fetch("/api/knowledge/spaces").then((r) => r.json()),
-      fetch("/api/knowledge/articles?recent=6").then((r) => r.json()),
+      fetch(`/api/knowledge/articles?recent=6${isAdmin ? "&all=true" : ""}`).then((r) => r.json()),
     ])
       .then(([spacesData, articlesData]) => {
         setSpaces(Array.isArray(spacesData) ? spacesData : []);
