@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-11 (обновлено до v0.15.4 — ИСПРАВЛЕН краш статьи: API возвращал JSON-строки вместо массивов для tags/keyConcepts/keyTopics, вызывая `tags.map is not a function`). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-11 (обновлено до v0.15.5 — исправлена кнопка удаления в Materials Library + добавлена автообработка PDF после загрузки). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -355,7 +355,7 @@ src/
 - **Компонентов**: 92+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
-- **Текущая версия**: 0.15.4
+- **Текущая версия**: 0.15.5
 
 ### Реализовано и работает стабильно
 - Аутентификация (Google OAuth + demo вход + admin вход)
