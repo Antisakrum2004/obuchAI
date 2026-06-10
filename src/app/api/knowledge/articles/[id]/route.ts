@@ -43,29 +43,64 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const all = searchParams.get("all"); // admin: include unpublished
 
-    const { rows } = await pool.query(
-      `SELECT a.id, a.title, a.slug, a.content, a.summary, a.tags,
-              a."keyTopics", a."viewCount", a."isPublished", a."createdAt", a."updatedAt",
-              a."videoUrl", a."pdfUrl", a."pptxUrl", a."sourceUrl", a."sourceType",
-              a.difficulty, a."estimatedTime", a.status, a."aiGenerated",
-              a."processedAt", a."errorMessage", a."keyConcepts",
-              a.prerequisites, a."nextTopics",
-              a.quiz, a.practical_task, a.timecodes,
-              a."spaceId",
-              CASE WHEN ks.id IS NOT NULL THEN
-                json_build_object(
-                  'id', ks.id,
-                  'name', ks.name,
-                  'slug', ks.slug
-                )
-              ELSE NULL END AS space
-       FROM articles a
-       LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
-       WHERE a.id = $1 ${all !== "true" ? 'AND a."isPublished" = true' : ""}`,
-      [id]
-    );
+    // Try full query first (includes Sprint 7 JSONB columns).
+    // If columns don't exist yet (migration not applied), fall back to a simpler query.
+    let article: Record<string, any> | undefined;
+    let hasSprint7 = true;
 
-    const article = rows[0];
+    try {
+      const { rows } = await pool.query(
+        `SELECT a.id, a.title, a.slug, a.content, a.summary, a.tags,
+                a."keyTopics", a."viewCount", a."isPublished", a."createdAt", a."updatedAt",
+                a."videoUrl", a."pdfUrl", a."pptxUrl", a."sourceUrl", a."sourceType",
+                a.difficulty, a."estimatedTime", a.status, a."aiGenerated",
+                a."processedAt", a."errorMessage", a."keyConcepts",
+                a.prerequisites, a."nextTopics",
+                a.quiz, a.practical_task, a.timecodes,
+                a."spaceId",
+                CASE WHEN ks.id IS NOT NULL THEN
+                  json_build_object(
+                    'id', ks.id,
+                    'name', ks.name,
+                    'slug', ks.slug
+                  )
+                ELSE NULL END AS space
+         FROM articles a
+         LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
+         WHERE a.id = $1 ${all !== "true" ? 'AND a."isPublished" = true' : ""}`,
+        [id]
+      );
+      article = rows[0];
+    } catch (queryErr: any) {
+      // If the error is about missing columns, retry without Sprint 7 fields
+      if (queryErr?.code === '42703' || /does not exist/.test(queryErr?.message || '')) {
+        console.warn('[Article API] Sprint 7 columns missing, falling back to simpler query');
+        hasSprint7 = false;
+        const { rows } = await pool.query(
+          `SELECT a.id, a.title, a.slug, a.content, a.summary, a.tags,
+                  a."keyTopics", a."viewCount", a."isPublished", a."createdAt", a."updatedAt",
+                  a."videoUrl", a."pdfUrl", a."pptxUrl", a."sourceUrl", a."sourceType",
+                  a.difficulty, a."estimatedTime", a.status, a."aiGenerated",
+                  a."processedAt", a."errorMessage", a."keyConcepts",
+                  a.prerequisites, a."nextTopics",
+                  a."spaceId",
+                  CASE WHEN ks.id IS NOT NULL THEN
+                    json_build_object(
+                      'id', ks.id,
+                      'name', ks.name,
+                      'slug', ks.slug
+                    )
+                  ELSE NULL END AS space
+           FROM articles a
+           LEFT JOIN knowledge_spaces ks ON a."spaceId" = ks.id
+           WHERE a.id = $1 ${all !== "true" ? 'AND a."isPublished" = true' : ""}`,
+          [id]
+        );
+        article = rows[0];
+      } else {
+        throw queryErr; // Re-throw if it's not a missing column error
+      }
+    }
 
     if (!article) {
       return NextResponse.json(
@@ -219,10 +254,10 @@ export async function GET(
       keyConcepts: article.keyConcepts,
       prerequisites: article.prerequisites,
       nextTopics: article.nextTopics,
-      // Sprint 7: Interactive lesson fields
-      quiz: article.quiz,
-      practical_task: article.practical_task,
-      timecodes: article.timecodes,
+      // Sprint 7: Interactive lesson fields (null if columns don't exist yet)
+      quiz: hasSprint7 ? article.quiz : null,
+      practical_task: hasSprint7 ? article.practical_task : null,
+      timecodes: hasSprint7 ? article.timecodes : null,
       hasMediaPdf,
     };
 

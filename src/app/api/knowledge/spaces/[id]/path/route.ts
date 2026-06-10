@@ -22,14 +22,36 @@ export async function GET(
     const { id: spaceId } = await params;
 
     // Fetch all published/done articles in this space
-    const { rows: articles } = await pool.query(
-      `SELECT id, title, slug, summary, difficulty, prerequisites, "estimatedTime",
-              quiz, practical_task, timecodes, "videoUrl", "keyConcepts"
-       FROM articles
-       WHERE "spaceId" = $1 AND status IN ('done') AND "isPublished" = true
-       ORDER BY "createdAt" ASC`,
-      [spaceId]
-    );
+    // Try with Sprint 7 columns first; fall back if they don't exist yet
+    let articles: any[];
+    let hasSprint7 = true;
+    try {
+      const result = await pool.query(
+        `SELECT id, title, slug, summary, difficulty, prerequisites, "estimatedTime",
+                quiz, practical_task, timecodes, "videoUrl", "keyConcepts"
+         FROM articles
+         WHERE "spaceId" = $1 AND status IN ('done') AND "isPublished" = true
+         ORDER BY "createdAt" ASC`,
+        [spaceId]
+      );
+      articles = result.rows;
+    } catch (queryErr: any) {
+      if (queryErr?.code === '42703' || /does not exist/.test(queryErr?.message || '')) {
+        console.warn('[Learning Path API] Sprint 7 columns missing, falling back');
+        hasSprint7 = false;
+        const result = await pool.query(
+          `SELECT id, title, slug, summary, difficulty, prerequisites, "estimatedTime",
+                  "videoUrl", "keyConcepts"
+           FROM articles
+           WHERE "spaceId" = $1 AND status IN ('done') AND "isPublished" = true
+           ORDER BY "createdAt" ASC`,
+          [spaceId]
+        );
+        articles = result.rows;
+      } else {
+        throw queryErr;
+      }
+    }
 
     if (articles.length === 0) {
       return NextResponse.json({
@@ -124,9 +146,9 @@ export async function GET(
         difficulty: a.difficulty,
         estimatedTime: a.estimatedTime,
         rank: ranks.get(id) || 0,
-        hasQuiz: !!(a.quiz && (typeof a.quiz === "object" && Array.isArray(a.quiz) ? a.quiz.length > 0 : false)),
-        hasPractice: !!a.practical_task,
-        hasTimecodes: !!(a.timecodes && (typeof a.timecodes === "object" && Array.isArray(a.timecodes) ? a.timecodes.length > 0 : false)),
+        hasQuiz: hasSprint7 ? !!(a.quiz && (typeof a.quiz === "object" && Array.isArray(a.quiz) ? a.quiz.length > 0 : false)) : false,
+        hasPractice: hasSprint7 ? !!a.practical_task : false,
+        hasTimecodes: hasSprint7 ? !!(a.timecodes && (typeof a.timecodes === "object" && Array.isArray(a.timecodes) ? a.timecodes.length > 0 : false)) : false,
         hasVideo: !!a.videoUrl,
         keyConcepts: a.keyConcepts ? (typeof a.keyConcepts === "string" ? JSON.parse(a.keyConcepts as string) : a.keyConcepts) : [],
       };

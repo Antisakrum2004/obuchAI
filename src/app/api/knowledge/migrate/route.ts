@@ -127,8 +127,24 @@ export async function POST(request: NextRequest) {
     }
     logs.push("   Sprint 6 columns checked");
 
-    // 9. Verification
-    logs.push("9. Verification:");
+    // 9. Add Sprint 7 columns if missing (JSONB for interactive lessons)
+    logs.push("9. Adding Sprint 7 columns if missing...");
+    const sprint7Columns = [
+      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
+      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
+      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
+    ];
+    for (const sql of sprint7Columns) {
+      try {
+        await pool.query(sql);
+      } catch {
+        // Column may already exist
+      }
+    }
+    logs.push("   Sprint 7 columns (quiz, practical_task, timecodes) checked");
+
+    // 10. Verification
+    logs.push("10. Verification:");
     try {
       const articleWithSpace = await pool.query(`
         SELECT COUNT(*) as count FROM articles WHERE "spaceId" IS NOT NULL AND "spaceId" != ''

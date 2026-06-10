@@ -130,6 +130,21 @@ async function ensureKnowledgeTables() {
     }
   }
 
+  // Add Sprint 7 columns to articles if they don't exist (JSONB for interactive lessons)
+  const sprint7Columns = [
+    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
+    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
+    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
+  ];
+
+  for (const sql of sprint7Columns) {
+    try {
+      await pool.query(sql);
+    } catch {
+      // Column may already exist
+    }
+  }
+
   // Make categoryId nullable (for backward compat during transition)
   try {
     await pool.query(`ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL`);
