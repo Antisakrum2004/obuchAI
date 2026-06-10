@@ -345,9 +345,10 @@ function EditableArticleCard({
   }
 
   return (
-    <Link
+    <a
       href={`/knowledge/article/${article.id}`}
       className="block"
+      onClick={() => console.log("[ETAP-5] material href:", `/knowledge/article/${article.id}`, "[ETAP-6] CLICK on material card")}
     >
       <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group relative">
         {/* Admin edit/delete — top right, visible on hover */}
@@ -491,7 +492,7 @@ function EditableArticleCard({
           </span>
         </div>
       </div>
-    </Link>
+    </a>
   );
 }
 

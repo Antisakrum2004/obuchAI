@@ -330,17 +330,18 @@ export default function LearnLessonPage({
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
+              {/* [ETAP-1] Replaced Link with <a> */}
               <BreadcrumbLink asChild>
-                <Link href="/knowledge">База знаний</Link>
+                <a href="/knowledge">База знаний</a>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               {space ? (
                 <BreadcrumbLink asChild>
-                  <Link href={`/knowledge/${encodeURIComponent(space.slug)}`}>
+                  <a href={`/knowledge/${encodeURIComponent(space.slug)}`}>
                     {space.name}
-                  </Link>
+                  </a>
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>...</BreadcrumbPage>
@@ -503,12 +504,12 @@ export default function LearnLessonPage({
         {/* Navigation Footer */}
         <div className="flex items-center justify-between pt-4">
           {prevLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`}>
+            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK prev lesson")}>
               <Button variant="outline" size="sm" className="gap-1">
                 <ArrowLeft className="h-4 w-4" />
                 {prevLesson.title}
               </Button>
-            </Link>
+            </a>
           ) : (
             <div />
           )}
@@ -532,12 +533,12 @@ export default function LearnLessonPage({
           </div>
 
           {nextLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
+            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK next lesson")}>
               <Button variant="outline" size="sm" className="gap-1">
                 {nextLesson.title}
                 <ArrowRight className="h-4 w-4" />
               </Button>
-            </Link>
+            </a>
           ) : (
             <div />
           )}

@@ -380,18 +380,20 @@ export function ArticleClient({
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
+                {/* [ETAP-1] Replaced Link with <a> */}
                 <BreadcrumbLink asChild>
-                  <Link href="/knowledge">База знаний</Link>
+                  <a href="/knowledge">База знаний</a>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               {article.space && (
                 <>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
+                    {/* [ETAP-1] Replaced Link with <a> */}
                     <BreadcrumbLink asChild>
-                      <Link href={`/knowledge/${article.space.slug}`}>
+                      <a href={`/knowledge/${article.space.slug}`}>
                         {article.space.name}
-                      </Link>
+                      </a>
                     </BreadcrumbLink>
                   </BreadcrumbItem>
                 </>
