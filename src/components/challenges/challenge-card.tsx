@@ -59,16 +59,10 @@ export function ChallengeCard({
     document.documentElement.classList.add("slide-forward");
   }, []);
 
-  // [ETAP-5] Log the href to verify it's correct
   const href = `/challenges/${id}`;
-  console.log("[ETAP-5] ChallengeCard href:", href, "id:", id);
 
   return (
-    /* [ETAP-1] Replaced Next.js Link with plain <a> to test if Next Router is the problem */
-    <a href={href} onClick={(e) => {
-      console.log("[ETAP-6] CLICK on challenge card", id);
-      handleClick();
-    }}>
+    <Link href={href} onClick={handleClick} onMouseEnter={handlePrefetch} onTouchStart={handlePrefetch}>
       <div
         className={cn(
           "group glass card-hover rounded-xl p-4 transition-colors duration-150 cursor-pointer select-none",
@@ -129,6 +123,6 @@ export function ChallengeCard({
           </div>
         </div>
       </div>
-    </a>
+    </Link>
   );
 }

@@ -88,12 +88,12 @@ export function DailyChallengeWidget({
           </div>
 
           {!completed && (
-            <a href={`/challenges/${challenge.id}`} onClick={() => console.log("[ETAP-6] CLICK daily challenge", challenge.id)}>
+            <Link href={`/challenges/${challenge.id}`}>
               <Button className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30">
                 Начать
                 <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
-            </a>
+            </Link>
           )}
         </div>
       </div>

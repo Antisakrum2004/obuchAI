@@ -12,13 +12,8 @@ export default async function ArticlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // [ETAP-3] Check if server component is even invoked
-  console.log("[ETAP-3] ARTICLE PAGE EXECUTED — server component started");
-
   try {
     const { id } = await params;
-    console.log("[ETAP-3] ARTICLE PAGE — resolved id:", id);
-
     return <ArticleClient articleId={id} />;
   } catch (error) {
     // CATCH EVERYTHING — never throw, never notFound(), never redirect.

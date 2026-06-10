@@ -219,8 +219,7 @@ export default function KnowledgePage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {recentArticles.map((article) => (
                 <motion.div key={article.id} variants={itemVariants}>
-                  {/* [ETAP-1] Replaced Link with <a> | [ETAP-5] href logged in onClick */}
-                  <a href={`/knowledge/article/${article.id}`} className="block group" onClick={() => { console.log("[ETAP-5] article href:", `/knowledge/article/${article.id}`, "id:", article.id); console.log("[ETAP-6] CLICK on article card", article.id); }}>
+                  <Link href={`/knowledge/article/${article.id}`} className="block group">
                     <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5 h-full">
                       <CardContent className="p-4 flex flex-col h-full">
                         <div className="flex items-center gap-2 mb-2">
@@ -256,7 +255,7 @@ export default function KnowledgePage() {
                         </div>
                       </CardContent>
                     </Card>
-                  </a>
+                  </Link>
                 </motion.div>
               ))}
             </div>
@@ -309,8 +308,7 @@ export default function KnowledgePage() {
             >
               {spaces.map((space) => (
                 <motion.div key={space.id} variants={itemVariants}>
-                  {/* [ETAP-1] Replaced Link with <a> | [ETAP-5] href logged in onClick */}
-                  <a href={`/knowledge/${space.slug}`} className="block group" onClick={() => { console.log("[ETAP-5] space href:", `/knowledge/${space.slug}`, "slug:", space.slug); console.log("[ETAP-6] CLICK on space card", space.slug); }}>
+                  <Link href={`/knowledge/${space.slug}`} className="block group">
                     <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
                       <CardContent className="p-5">
                         <div className="flex items-start gap-3">
@@ -350,7 +348,7 @@ export default function KnowledgePage() {
                         </div>
                       </CardContent>
                     </Card>
-                  </a>
+                  </Link>
                 </motion.div>
               ))}
             </motion.div>
