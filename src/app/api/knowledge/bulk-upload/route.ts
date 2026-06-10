@@ -9,6 +9,7 @@ import {
   generateStorageKey,
   getFileIcon,
 } from "@/lib/media-utils";
+import { isAIConfigured, createChatCompletion } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow up to 60s for file uploads
@@ -277,6 +278,40 @@ export async function POST(request: NextRequest) {
 
     const storageWarning = errors.some(e => e.error.includes("Storage") || e.error.includes("BLOB"))
       ? " Внимание: хранилище файлов не настроено (BLOB_READ_WRITE_TOKEN)." : "";
+
+    // ── Auto-process: if autoProcess is enabled and AI is configured,
+    //    trigger AI processing for each uploaded article in the background.
+    //    This runs AFTER the response is sent (fire-and-forget).
+    // ────────────────────────────────────────────────────────────────────
+    if (autoProcess && isAIConfigured() && results.length > 0) {
+      // Don't await — run in background so the upload response returns quickly
+      Promise.allSettled(
+        results.map(async (article) => {
+          try {
+            // Process each AI type sequentially: content → metadata → glossary
+            const aiTypes = ["content", "metadata", "glossary"];
+            for (const type of aiTypes) {
+              try {
+                await fetch(`${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"}/api/knowledge/ai`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    // Pass admin session cookie for auth
+                    Cookie: request.headers.get("cookie") || "",
+                  },
+                  body: JSON.stringify({ articleId: article.id, type }),
+                });
+                console.log(`[bulk-upload] Auto-processed '${type}' for article ${article.id}`);
+              } catch (aiErr) {
+                console.warn(`[bulk-upload] Auto-process '${type}' failed for ${article.id}:`, aiErr);
+              }
+            }
+          } catch (err) {
+            console.warn(`[bulk-upload] Auto-processing failed for article ${article.id}:`, err);
+          }
+        })
+      ).catch(() => {}); // Swallow any unhandled rejections
+    }
 
     return NextResponse.json({
       message: `Загружено ${results.length} из ${files.length} файлов.${storageWarning}`,

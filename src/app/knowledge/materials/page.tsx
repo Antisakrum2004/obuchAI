@@ -381,8 +381,8 @@ function EditableArticleCard({
                   <AlertDialogCancel className="bg-white/5 border-white/10 text-foreground hover:bg-white/10">
                     Отмена
                   </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
+                        <AlertDialogAction
+                    onClick={(e) => { e.preventDefault(); handleDelete(); }}
                     className="bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
                   >
                     Удалить
