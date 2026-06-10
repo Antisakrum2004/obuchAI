@@ -147,6 +147,9 @@ const transitionConfig = {
 
 // ─── Inner component (the actual page logic, wrapped by ErrorBoundary) ──
 function ChallengePageInner() {
+  // [ETAP-3] Check if client component renders
+  console.log("[ETAP-3] CHALLENGE PAGE EXECUTED — client component started");
+
   const params = useParams();
   const router = useRouter();
   const challengeId = params.id as string;

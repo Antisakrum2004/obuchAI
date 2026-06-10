@@ -53,6 +53,9 @@ export default function KnowledgeSpacePage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
+  // [ETAP-3] Check if client component renders
+  console.log("[ETAP-3] KNOWLEDGE SPACE PAGE EXECUTED — client component started");
+
   const [slug, setSlug] = useState<string>("");
   const [space, setSpace] = useState<SpaceData | null>(null);
   const [articles, setArticles] = useState<ArticleData[]>([]);
@@ -218,20 +221,23 @@ export default function KnowledgeSpacePage({
                         transition={{ duration: 0.4, delay: idx * 0.05 }}
                       >
                         <div className="glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all flex items-center gap-3 group">
-                          <Link
+                          {/* [ETAP-1] Replaced Link with <a> */}
+                          <a
                             href={`/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`}
                             className="shrink-0"
+                            onClick={() => console.log("[ETAP-5] learn link href:", `/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`)}
                           >
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
                               <GraduationCap className="h-5 w-5 text-emerald-400" />
                             </div>
-                          </Link>
+                          </a>
                           <div className="flex-1 min-w-0">
-                            <Link href={`/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`}>
+                            {/* [ETAP-1] Replaced Link with <a> */}
+                            <a href={`/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`} onClick={() => console.log("[ETAP-5] article title href:", `/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`)}>
                               <h3 className="font-medium text-foreground hover:text-emerald-400 transition-colors">
                                 {article.title}
                               </h3>
-                            </Link>
+                            </a>
                             {article.summary && (
                               <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
                                 {article.summary}
@@ -255,9 +261,10 @@ export default function KnowledgeSpacePage({
                               </Badge>
                             ))}
                           </div>
-                          <Link href={`/knowledge/article/${article.id}`} className="shrink-0">
+                          {/* [ETAP-1] Replaced Link with <a> */}
+                          <a href={`/knowledge/article/${article.id}`} className="shrink-0" onClick={() => console.log("[ETAP-5] article arrow href:", `/knowledge/article/${article.id}`, "[ETAP-6] CLICK on article arrow")}>
                             <ArrowRight className="h-4 w-4 text-muted-foreground/30 hover:text-emerald-400 transition-colors" />
-                          </Link>
+                          </a>
                         </div>
                       </motion.div>
                     ))}
