@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -155,9 +155,13 @@ function EditableArticleCard({
     parseTagsList(article.tags).join(", ")
   );
   const [editDifficulty, setEditDifficulty] = useState(article.difficulty || "");
+  const router = useRouter();
+
+  const handleCardClick = () => {
+    router.push(`/knowledge/article/${article.id}`);
+  };
 
   const handleStartEdit = (e: React.MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
     setEditTitle(article.title);
     setEditSummary(article.summary || "");
@@ -345,9 +349,9 @@ function EditableArticleCard({
   }
 
   return (
-    <Link
-      href={`/knowledge/article/${article.id}`}
-      className="block"
+    <div
+      onClick={handleCardClick}
+      className="block cursor-pointer"
     >
       <div className="glass rounded-xl p-5 border-white/5 hover:border-emerald-500/20 transition-all duration-200 h-full group relative">
         {/* Admin edit/delete — top right, visible on hover */}
@@ -366,6 +370,7 @@ function EditableArticleCard({
                   onClick={(e) => { e.stopPropagation(); }}
                   className="p-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 hover:text-red-400 transition-colors text-muted-foreground"
                   title="Удалить"
+                  type="button"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -491,7 +496,7 @@ function EditableArticleCard({
           </span>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
