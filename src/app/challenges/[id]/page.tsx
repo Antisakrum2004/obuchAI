@@ -1,5 +1,6 @@
 "use client";
 
+import { Component, type ReactNode } from "react";
 import { useEffect, useState, useCallback, useMemo, useRef, startTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -19,6 +20,40 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { getCachedChallenge, setCachedChallenge } from "@/lib/challenge-cache";
+
+// ─── TOTAL IMMUNITY: Error Boundary ──────────────────────────────
+// Wraps the entire page content. If ANYTHING crashes during render,
+// the page STILL opens in the browser and shows the error on screen.
+class ChallengeErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      const err = this.state.error;
+      return (
+        <div className="p-8 max-w-2xl mx-auto my-10 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <h1 className="text-xl font-bold mb-2">Критическая ошибка сервера</h1>
+          <p className="font-mono text-sm">{err?.message || String(err)}</p>
+          <p className="text-xs text-gray-500 mt-4">Стек: {err?.stack || ""}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface ChallengeData {
   id: string;
@@ -110,7 +145,8 @@ const transitionConfig = {
   ease: [0.4, 0, 0.2, 1] as [number, number, number, number],
 };
 
-export default function ChallengePage() {
+// ─── Inner component (the actual page logic, wrapped by ErrorBoundary) ──
+function ChallengePageInner() {
   const params = useParams();
   const router = useRouter();
   const challengeId = params.id as string;
@@ -179,9 +215,6 @@ export default function ChallengePage() {
 
   // ★ Guard: ignore URL param changes during state transitions
   const isTransitioningRef = useRef(false);
-
-  // ★ Swipe disabled (not working well on mobile yet)
-  // Swipe state kept as stub for future re-enable
 
   // Timer
   useEffect(() => {
@@ -877,5 +910,16 @@ export default function ChallengePage() {
         {/* Swipe indicator removed — swipe disabled */}
       </div>
     </AppLayout>
+  );
+}
+
+// ─── Export: Page wrapped in ErrorBoundary (TOTAL IMMUNITY) ───────
+// If ANYTHING crashes during render, the page STILL opens in the browser
+// and shows the error directly on screen instead of silently blocking navigation.
+export default function ChallengePage() {
+  return (
+    <ChallengeErrorBoundary>
+      <ChallengePageInner />
+    </ChallengeErrorBoundary>
   );
 }
