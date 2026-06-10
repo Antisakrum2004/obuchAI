@@ -291,6 +291,36 @@ export function ArticleClient({
     }
   };
 
+  // ─── Derived state (MUST be before any early returns — Rules of Hooks) ──
+  const headings = useMemo(() =>
+    article?.content ? extractHeadings(article.content) : [],
+    [article?.content]
+  );
+
+  const markdownComponents = useMemo(() => ({
+    h2: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
+      const text = extractTextFromChildren(children);
+      let id = slugifyHeading(text);
+      const counts = headingIdCountsRef.current;
+      const count = counts.get(id) || 0;
+      counts.set(id, count + 1);
+      if (count > 0) id = `${id}-${count + 1}`;
+      return <h2 id={id} className="scroll-mt-20" {...props}>{children}</h2>;
+    },
+    h3: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
+      const text = extractTextFromChildren(children);
+      let id = slugifyHeading(text);
+      const counts = headingIdCountsRef.current;
+      const count = counts.get(id) || 0;
+      counts.set(id, count + 1);
+      if (count > 0) id = `${id}-${count + 1}`;
+      return <h3 id={id} className="scroll-mt-20" {...props}>{children}</h3>;
+    },
+    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
+      <img src={src} alt={alt} className="w-full rounded-lg border border-white/10 my-4" {...props} />
+    ),
+  }), []);
+
   // ─── Loading state ──────────────────────────────────────────
   if (loading) {
     return (
@@ -328,7 +358,7 @@ export function ArticleClient({
     );
   }
 
-  // ─── Derived state ───────────────────────────────────────────
+  // ─── Derived state (non-hook computations, after early returns are safe) ──
   const isPlaceholderContent = article.content
     ? article.content.includes("Содержимое будет добавлено после обработки") ||
       article.content.includes("конкретное содержание еще не добавлено")
@@ -336,36 +366,7 @@ export function ArticleClient({
 
   const hasPdf = !!(article.pdfUrl) || !!(article.hasMediaPdf);
 
-  const headings = useMemo(() =>
-    article.content ? extractHeadings(article.content) : [],
-    [article.content]
-  );
-
   const keyConceptsList = article.keyConcepts || [];
-
-  const markdownComponents = useMemo(() => ({
-    h2: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
-      const text = extractTextFromChildren(children);
-      let id = slugifyHeading(text);
-      const counts = headingIdCountsRef.current;
-      const count = counts.get(id) || 0;
-      counts.set(id, count + 1);
-      if (count > 0) id = `${id}-${count + 1}`;
-      return <h2 id={id} className="scroll-mt-20" {...props}>{children}</h2>;
-    },
-    h3: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { children?: React.ReactNode }) => {
-      const text = extractTextFromChildren(children);
-      let id = slugifyHeading(text);
-      const counts = headingIdCountsRef.current;
-      const count = counts.get(id) || 0;
-      counts.set(id, count + 1);
-      if (count > 0) id = `${id}-${count + 1}`;
-      return <h3 id={id} className="scroll-mt-20" {...props}>{children}</h3>;
-    },
-    img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-      <img src={src} alt={alt} className="w-full rounded-lg border border-white/10 my-4" {...props} />
-    ),
-  }), []);
 
   // ─── Render ──────────────────────────────────────────────────
   return (
