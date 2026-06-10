@@ -11,6 +11,7 @@ import {
 } from "@/lib/media-utils";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Allow up to 60s for file uploads
 
 // Supported file categories and what article field they map to
 const FILE_FIELD_MAP: Record<string, string> = {

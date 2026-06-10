@@ -6,6 +6,7 @@ import { genId } from "@/lib/gen-id";
 import JSZip from "jszip";
 
 // POST /api/knowledge/import — Import articles from a ZIP file (admin only)
+export const maxDuration = 60; // Allow up to 60s for ZIP imports
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);

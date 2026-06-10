@@ -13,5 +13,13 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/knowledge/bulk-upload/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/knowledge/import/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }

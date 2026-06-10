@@ -62,6 +62,21 @@ interface UploadResult {
   errors?: Array<{ fileName: string; error: string }>;
 }
 
+/** Single-file upload result from the bulk-upload API */
+interface SingleFileResult {
+  message: string;
+  articles: Array<{
+    id: string;
+    title: string;
+    slug: string;
+    fileName: string;
+    fileType: string;
+    status: string;
+    spaceId: string;
+  }>;
+  errors?: Array<{ fileName: string; error: string }>;
+}
+
 // File type icons
 function getFileTypeIcon(fileName: string) {
   const ext = fileName.split(".").pop()?.toLowerCase();
@@ -77,6 +92,7 @@ const ACCEPTED_EXTENSIONS = ".pdf,.pptx,.ppt,.docx,.doc,.mp4,.webm,.mov,.png,.jp
 
 export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const [files, setFiles] = useState<File[]>([]);
+  const [spaceId, setSpaceId] = useState<string>("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [autoCategorize, setAutoCategorize] = useState(true);
   const [autoProcess, setAutoProcess] = useState(true);
@@ -97,6 +113,9 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const [newCatSpaceId, setNewCatSpaceId] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
 
+  // Track per-file upload status
+  const [fileStatuses, setFileStatuses] = useState<Array<"pending" | "uploading" | "success" | "error">>([]);
+
   // Fetch categories and spaces
   const fetchCategories = useCallback(async () => {
     setLoadingCategories(true);
@@ -109,6 +128,9 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
 
       if (!newCatSpaceId && spacesList.length > 0) {
         setNewCatSpaceId(spacesList[0].id);
+      }
+      if (!spaceId && spacesList.length > 0) {
+        setSpaceId(spacesList[0].id);
       }
 
       const allCats: Category[] = [];
@@ -131,7 +153,7 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
     } finally {
       setLoadingCategories(false);
     }
-  }, [newCatSpaceId]);
+  }, [newCatSpaceId, spaceId]);
 
   useEffect(() => {
     fetchCategories();
@@ -220,69 +242,139 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const handleUpload = async () => {
     if (files.length === 0) return;
 
+    // Resolve spaceId: explicit > from categoryId > none
+    let resolvedSpaceId = spaceId;
+    if (!resolvedSpaceId && categoryId) {
+      const cat = categories.find((c) => c.id === categoryId);
+      if (cat) resolvedSpaceId = cat.spaceId;
+    }
+    if (!resolvedSpaceId && spaces.length > 0) {
+      resolvedSpaceId = spaces[0].id;
+    }
+
+    if (!resolvedSpaceId) {
+      setError("Выберите раздел знаний (space) для загрузки файлов");
+      return;
+    }
+
     setUploading(true);
     setUploadProgress(0);
     setCurrentFileIndex(0);
     setError(null);
     setResult(null);
+    setFileStatuses(files.map(() => "pending"));
+
+    const allArticles: UploadResult["articles"] = [];
+    const allErrors: Array<{ fileName: string; error: string }> = [];
 
     try {
-      const formData = new FormData();
-      // categoryId is optional — only append if set
-      if (categoryId) {
-        formData.append("categoryId", categoryId);
-      }
-      formData.append("autoProcess", String(autoProcess));
-      formData.append("autoCategorize", String(autoCategorize));
-      files.forEach((file) => {
-        formData.append("files", file);
-      });
-
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 5, 85));
-        setCurrentFileIndex((prev) => {
-          const next = prev + 1;
-          return next < files.length ? Math.floor(next * 0.3) : prev;
+      // Upload files ONE BY ONE to avoid 413 (Request Entity Too Large)
+      for (let i = 0; i < files.length; i++) {
+        setCurrentFileIndex(i);
+        setFileStatuses((prev) => {
+          const next = [...prev];
+          next[i] = "uploading";
+          return next;
         });
-      }, 500);
 
-      const res = await fetch("/api/knowledge/bulk-upload", {
-        method: "POST",
-        body: formData,
-      });
+        const file = files[i];
+        const formData = new FormData();
+        formData.append("files", file);
+        formData.append("spaceId", resolvedSpaceId);
+        if (categoryId) {
+          formData.append("categoryId", categoryId);
+        }
+        formData.append("autoProcess", String(autoProcess));
+        formData.append("autoCategorize", String(autoCategorize));
 
-      clearInterval(progressInterval);
+        try {
+          const res = await fetch("/api/knowledge/bulk-upload", {
+            method: "POST",
+            body: formData,
+          });
 
-      const data = await res.json();
+          // Handle non-JSON responses (e.g. 413 from platform)
+          let data: SingleFileResult;
+          try {
+            data = await res.json();
+          } catch {
+            if (res.status === 413) {
+              throw new Error(
+                `Файл слишком большой для загрузки (${formatBytes(file.size)}). ` +
+                `Используйте внешнюю ссылку для больших файлов.`
+              );
+            }
+            throw new Error(
+              `Сервер вернул ошибку ${res.status}. Попробуйте файл меньшего размера.`
+            );
+          }
 
-      if (res.ok || data.articles?.length > 0) {
-        // Some or all files uploaded successfully
-        setUploadProgress(100);
-        setCurrentFileIndex(files.length);
-        setResult(data);
+          if (res.ok || data.articles?.length > 0) {
+            allArticles.push(...(data.articles || []));
+            setFileStatuses((prev) => {
+              const next = [...prev];
+              next[i] = "success";
+              return next;
+            });
+          } else {
+            const errMsg = data.error || "Ошибка загрузки";
+            const fileErrors = data.errors?.map((e) => e.error).join("; ") || errMsg;
+            allErrors.push({ fileName: file.name, error: fileErrors });
+            setFileStatuses((prev) => {
+              const next = [...prev];
+              next[i] = "error";
+              return next;
+            });
+          }
+        } catch (fileErr) {
+          const msg = fileErr instanceof Error ? fileErr.message : "Ошибка сети";
+          allErrors.push({ fileName: file.name, error: msg });
+          setFileStatuses((prev) => {
+            const next = [...prev];
+            next[i] = "error";
+            return next;
+          });
+        }
 
-        const successCount = data.articles?.length || 0;
-        const failCount = data.errors?.length || 0;
+        // Update progress
+        setUploadProgress(Math.round(((i + 1) / files.length) * 100));
+      }
+
+      // Compose final result
+      const successCount = allArticles.length;
+      const failCount = allErrors.length;
+
+      if (successCount > 0) {
+        setResult({
+          message: `Загружено ${successCount} из ${files.length} файлов`,
+          articles: allArticles,
+          errors: failCount > 0 ? allErrors : undefined,
+        });
 
         if (failCount === 0) {
-          toast.success(`Загружено ${successCount} ${successCount === 1 ? "файл" : successCount < 5 ? "файла" : "файлов"}`, {
-            description: "Файлы добавлены в очередь обработки",
-            duration: 5000,
-          });
+          toast.success(
+            `Загружено ${successCount} ${successCount === 1 ? "файл" : successCount < 5 ? "файла" : "файлов"}`,
+            { description: "Файлы добавлены в очередь обработки", duration: 5000 }
+          );
         } else {
-          toast.warning(`Загружено ${successCount} из ${successCount + failCount} файлов`, {
-            description: `${failCount} ${failCount === 1 ? "файл" : failCount < 5 ? "файла" : "файлов"} не удалось загрузить`,
-            duration: 7000,
-          });
-          setError(`${failCount} файл(ов) не загружено: ${data.errors.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ")}`);
+          toast.warning(
+            `Загружено ${successCount} из ${successCount + failCount} файлов`,
+            {
+              description: `${failCount} ${failCount === 1 ? "файл" : failCount < 5 ? "файла" : "файлов"} не удалось загрузить`,
+              duration: 7000,
+            }
+          );
+          setError(
+            `${failCount} файл(ов) не загружено: ${allErrors
+              .map((e) => `${e.fileName}: ${e.error}`)
+              .join("; ")}`
+          );
         }
         onUploadComplete?.();
       } else {
-        // All files failed
-        const errMsg = data.error || "Ошибка загрузки";
-        const details = data.errors?.map((e: { fileName: string; error: string }) => `${e.fileName}: ${e.error}`).join("; ");
-        setError(details ? `${errMsg}. ${details}` : errMsg);
+        setError(
+          allErrors.map((e) => `${e.fileName}: ${e.error}`).join("; ")
+        );
       }
     } catch {
       setError("Ошибка сети при загрузке файлов");
@@ -358,32 +450,78 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
             </Button>
           </div>
           <div className="max-h-48 overflow-y-auto space-y-1">
-            {files.map((file, i) => (
-              <div
-                key={`${file.name}-${i}`}
-                className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5"
-              >
-                {getFileTypeIcon(file.name)}
-                <span className="text-xs flex-1 truncate">{file.name}</span>
-                <span className="text-[10px] text-muted-foreground/60">
-                  {formatBytes(file.size)}
-                </span>
-                {!uploading && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(i);
-                    }}
-                    className="text-muted-foreground hover:text-red-400 transition-colors"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            ))}
+            {files.map((file, i) => {
+              const status = fileStatuses[i];
+              return (
+                <div
+                  key={`${file.name}-${i}`}
+                  className={cn(
+                    "flex items-center gap-2 p-2 rounded-lg border transition-colors",
+                    status === "uploading" ? "bg-blue-500/5 border-blue-500/20" :
+                    status === "success" ? "bg-emerald-500/5 border-emerald-500/20" :
+                    status === "error" ? "bg-red-500/5 border-red-500/20" :
+                    "bg-white/[0.02] border-white/5"
+                  )}
+                >
+                  {status === "uploading" ? (
+                    <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
+                  ) : status === "success" ? (
+                    <Check className="h-4 w-4 text-emerald-400" />
+                  ) : status === "error" ? (
+                    <AlertCircle className="h-4 w-4 text-red-400" />
+                  ) : (
+                    getFileTypeIcon(file.name)
+                  )}
+                  <span className="text-xs flex-1 truncate">{file.name}</span>
+                  <span className="text-[10px] text-muted-foreground/60">
+                    {formatBytes(file.size)}
+                  </span>
+                  {!uploading && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFile(i);
+                      }}
+                      className="text-muted-foreground hover:text-red-400 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* Space Selection */}
+      <div className="space-y-1.5">
+        <label className="text-xs text-muted-foreground">Раздел знаний</label>
+        {loadingCategories ? (
+          <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Загрузка...
+          </div>
+        ) : spaces.length === 0 ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            Нет разделов. Создайте раздел знаний сначала.
+          </div>
+        ) : (
+          <Select value={spaceId} onValueChange={setSpaceId}>
+            <SelectTrigger className="bg-white/5 border-white/10">
+              <SelectValue placeholder="Выберите раздел" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#111118] border-white/10">
+              {spaces.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.icon || "📚"} {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
       {/* AI Auto-Categorize + Category Selection */}
       <div className="space-y-3">

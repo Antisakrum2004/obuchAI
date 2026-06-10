@@ -103,8 +103,22 @@ export function MediaUpload({
         clearInterval(progressInterval);
 
         if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Ошибка загрузки");
+          // Handle non-JSON error responses (e.g. 413 from platform)
+          let errorData: { error?: string };
+          try {
+            errorData = await response.json();
+          } catch {
+            if (response.status === 413) {
+              throw new Error(
+                `Файл слишком большой для загрузки (${formatFileSize(file.size)}). ` +
+                `Используйте внешнюю ссылку для больших файлов.`
+              );
+            }
+            throw new Error(
+              `Сервер вернул ошибку ${response.status}. Попробуйте файл меньшего размера.`
+            );
+          }
+          throw new Error(errorData.error || "Ошибка загрузки");
         }
 
         const result: UploadedMedia = await response.json();
