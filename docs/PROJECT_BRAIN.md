@@ -404,8 +404,8 @@ src/
 - **HLS-трансляция** (FFMPEG — отложено до VPS/Render Worker)
 - **Превью видео** (thumbnailUrl — отложено до FFmpeg)
 - ~~**AI-анализ материалов**~~ (реализовано в Sprint 6 — AI metadata/glossary/graph через z-ai-web-dev-sdk)
-- **Learning Path** (дорожные карты онбординга) — запланировано на Sprint 7 Этап 3 (API топологической сортировки + UI)
-- **Интерактивный урок** (страница /knowledge/[spaceId]/learn/[articleId] с 5 блоками) — запланировано на Sprint 7 Этап 3
+- **Learning Path** (дорожные карты онбординга) — **Реализовано**: API топологической сортировки `/api/knowledge/spaces/[id]/path` + навигация prev/next на learn-странице (Sprint 7 Этап 3)
+- **Интерактивный урок** (страница /knowledge/[spaceId]/learn/[articleId] с 5 блоками) — **Реализовано**: summary → materials → article → quiz → practice, прогресс-бар, квиз с проверкой, практика с решением (Sprint 7 Этап 3)
 
 ### Синхронизация кодовых баз
 - **Workspace → Vercel (obuch-ai)**: Деплоится через `vercel deploy --prod`, содержит весь функционал
@@ -621,7 +621,7 @@ src/
 | **Bugfix** | Admin API 500 | ✅ ЗАВЕРШЁН | Конвертация на raw SQL, фикс DELETE, кнопка «Миграция БД» |
 | **Sprint 6** | AI Content Processing Pipeline | ✅ ЗАВЕРШЁН | Расширение Article (15 новых колонок), ProcessingQueue, ZIP Import, AI Metadata/Glossary/Graph, Materials Library, Video Embed, URL Import, Яндекс Диск |
 | **Bugfix 6+** | Видеоплеер и S3 интеграция | ✅ ЗАВЕРШЁН | JSON API для signed URLs, ProtectedVideoPlayer, s3:// URI поддержка, бейджи видео на карточках, inline-редактирование, удаление статей, «Опубликовать без AI» |
-| **Sprint 7** | Облачные ссылки + Интерактивные уроки | 🔄 В ПРОЦЕССЕ | Этап 1 ✅: S3 video удалён, VideoEmbed переписан, DB migration. Этап 2 ✅: processCourseContent + NotebookLM prompt + quiz/timecodes/practical_task. Этап 3 📋: Интерактивный урок + топологическая сортировка |
+| **Sprint 7** | Облачные ссылки + Интерактивные уроки | ✅ ЗАВЕРШЁН | Все 3 этапа выполнены: S3 video удалён, NotebookLM пайплайн, интерактивные уроки с топологической сортировкой |
 | **Sprint 8** | Умный поиск | 📋 ПЛАН | UI поиска по всем материалам, фильтры, «похожие статьи», расширенный ⌘K |
 
 ### Проблемы, с которыми столкнулись, и решения (для предотвращения повторов)
@@ -821,7 +821,7 @@ src/
 | Стоимость | Бесплатно | По тарифу Selectel |
 | Signed URLs | Нет | **Да** (15 мин, `getSignedUrl`) |
 
-### Sprint 7 — Облачные ссылки + Интерактивные уроки (В ПРОЦЕССЕ 🔄)
+### Sprint 7 — Облачные ссылки + Интерактивные уроки (✅ ЗАВЕРШЁН)
 > Архитектурный пивот: отказ от S3 Selectel для видео, переход на внешние облачные ссылки (YouTube, Яндекс.Диск).
 > Запуск умного конвейера генерации курсов на основе NotebookLM-конспектов.
 
@@ -845,12 +845,17 @@ src/
 - [x] Сохранение результатов в article fields (quiz, practical_task, timecodes, prerequisites) + стандартные метаданные
 - [x] `npm run build` — компиляция успешна
 
-**Этап 3 — Интерактивный урок** 📋 ПЛАН
-- [ ] Страница `/knowledge/[spaceId]/learn/[articleId]` с 5 блоками: summary → materials → article → quiz → practice
-- [ ] API-роут топологической сортировки `/api/knowledge/spaces/[id]/path`
-- [ ] UI для квиза с проверкой ответов
-- [ ] UI для практического задания с раскрываемым решением
-- [ ] Навигация между уроками в порядке топологической сортировки
+**Этап 3 — Интерактивный урок** ✅ ЗАВЕРШЁН
+- [x] Страница `/knowledge/[spaceId]/learn/[articleId]` с 5 блоками: summary → materials → article → quiz → practice
+- [x] API-роут топологической сортировки `/api/knowledge/spaces/[id]/path` (алгоритм Кана)
+- [x] UI для квиза с проверкой ответов (выбор опции → проверка → пояснение → результат)
+- [x] UI для практического задания с раскрываемым решением (hint → attempt → solution)
+- [x] Навигация между уроками в порядке топологической сортировки (prev/next)
+- [x] Space page обновлён: ссылка на learn-страницу через GraduationCap иконку
+- [x] Прогресс-бар урока (по количеству пройденных блоков)
+- [x] Анимации переходов между блоками (framer-motion AnimatePresence)
+- [x] Markdown-рендерер (заголовки, списки, код, inline-форматирование)
+- [x] `npm run build` — компиляция успешна
 
 **Дополнительные задачи Sprint 7** 📋
 - [ ] Загрузить 30 тем через ZIP Import (видео + PDF + PPTX)

@@ -20,6 +20,7 @@ import {
   FileText,
   ArrowRight,
   Video,
+  GraduationCap,
 } from "lucide-react";
 
 interface ArticleData {
@@ -207,42 +208,48 @@ export default function KnowledgeSpacePage({
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, delay: idx * 0.05 }}
                       >
-                        <Link
-                          href={`/knowledge/article/${article.id}`}
-                          className="block group"
-                        >
-                          <div className="glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all flex items-center gap-3">
-                            <FileText className="h-5 w-5 text-emerald-400 group-hover:text-emerald-300 shrink-0 transition-colors" />
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-medium text-foreground group-hover:text-emerald-400 transition-colors">
+                        <div className="glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all flex items-center gap-3 group">
+                          <Link
+                            href={`/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`}
+                            className="shrink-0"
+                          >
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
+                              <GraduationCap className="h-5 w-5 text-emerald-400" />
+                            </div>
+                          </Link>
+                          <div className="flex-1 min-w-0">
+                            <Link href={`/knowledge/${encodeURIComponent(slug)}/learn/${article.id}`}>
+                              <h3 className="font-medium text-foreground hover:text-emerald-400 transition-colors">
                                 {article.title}
                               </h3>
-                              {article.summary && (
-                                <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                  {article.summary}
-                                </p>
-                              )}
-                            </div>
-                            <div className="hidden sm:flex items-center gap-1 shrink-0">
-                              {article.videoUrl && (
-                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
-                                  <Video className="h-2.5 w-2.5 mr-0.5" />
-                                  Видео
-                                </Badge>
-                              )}
-                              {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
-                                <Badge
-                                  key={tag}
-                                  variant="outline"
-                                  className="text-[9px] px-1.5 py-0 border-white/10"
-                                >
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-                            <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-emerald-400 shrink-0 transition-colors" />
+                            </Link>
+                            {article.summary && (
+                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                {article.summary}
+                              </p>
+                            )}
                           </div>
-                        </Link>
+                          <div className="hidden sm:flex items-center gap-1 shrink-0">
+                            {article.videoUrl && (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
+                                <Video className="h-2.5 w-2.5 mr-0.5" />
+                                Видео
+                              </Badge>
+                            )}
+                            {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
+                              <Badge
+                                key={tag}
+                                variant="outline"
+                                className="text-[9px] px-1.5 py-0 border-white/10"
+                              >
+                                {tag}
+                              </Badge>
+                            ))}
+                          </div>
+                          <Link href={`/knowledge/article/${article.id}`} className="shrink-0">
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/30 hover:text-emerald-400 transition-colors" />
+                          </Link>
+                        </div>
                       </motion.div>
                     ))}
                   </div>
