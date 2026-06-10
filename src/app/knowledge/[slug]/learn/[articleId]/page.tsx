@@ -127,9 +127,9 @@ const BLOCK_CONFIG: Array<{
 export default function LearnLessonPage({
   params,
 }: {
-  params: Promise<{ spaceId: string; articleId: string }>;
+  params: Promise<{ slug: string; articleId: string }>;
 }) {
-  const [spaceId, setSpaceId] = useState<string>("");
+  const [spaceId, setSpaceId] = useState<string>(""); // slug value stored in spaceId variable for API compatibility
   const [articleId, setArticleId] = useState<string>("");
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [space, setSpace] = useState<SpaceData | null>(null);
@@ -152,7 +152,7 @@ export default function LearnLessonPage({
   // Parse params
   useEffect(() => {
     params.then((p) => {
-      setSpaceId(decodeURIComponent(p.spaceId));
+      setSpaceId(decodeURIComponent(p.slug));
       setArticleId(decodeURIComponent(p.articleId));
     });
   }, [params]);
