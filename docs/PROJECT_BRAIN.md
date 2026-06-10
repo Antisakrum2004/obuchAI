@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-11 (обновлено до v0.15.5 — исправлена кнопка удаления в Materials Library + добавлена автообработка PDF после загрузки). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-11 (обновлено до v0.15.5 — исправлена кнопка удаления в Materials Library + исправлён PDF→статья AI пайплайн (waitUntil + клиентский триггер + maxDuration)). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -341,6 +341,7 @@ src/
   - **Яндекс Диск**: `YandexDiskPlayer` — iframe → fallback на кнопку «Смотреть видеоурок в облаке»
   - **Direct/Other**: Нативный `<video>` элемент или `CloudLinkButton`
   - **CloudLinkButton**: Красивая кнопка-заглушка «Смотреть видеоурок в облаке» с прямой ссылкой — используется когда iframe невозможно встроить
+- **AI Content Processing Pipeline** — ✅ ИСПРАВЛЕНО в v0.15.5: PDF→статья пайплайн не работал на Vercel serverless из-за fire-and-forget (Promise.allSettled без await/waitUntil — функция терминировалась после отправки ответа). Три исправления: (1) waitUntil() от @vercel/functions для server-side, (2) клиентский триггер AI-обработки после загрузки как backup, (3) maxDuration=120 для AI-роута. Добавлена защита от дублирования (skip если очередь уже processing/done).
 - **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
 - **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах
 
@@ -384,7 +385,7 @@ src/
 - **Видеоплеер через облачные ссылки** — VideoEmbed автоматически определяет YouTube/Rutube/VK/Яндекс Диск/прямую ссылку и рендерит iframe или кнопку «Смотреть видеоурок в облаке». S3 Signed URL роуты удалены (Sprint 7).
 - **Интерактивные поля статей** — quiz (JSONB), practical_task (JSONB), timecodes (JSONB) для генерации интерактивных уроков (Sprint 7)
 - **Inline-редактирование статей** — Админ может редактировать заголовок, описание, теги, контент прямо на странице статьи без перехода в админку
-- **Удаление статей** — Кнопка «Удалить» с подтверждением на странице статьи (админ)
+- **Удаление статей** — Кнопка «Удалить» с подтверждением на странице статьи (админ) — ✅ ИСПРАВЛЕНО в v0.15.5: Radix AlertDialog trigger вызывал e.preventDefault() который предотвращал открытие диалога (Radix проверяет defaultPrevented)
 - **«Опубликовать без AI»** — Быстрая публикация статьи без AI-обработки (статус → done)
 - **Бейдж «Видео» на карточках** — Зелёный бейдж на карточках статей в списке, если у статьи есть videoUrl
 - **UrlImportForm с ошибками** — Форма показывает красную ошибку при неудачном сохранении, бейдж «S3 Хранилище» для s3:// ссылок
@@ -420,10 +421,12 @@ src/
 
 ### Критические (P0)
 1. **🟢 СТАТЬИ И ЗАДАЧИ НЕ ОТКРЫВАЛИСЬ ПО КЛИКУ — ИСПРАВЛЕНО в v0.15.4** — Несколько корневых причин: (1) конфликт имён динамических сегментов `[slug]` vs `[spaceId]` в v0.15.1, (2) API возвращал JSON-строки вместо массивов для `tags`/`keyConcepts`/`keyTopics`, вызывая `tags.map is not a function` краш в ArticleClient (v0.15.4). См. секцию 6 «Attempts & Failures».
-2. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
-3. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
-4. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
-5. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
+2. **🟢 КНОПКА УДАЛЕНИЯ (УРНА) НЕ РАБОТАЛА — ИСПРАВЛЕНО в v0.15.5** — Radix AlertDialog Trigger проверяет `event.defaultPrevented` перед открытием диалога. Кнопка-триггер вызывала `e.preventDefault()` (для блокировки навигации по Link), что предотвращало открытие диалога. Исправление: убран `e.preventDefault()`, оставлен только `e.stopPropagation()`.
+3. **🟢 PDF→СТАТЬЯ ПАЙПЛАЙН НЕ РАБОТАЛ — ИСПРАВЛЕНО в v0.15.5** — Fire-and-forget `Promise.allSettled` в bulk-upload не работал на Vercel serverless (функция терминировалась после отправки ответа). AI-роут не имел `maxDuration`, используя дефолтный 10с таймаут. Исправления: (1) `waitUntil()` от @vercel/functions для server-side, (2) клиентский триггер AI-обработки как backup, (3) `maxDuration=120` для AI-роута, (4) защита от дублирования обработки.
+4. **Hardcoded admin-пароль** — `admin/admin123` прямо в `src/lib/auth.ts:143`
+5. **SQL injection** — admin challenges PUT/spaces PUT/glossary PUT используют `Object.entries(body)` для формирования SQL-колонок без whitelist (categories и articles PUT используют whitelist — исправлено в Sprint 4)
+6. **Marathon читерство** — `correctAnswer` отправляется клиенту в `/api/marathon`
+7. **Нет валидации входных данных** — admin routes передают `body` напрямую в Prisma/raw SQL
 
 ### Значимые (P1)
 5. **Schema drift** — Prisma schema не содержит 9+ колонок и 1 таблицу (`app_settings`), добавленных через `ALTER TABLE` в runtime
