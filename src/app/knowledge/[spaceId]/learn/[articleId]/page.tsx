@@ -212,7 +212,7 @@ export default function LearnLessonPage({
     const currentIdx = blocks.indexOf(currentBlock);
     if (currentIdx >= 0 && currentIdx < blocks.length - 1) {
       const nextBlock = blocks[currentIdx + 1];
-      const blockInfo = LESSON_BLOCKS.find((b) => b.id === nextBlock);
+      const blockInfo = BLOCK_CONFIG.find((b) => b.id === nextBlock);
       if (nextBlock === "quiz") return "Перейти к проверке знаний";
       if (nextBlock === "practice") return "Перейти к практике";
       if (nextBlock === "article") return "Перейти к конспекту";
