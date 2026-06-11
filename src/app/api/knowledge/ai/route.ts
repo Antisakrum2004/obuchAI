@@ -293,23 +293,32 @@ async function processCategorization(
   const completion = await createChatCompletion([
     {
       role: "system",
-      content: `Ты — AI-ассистент для классификации образовательных материалов. 
-На основе названия и содержания статьи, определи наиболее подходящий раздел.
+      content: `Ты — AI-ассистент для точной классификации образовательных материалов по тематическим разделам.
+
+ВАЖНО: Классифицируй статью по ЕЁ РЕАЛЬНОМУ СОДЕРЖАНИЮ, а не по общему домену. Статья о конкретном инструменте должна попасть в раздел этого инструмента, а не в общий раздел.
 
 Доступные разделы:
 ${JSON.stringify(spaceList, null, 2)}
 
-Правила:
-1. Если есть подходящий раздел — верни его ID в поле "spaceId"
-2. Если нет подходящего раздела — верни "create_space" с названием нового раздела
+Правила классификации:
+1. Внимательно прочитай содержание статьи и определи ГЛАВНУЮ тему — что конкретно обсуждается
+2. Выбери раздел, который ТОЧНО соответствует главной теме статьи
+3. НЕ отправляй статью в общий раздел, если есть более конкретный подходящий раздел
+4. Если статья о конкретном инструменте (Cursor, Claude Code, MCP и т.д.) — создавай отдельный раздел для этого инструмента
+5. Если ни один раздел не подходит — создай новый с точным названием темы
+
+ПРИМЕРЫ правильной классификации:
+- Статья "Создание MCP-сервера на TypeScript" → раздел "MCP" или создать "MCP-серверы" (а НЕ "Prompt Engineering")
+- Статья "Cursor: управление контекстом" → раздел "Cursor" (а НЕ "AI Разработка")
+- Статья "Chain-of-Thought промптинг" → раздел "Промпт-инжиниринг"
 
 Верни ТОЛЬКО валидный JSON с одной из структур:
-- {"action": "assign", "spaceId": "existing-space-id"}
-- {"action": "create_space", "spaceName": "Новый раздел"}`,
+- {"action": "assign", "spaceId": "existing-space-id", "reason": "почему этот раздел подходит"}
+- {"action": "create_space", "spaceName": "Новый раздел", "reason": "почему нужен новый раздел"}`,
     },
     {
       role: "user",
-      content: `Название статьи: ${title}\n\nСодержание:\n${content.substring(0, 4000)}`,
+      content: `Название статьи: ${title}\n\nКраткое содержание:\n${content.substring(0, 4000)}`,
     },
   ]);
 
@@ -399,22 +408,36 @@ async function processMetadata(
   const content = (article.content as string) || "";
   const title = (article.title as string) || "";
 
+  // Fetch existing articles for relative difficulty assessment
+  const { rows: existingArticles } = await pool.query(
+    `SELECT id, title, difficulty, tags, summary FROM articles WHERE id != $1 AND status IN ('done', 'pending', 'processing') ORDER BY "createdAt" DESC LIMIT 50`,
+    [articleId]
+  );
+
+  const existingContext = existingArticles.length > 0
+    ? `\n\nУже существующие статьи в базе (для определения относительной сложности):\n${existingArticles.map((a: Record<string, unknown>, i: number) =>
+        `${i + 1}. [${a.difficulty || "нет"}] "${a.title}" — ${a.summary || "нет описания"}`
+      ).join("\n")}`
+    : "";
+
   const completion = await createChatCompletion([
     {
       role: "system",
-      content: `Ты — AI-ассистент для анализа образовательных статей. Проанализируй статью и верни JSON со следующими полями:
-- summary: краткое описание статьи (1-2 предложения)
-- difficulty: уровень сложности ("easy", "medium" или "hard")
-- keyConcepts: массив ключевых концепций (строки, до 10 штук)
+      content: `Ты — AI-ассистент для глубокого анализа образовательных статей. Проанализируй статью и верни JSON со следующими полями:
+
+- title: УНИКАЛЬНОЕ название статьи, точно отражающее её содержание. НЕ используй шаблоны "Статья о..." или "Обзор...". Формат: "[Тема]: [Что именно]". ПРИМЕР: "MCP-серверы: создание сервера на TypeScript"
+- summary: КОНКРЕТНОЕ описание (2-3 предложения) с фактами из статьи. ЗАПРЕЩЕНО начинать с "Статья посвящена...", "В статье рассматривается...", "Данный материал...". Начинай с конкретного факта или идеи. ПРИМЕР: "MCP-сервер позволяет AI-инструментам получать доступ к внешним данным через стандартизированный протокол. Подробно разбирается создание сервера на TypeScript с валидацией Zod."
+- difficulty: уровень сложности — сравнивай с уже существующими статьями. Если в базе есть статьи уровня "easy", а эта сложнее — ставь "medium". Если в базе всё "medium", а эта базовая — ставь "easy". ("easy", "medium" или "hard")
+- keyConcepts: массив ключевых концепций (строки, до 10 штук) — конкретные термины и идеи из статьи
 - estimatedTime: предполагаемое время изучения (например "30 мин", "2 часа")
-- tags: массив тегов (строки, до 8 штук)
+- tags: массив УНИКАЛЬНЫХ тегов (строки, до 8 штук) — конкретные технологии, инструменты, методы из статьи
 - keyTopics: массив ключевых тем (строки, до 5 штук)
 
 Верни ТОЛЬКО валидный JSON, без markdown-блоков и пояснений.`,
     },
     {
       role: "user",
-      content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}`,
+      content: `Название: ${title}\n\nСодержание:\n${content.substring(0, 8000)}${existingContext}`,
     },
   ]);
 
@@ -437,19 +460,21 @@ async function processMetadata(
     throw new Error(`Не удалось разобрать ответ AI: ${result.substring(0, 200)}`);
   }
 
-  // Update article with AI-generated metadata
+  // Update article with AI-generated metadata (including title if AI generated a better one)
   await pool.query(
     `UPDATE articles SET
-      summary = COALESCE($1, summary),
-      difficulty = $2,
-      "keyConcepts" = $3,
-      "estimatedTime" = $4,
-      tags = $5,
-      "keyTopics" = $6,
+      title = COALESCE($1, title),
+      summary = COALESCE($2, summary),
+      difficulty = $3,
+      "keyConcepts" = $4,
+      "estimatedTime" = $5,
+      tags = $6,
+      "keyTopics" = $7,
       "aiGenerated" = true,
       "updatedAt" = NOW()
-    WHERE id = $7`,
+    WHERE id = $8`,
     [
+      (parsed.title as string) || null,
       (parsed.summary as string) || null,
       (parsed.difficulty as string) || null,
       parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
@@ -609,17 +634,29 @@ async function processGraph(
   const completion = await createChatCompletion([
     {
       role: "system",
-      content: `Ты — AI-ассистент для анализа связей между образовательными статьями. 
-На основе списка статей определи для целевой статьи:
-- prerequisites: массив ID статей, которые нужно изучить перед этой (до 5 штук)
-- nextTopics: массив ID статей, которые стоит изучить после этой (до 5 штук)
+      content: `Ты — AI-ассистент для анализа связей между образовательными статьями и построения логической последовательности обучения.
 
-Учитывай логическую последовательность тем, сложность и тематические связи.
-Верни ТОЛЬКО валидный JSON с полями prerequisites и nextTopics, без markdown-блоков и пояснений.`,
+На основе списка всех статей определи для целевой статьи:
+- prerequisites: массив ID статей, которые нужно изучить ПЕРЕД этой (до 5 штук) — какие знания нужны как база
+- nextTopics: массив ID статей, которые стоит изучить ПОСЛЕ этой (до 5 штук) — куда двигаться дальше
+- rank: топологический ранг (0 = вводная, чем выше — тем продвинутее)
+
+ПРАВИЛА РАНЖИРОВАНИЯ:
+- rank = 0: базовая/вводная статья, не требует предварительных знаний
+- rank = 1: требует общих знаний предметной области
+- rank = 2: требует прохождения 1-2 конкретных статей из prerequisites
+- rank = 3+: продвинутая, требует нескольких пройденных тем
+
+Учитывай:
+- Логическую последовательность тем (от простого к сложному)
+- Тематические связи (статьи об одном инструменте идут вместе)
+- Реальную сложность материала (не только заявленную difficulty)
+
+Верни ТОЛЬКО валидный JSON: {"prerequisites": ["id1", ...], "nextTopics": ["id2", ...], "rank": 0}`,
     },
     {
       role: "user",
-      content: `Целевая статья: ${JSON.stringify({ id: targetArticle.id, title: targetArticle.title, summary: targetArticle.summary })}
+      content: `Целевая статья: ${JSON.stringify({ id: targetArticle.id, title: targetArticle.title, summary: targetArticle.summary, difficulty: targetArticle.difficulty })}
 
 Все статьи базы знаний:
 ${JSON.stringify(articlesInfo, null, 2)}`,
@@ -636,7 +673,7 @@ ${JSON.stringify(articlesInfo, null, 2)}`,
     throw new Error("AI не вернул результат для графа связей");
   }
 
-  let parsed: { prerequisites?: string[]; nextTopics?: string[] };
+  let parsed: { prerequisites?: string[]; nextTopics?: string[]; rank?: number };
   try {
     const cleaned = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     parsed = JSON.parse(cleaned);
@@ -648,8 +685,9 @@ ${JSON.stringify(articlesInfo, null, 2)}`,
   const allIds = new Set(allArticles.map((a: Record<string, unknown>) => a.id as string));
   const validPrerequisites = (parsed.prerequisites || []).filter((id: string) => allIds.has(id));
   const validNextTopics = (parsed.nextTopics || []).filter((id: string) => allIds.has(id));
+  const rank = typeof parsed.rank === "number" ? parsed.rank : null;
 
-  // Update article with graph data
+  // Update article with graph data + rank
   await pool.query(
     `UPDATE articles SET
       prerequisites = $1,
@@ -666,7 +704,7 @@ ${JSON.stringify(articlesInfo, null, 2)}`,
   // Update queue result
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
-    [JSON.stringify({ prerequisites: validPrerequisites, nextTopics: validNextTopics }), queueId]
+    [JSON.stringify({ prerequisites: validPrerequisites, nextTopics: validNextTopics, rank }), queueId]
   );
 }
 
@@ -790,52 +828,100 @@ async function processContentExtraction(
   );
 
   // Use AI to convert raw PDF text into a well-structured Markdown article
+  // Also generate a unique title and summary based on the ACTUAL content
   const completion = await createChatCompletion([
     {
       role: "system",
-      content: `Ты — AI-ассистент для конвертации сырого текста из PDF в качественную Markdown-статью.
+      content: `Ты — AI-ассистент для глубокого анализа и структурирования образовательных материалов.
 
-Правила:
-1. Сохрани ВСЮ существенную информацию из исходного текста — не пропускай важные детали
-2. Структурируй текст с помощью заголовков (##, ###), списков, жирного текста
-3. Добавь введение (1-2 абзаца после заголовка)
+Твоя задача — проанализировать сырой текст из PDF и:
+1. ПОНЯТЬ о чём этот материал — какая главная тема, какие концепции обсуждаются, для кого он предназначен
+2. Создать УНИКАЛЬНОЕ название, которое точно отражает содержание (НЕ используй шаблоны типа "Статья о..." или "Обзор...")
+3. Написать УНИКАЛЬНОЕ краткое описание (summary) — конкретные факты и идеи, а не общие фразы
+4. Структурировать весь текст в качественную Markdown-статью
+
+Правила для названия:
+- Должно быть конкретным и отражать УНИКАЛЬНОЕ содержание материала
+- Формат: "[Тема]: [Что именно рассматривается]" или просто точное название темы
+- ПРИМЕРЫ хороших названий: "MCP-серверы: создание собственного сервера на TypeScript", "Cursor: управление контекстом и Custom Actions", "Промпт-инжиниринг: техника Chain-of-Thought"
+- ПРИМЕРЫ плохих названий: "Статья о MCP", "Prompt Engineering" (слишком общее), "Лекция 5"
+
+Правила для summary:
+- Начинай с КОНКРЕТНОГО факта или идеи из материала, а не с "Статья посвящена..." или "В статье рассматривается..."
+- ПРИМЕРЫ хороших summary: "MCP-сервер позволяет инструментаи AI получать доступ к внешним данным. Рассматривается создание сервера на TypeScript с валидацией через Zod и тестированием через MCP Inspector."
+- ПРИМЕРЫ плохих summary: "Статья посвящена разработке MCP-серверов и рассматривает их преимущества."
+
+Правила для Markdown-контента:
+1. Сохрани ВСЮ существенную информацию — не пропускай важные детали
+2. Структурируй текст заголовками (##, ###), списками, жирным текстом
+3. Добавь введение (2-3 абзаца) — опиши ЧТО конкретно будет изучено и ЗАЧЕМ это нужно
 4. Если есть код — оформи в блоки \`\`\`
 5. Убери артефакты PDF: лишние пробелы, переносы строк внутри слов, повторяющиеся заголовки страниц, номера страниц
 6. Сохрани терминологию и язык оригинала
 7. НЕ добавляй несуществующую информацию — только переработай то, что есть в тексте
-8. Верни ТОЛЬКО Markdown-контент, без пояснений и мета-комментариев`,
+
+Верни ТОЛЬКО валидный JSON:
+{
+  "title": "Уникальное название статьи",
+  "summary": "Конкретное описание с фактами из материала (2-3 предложения)",
+  "content": "Полный Markdown-контент статьи (начиная с ##, без заголовка первого уровня)"
+}`,
     },
     {
       role: "user",
-      content: `Название статьи: ${title}\n\nСырой текст из PDF:\n${rawText.substring(0, 16000)}`,
+      content: `Исходное название файла (может быть неточным): ${title}\n\nСырой текст из PDF:\n${rawText.substring(0, 16000)}`,
     },
-  ], { temperature: 0.2, max_tokens: 8192 });
+  ], { temperature: 0.3, max_tokens: 8192 });
 
   await pool.query(
     `UPDATE processing_queue SET progress = 80, "updatedAt" = NOW() WHERE id = $1`,
     [queueId]
   );
 
-  const result = completion.choices[0]?.message?.content;
-  if (!result) {
+  const aiResult = completion.choices[0]?.message?.content;
+  if (!aiResult) {
     throw new Error("AI не вернул результат для конвертации контента");
   }
 
-  // Build final content: title heading + AI-structured content
-  const finalContent = `# ${title}\n\n${result}`;
+  // Parse AI response — extract title, summary, and content
+  let parsedContent: { title?: string; summary?: string; content?: string };
+  try {
+    const cleaned = aiResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    parsedContent = JSON.parse(cleaned);
+  } catch {
+    // Fallback: if AI didn't return valid JSON, use the raw result as content
+    console.warn(`[Content] AI didn't return valid JSON, using raw result as content`);
+    const finalContent = `# ${title}\n\n${aiResult}`;
+    await pool.query(
+      `UPDATE articles SET content = $1, "updatedAt" = NOW() WHERE id = $2`,
+      [finalContent, articleId]
+    );
+    await pool.query(
+      `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
+      [JSON.stringify({ extractedChars: rawText.length, fallback: true }), queueId]
+    );
+    return;
+  }
 
-  // Update article with extracted content
+  const aiTitle = parsedContent.title || title;
+  const aiSummary = parsedContent.summary || null;
+  const aiMarkdown = parsedContent.content || aiResult;
+
+  // Build final content: title heading + AI-structured content
+  const finalContent = `# ${aiTitle}\n\n${aiMarkdown}`;
+
+  // Update article with extracted content + AI-generated title and summary
   await pool.query(
-    `UPDATE articles SET content = $1, "updatedAt" = NOW() WHERE id = $2`,
-    [finalContent, articleId]
+    `UPDATE articles SET content = $1, title = COALESCE($2, title), summary = COALESCE($3, summary), "updatedAt" = NOW() WHERE id = $4`,
+    [finalContent, aiTitle, aiSummary, articleId]
   );
 
-  console.log(`[Content] Article ${articleId} updated with ${finalContent.length} chars of content`);
+  console.log(`[Content] Article ${articleId} updated: title="${aiTitle}", ${finalContent.length} chars content`);
 
   // Update queue result
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
-    [JSON.stringify({ extractedChars: rawText.length, finalChars: finalContent.length, pages: 0 }), queueId]
+    [JSON.stringify({ extractedChars: rawText.length, finalChars: finalContent.length, aiTitle, aiSummary: aiSummary?.substring(0, 100) }), queueId]
   );
 }
 
