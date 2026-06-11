@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { calculateLevel } from "@/lib/gamification";
 
 /** Ensure the `banned` and `hearts` columns exist on the users table */
 async function ensureColumns() {
@@ -105,7 +106,18 @@ export async function PUT(
       return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
     }
 
-    return NextResponse.json(result.rows[0]);
+    // Recalculate level based on the new XP value
+    const updatedUser = result.rows[0];
+    const correctLevel = calculateLevel(updatedUser.xp || 0);
+    if (updatedUser.level !== correctLevel) {
+      await pool.query(
+        `UPDATE users SET level = $1 WHERE id = $2`,
+        [correctLevel, id]
+      );
+      updatedUser.level = correctLevel;
+    }
+
+    return NextResponse.json(updatedUser);
   } catch (error) {
     console.error("Admin user update error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });

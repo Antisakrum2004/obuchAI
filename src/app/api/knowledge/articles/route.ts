@@ -112,9 +112,9 @@ export async function POST(request: NextRequest) {
       aiGenerated,
     } = body;
 
-    if (!title || !slug || !spaceId) {
+    if (!title || !slug) {
       return NextResponse.json(
-        { error: "title, slug и spaceId обязательны" },
+        { error: "title и slug обязательны" },
         { status: 400 }
       );
     }

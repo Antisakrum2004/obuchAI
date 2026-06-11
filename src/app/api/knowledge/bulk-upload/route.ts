@@ -70,22 +70,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (!resolvedSpaceId) {
-      return NextResponse.json(
-        { error: "spaceId обязателен" },
-        { status: 400 }
-      );
+      // Space ID is optional — if not provided, AI auto-categorization will assign one
+      console.log(`[bulk-upload] No spaceId provided — AI will auto-categorize articles`);
     }
 
-    // Verify space exists
-    const spaceResult = await pool.query(
-      `SELECT id FROM knowledge_spaces WHERE id = $1`,
-      [resolvedSpaceId]
-    );
-    if (spaceResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Раздел знаний не найден" },
-        { status: 404 }
+    // Verify space exists (if provided)
+    if (resolvedSpaceId) {
+      const spaceResult = await pool.query(
+        `SELECT id FROM knowledge_spaces WHERE id = $1`,
+        [resolvedSpaceId]
       );
+      if (spaceResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: "Раздел знаний не найден" },
+          { status: 404 }
+        );
+      }
     }
 
     // Collect all files from formData
@@ -263,7 +263,7 @@ export async function POST(request: NextRequest) {
           fileName: file.name,
           fileType: getFileIcon(validation.fileType || "document", file.type),
           status: "pending",
-          spaceId: resolvedSpaceId,
+          spaceId: resolvedSpaceId || "",
         });
       } catch (fileErr) {
         console.error(`[bulk-upload] Error processing file ${file.name}:`, fileErr);
@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
           results.map(async (article) => {
             try {
               // Process each AI type sequentially: content → metadata → glossary → course (quiz + practice)
-              const aiTypes = ["content", "metadata", "glossary", "course"];
+              const aiTypes = ["content", "metadata", "glossary", "graph", "course"];
               for (const type of aiTypes) {
                 try {
                   const res = await fetch(`${baseUrl}/api/knowledge/ai`, {

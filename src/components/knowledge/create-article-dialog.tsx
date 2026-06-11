@@ -120,7 +120,7 @@ export function CreateArticleDialog({
   }, [open]);
 
   const handleSubmit = async () => {
-    if (!title.trim() || !spaceId) return;
+    if (!title.trim()) return;
 
     setCreating(true);
 
@@ -135,7 +135,7 @@ export function CreateArticleDialog({
       const body: Record<string, unknown> = {
         title: title.trim(),
         slug,
-        spaceId,
+        spaceId: spaceId || null,
         summary: summary.trim() || null,
         content: content.trim() || null,
         tags: tagsArray.length > 0 ? tagsArray : null,
@@ -156,19 +156,39 @@ export function CreateArticleDialog({
           description: `"${title.trim()}" добавлена в библиотеку`,
         });
 
-        // Fire-and-forget AI processing
+        // Fire-and-forget AI processing — sequential chain for best results
         const articleId = article.id;
-        fetch("/api/knowledge/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articleId, type: "glossary" }),
-        }).catch(() => {});
-
-        fetch("/api/knowledge/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articleId, type: "metadata" }),
-        }).catch(() => {});
+        const processChain = async () => {
+          try {
+            // Step 1: Metadata + Categorization (auto-assigns space if none)
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "metadata" }),
+            });
+            // Step 2: Glossary
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "glossary" }),
+            });
+            // Step 3: Graph
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "graph" }),
+            });
+            // Step 4: Course (Quiz + Practice)
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "course" }),
+            });
+          } catch {
+            // Silently fail — user can retry from queue
+          }
+        };
+        processChain();
 
         onArticleCreated();
       } else {
@@ -212,7 +232,8 @@ export function CreateArticleDialog({
           {/* Space */}
           <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground font-medium">
-              Раздел <span className="text-red-400">*</span>
+              Раздел
+              <span className="text-emerald-400/60 text-[10px] ml-1.5">(если не выбрать — AI определит автоматически)</span>
             </label>
             {loadingSpaces ? (
               <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
@@ -220,15 +241,16 @@ export function CreateArticleDialog({
                 Загрузка разделов...
               </div>
             ) : spaces.length === 0 ? (
-              <div className="px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
-                Нет доступных разделов. Создайте раздел первым.
+              <div className="px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+                AI автоматически создаст подходящий раздел
               </div>
             ) : (
-              <Select value={spaceId} onValueChange={setSpaceId}>
+              <Select value={spaceId || "_auto"} onValueChange={(v) => setSpaceId(v === "_auto" ? "" : v)}>
                 <SelectTrigger className="bg-white/5 border-white/10">
-                  <SelectValue placeholder="Выберите раздел" />
+                  <SelectValue placeholder="Авто-определение AI" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#111118] border-white/10">
+                  <SelectItem value="_auto">🤖 Авто-определение AI</SelectItem>
                   {spaces.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.icon || "📚"} {s.name}
@@ -330,7 +352,7 @@ export function CreateArticleDialog({
         {/* AI note */}
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60 pt-1">
           <Sparkles className="h-3 w-3 text-emerald-400/60" />
-          После создания статья будет обработана ИИ для извлечения терминов глоссария
+          После создания AI автоматически определит раздел, извлечёт термины, создаст квиз и практическое задание
         </div>
 
         <DialogFooter className="pt-2">
@@ -344,7 +366,7 @@ export function CreateArticleDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={creating || !title.trim() || !spaceId}
+            disabled={creating || !title.trim()}
             className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 gap-1.5"
           >
             {creating ? (

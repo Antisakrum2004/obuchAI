@@ -118,7 +118,10 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
             </div>
           </TooltipTrigger>
           <TooltipContent side="top" className="bg-card border-border text-foreground">
-            {current} / {required} XP
+            <div className="text-center">
+              <div className="font-bold">{current} / {required} XP до след. уровня</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Всего: {currentXp} XP</div>
+            </div>
           </TooltipContent>
         </Tooltip>
       </div>

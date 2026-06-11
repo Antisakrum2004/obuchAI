@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
 
       const requiredTypes: string[] = [];
       if (hasPdf || hasMediaPdf) requiredTypes.push("content_extract");
-      requiredTypes.push("ai_metadata", "glossary_extract", "graph_build");
+      requiredTypes.push("ai_metadata", "glossary_extract", "graph_build", "course_draft");
 
       // Get existing queue items for this article
       const { rows: existingItems } = await pool.query(

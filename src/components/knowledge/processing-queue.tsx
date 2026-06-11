@@ -36,6 +36,7 @@ import {
   Settings,
   FileText,
   Trash2,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -105,6 +106,7 @@ const typeLabels: Record<string, { label: string; icon: React.ElementType; color
   ai_metadata: { label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
   glossary_extract: { label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
   graph_build: { label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
+  course_draft: { label: "Курс", icon: HelpCircle, color: "text-emerald-400" },
 };
 
 // AI processing types with icons — THIS IS THE ORDER they run in
@@ -113,6 +115,7 @@ const aiTypes = [
   { type: "metadata", queueType: "ai_metadata", label: "Метаданные", icon: Sparkles, color: "text-blue-400" },
   { type: "glossary", queueType: "glossary_extract", label: "Глоссарий", icon: BookOpen, color: "text-purple-400" },
   { type: "graph", queueType: "graph_build", label: "Граф знаний", icon: GitBranch, color: "text-amber-400" },
+  { type: "course", queueType: "course_draft", label: "Квиз + Практика", icon: HelpCircle, color: "text-emerald-400" },
 ] as const;
 
 function computeOverallStatus(items: QueueItem[]): ArticleGroup["overallStatus"] {
@@ -784,10 +787,12 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
             <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
             <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">4. Граф знаний</span>
             <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">5. Квиз + Практика</span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
             <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Опубликована</span>
           </div>
           <p className="ml-5 text-muted-foreground/60">
-            После всех шагов статья автоматически появляется в Базе знаний с извлечённым контентом, глоссарием и связями.
+            После всех шагов статья автоматически появляется в Базе знаний с извлечённым контентом, глоссарием, квизом, практикой и связями.
           </p>
         </div>
       )}
