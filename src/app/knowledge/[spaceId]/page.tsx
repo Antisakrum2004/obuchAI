@@ -51,7 +51,7 @@ interface SpaceData {
 export default function KnowledgeSpacePage({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ spaceId: string }>;
 }) {
 
   const [slug, setSlug] = useState<string>("");
@@ -68,7 +68,7 @@ export default function KnowledgeSpacePage({
 
   useEffect(() => {
     params.then((p) => {
-      const decoded = decodeURIComponent(p.slug);
+      const decoded = decodeURIComponent(p.spaceId);
       setSlug(decoded);
     });
   }, [params]);
