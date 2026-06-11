@@ -207,6 +207,21 @@ export default function LearnLessonPage({
 
   const availableBlocks = getAvailableBlocks();
 
+  // Get the label for the next block's navigation button
+  const getNextBlockLabel = useCallback((currentBlock: LessonBlock, blocks: LessonBlock[]): string => {
+    const currentIdx = blocks.indexOf(currentBlock);
+    if (currentIdx >= 0 && currentIdx < blocks.length - 1) {
+      const nextBlock = blocks[currentIdx + 1];
+      const blockInfo = LESSON_BLOCKS.find((b) => b.id === nextBlock);
+      if (nextBlock === "quiz") return "Перейти к проверке знаний";
+      if (nextBlock === "practice") return "Перейти к практике";
+      if (nextBlock === "article") return "Перейти к конспекту";
+      if (nextBlock === "materials") return "Перейти к материалам";
+      return blockInfo ? `Перейти: ${blockInfo.label}` : "Далее";
+    }
+    return "Завершить урок";
+  }, []);
+
   // Progress calculation
   const progressPercent = availableBlocks.length > 0
     ? Math.round((completedBlocks.size / availableBlocks.length) * 100)
@@ -464,6 +479,7 @@ export default function LearnLessonPage({
                 article={article}
                 keyConcepts={keyConcepts}
                 timecodes={timecodes}
+                nextBlockLabel={getNextBlockLabel("summary", availableBlocks)}
                 onComplete={() => completeBlock("summary")}
               />
             )}
@@ -471,12 +487,14 @@ export default function LearnLessonPage({
               <MaterialsBlock
                 article={article}
                 timecodes={timecodes}
+                nextBlockLabel={getNextBlockLabel("materials", availableBlocks)}
                 onComplete={() => completeBlock("materials")}
               />
             )}
             {activeBlock === "article" && (
               <ArticleBlock
                 article={article}
+                nextBlockLabel={getNextBlockLabel("article", availableBlocks)}
                 onComplete={() => completeBlock("article")}
               />
             )}
@@ -560,11 +578,13 @@ function SummaryBlock({
   article,
   keyConcepts,
   timecodes,
+  nextBlockLabel,
   onComplete,
 }: {
   article: ArticleData;
   keyConcepts: string[];
   timecodes: TimecodeEntry[];
+  nextBlockLabel: string;
   onComplete: () => void;
 }) {
   return (
@@ -660,7 +680,7 @@ function SummaryBlock({
           size="sm"
           className="w-full bg-emerald-600 hover:bg-emerald-500 mt-2"
         >
-          Начать изучение
+          {nextBlockLabel}
           <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </CardContent>
@@ -675,10 +695,12 @@ function SummaryBlock({
 function MaterialsBlock({
   article,
   timecodes,
+  nextBlockLabel,
   onComplete,
 }: {
   article: ArticleData;
   timecodes: TimecodeEntry[];
+  nextBlockLabel: string;
   onComplete: () => void;
 }) {
   return (
@@ -747,7 +769,7 @@ function MaterialsBlock({
           size="sm"
           className="w-full bg-emerald-600 hover:bg-emerald-500"
         >
-          Продолжить к конспекту
+          {nextBlockLabel}
           <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </CardContent>
@@ -761,9 +783,11 @@ function MaterialsBlock({
 
 function ArticleBlock({
   article,
+  nextBlockLabel,
   onComplete,
 }: {
   article: ArticleData;
+  nextBlockLabel: string;
   onComplete: () => void;
 }) {
   return (
@@ -786,7 +810,7 @@ function ArticleBlock({
           size="sm"
           className="w-full bg-emerald-600 hover:bg-emerald-500"
         >
-          Перейти к проверке знаний
+          {nextBlockLabel}
           <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </CardContent>
