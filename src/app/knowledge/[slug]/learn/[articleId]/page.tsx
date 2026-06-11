@@ -127,9 +127,9 @@ const BLOCK_CONFIG: Array<{
 export default function LearnLessonPage({
   params,
 }: {
-  params: Promise<{ spaceId: string; articleId: string }>;
+  params: Promise<{ slug: string; articleId: string }>;
 }) {
-  const [spaceId, setSpaceId] = useState<string>("");
+  const [spaceId, setSpaceId] = useState<string>(""); // slug value stored in spaceId variable for API compatibility
   const [articleId, setArticleId] = useState<string>("");
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [space, setSpace] = useState<SpaceData | null>(null);
@@ -152,7 +152,7 @@ export default function LearnLessonPage({
   // Parse params
   useEffect(() => {
     params.then((p) => {
-      setSpaceId(decodeURIComponent(p.spaceId));
+      setSpaceId(decodeURIComponent(p.slug));
       setArticleId(decodeURIComponent(p.articleId));
     });
   }, [params]);
@@ -212,19 +212,14 @@ export default function LearnLessonPage({
     ? Math.round((completedBlocks.size / availableBlocks.length) * 100)
     : 0;
 
-  // Mark block as completed and auto-advance to next block
+  // Mark block as completed and advance
   const completeBlock = useCallback((block: LessonBlock) => {
     setCompletedBlocks((prev) => {
       const next = new Set(prev);
       next.add(block);
       return next;
     });
-    // Auto-advance to the next available block
-    const currentIdx = availableBlocks.indexOf(block);
-    if (currentIdx >= 0 && currentIdx < availableBlocks.length - 1) {
-      setActiveBlock(availableBlocks[currentIdx + 1]);
-    }
-  }, [availableBlocks]);
+  }, []);
 
   const goToNextBlock = useCallback(() => {
     const currentIdx = availableBlocks.indexOf(activeBlock);
@@ -335,17 +330,18 @@ export default function LearnLessonPage({
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
+              {/* [ETAP-1] Replaced Link with <a> */}
               <BreadcrumbLink asChild>
-                <Link href="/knowledge">База знаний</Link>
+                <a href="/knowledge">База знаний</a>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               {space ? (
                 <BreadcrumbLink asChild>
-                  <Link href={`/knowledge/${encodeURIComponent(space.slug)}`}>
+                  <a href={`/knowledge/${encodeURIComponent(space.slug)}`}>
                     {space.name}
-                  </Link>
+                  </a>
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>...</BreadcrumbPage>
@@ -508,12 +504,12 @@ export default function LearnLessonPage({
         {/* Navigation Footer */}
         <div className="flex items-center justify-between pt-4">
           {prevLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`}>
+            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK prev lesson")}>
               <Button variant="outline" size="sm" className="gap-1">
                 <ArrowLeft className="h-4 w-4" />
                 {prevLesson.title}
               </Button>
-            </Link>
+            </a>
           ) : (
             <div />
           )}
@@ -537,12 +533,12 @@ export default function LearnLessonPage({
           </div>
 
           {nextLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
+            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK next lesson")}>
               <Button variant="outline" size="sm" className="gap-1">
                 {nextLesson.title}
                 <ArrowRight className="h-4 w-4" />
               </Button>
-            </Link>
+            </a>
           ) : (
             <div />
           )}
