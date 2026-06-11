@@ -132,6 +132,37 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === "reset-stuck") {
+      // Reset articles that have been stuck in 'processing' status for too long
+      // (more than 10 minutes with no queue progress = likely stuck)
+      const { rows: stuckArticles } = await pool.query(
+        `SELECT id, title, "updatedAt" FROM articles
+         WHERE status = 'processing'
+           AND "updatedAt" < NOW() - INTERVAL '10 minutes'`
+      );
+
+      // Reset stuck articles back to pending
+      const { rowCount: resetCount } = await pool.query(
+        `UPDATE articles SET status = 'pending', "errorMessage" = NULL, "updatedAt" = NOW()
+         WHERE status = 'processing'
+           AND "updatedAt" < NOW() - INTERVAL '10 minutes'`
+      );
+
+      // Reset stuck queue items (processing for > 10 min) back to pending
+      const { rowCount: queueResetCount } = await pool.query(
+        `UPDATE processing_queue SET status = 'pending', progress = 0, "startedAt" = NULL, "updatedAt" = NOW()
+         WHERE status = 'processing'
+           AND "updatedAt" < NOW() - INTERVAL '10 minutes'`
+      );
+
+      return NextResponse.json({
+        message: `Сброшено ${resetCount} зависших статей и ${queueResetCount} задач очереди`,
+        resetArticlesCount: resetCount,
+        resetQueueCount: queueResetCount,
+        stuckArticles: stuckArticles.map((a: { id: string; title: string }) => ({ id: a.id, title: a.title })),
+      });
+    }
+
     if (action === "ensure-queue-items") {
       // Ensure an article has all 4 processing queue items (content, metadata, glossary, graph)
       // Creates missing items without touching existing ones
@@ -274,7 +305,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, ensure-queue-items, create-content-tasks, publish-without-ai" },
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, reset-stuck, ensure-queue-items, create-content-tasks, publish-without-ai" },
       { status: 400 }
     );
   } catch (error) {

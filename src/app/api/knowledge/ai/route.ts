@@ -171,10 +171,43 @@ export async function POST(request: NextRequest) {
         [queueId]
       );
 
-      // Auto-publish: only if ALL queue items for this article are done
-      // (no pending/processing items left) AND content is not a placeholder
+      // Auto-publish: only if ALL expected queue items for the article are done.
+      // Expected types: content_extract (if PDF), ai_metadata, glossary_extract, graph_build, course_draft
+      // We ensure all expected queue entries exist before checking, to prevent premature auto-publish
+      // when only the first step (e.g., metadata) has completed but glossary/course entries don't exist yet.
+      const { rows: currentQueueItems } = await pool.query(
+        `SELECT type, status FROM processing_queue WHERE "articleId" = $1`,
+        [articleId]
+      );
+
+      // Determine expected queue types for this article
+      const expectedTypes = ["ai_metadata", "glossary_extract", "graph_build", "course_draft"];
+      // Check if article has PDF → needs content_extract too
+      const { rows: articlePdfCheck } = await pool.query(
+        `SELECT "pdfUrl" FROM articles WHERE id = $1`,
+        [articleId]
+      );
+      if (articlePdfCheck[0]?.pdfUrl) {
+        expectedTypes.unshift("content_extract");
+      }
+
+      // Create missing queue entries for expected types that don't exist yet
+      for (const expectedType of expectedTypes) {
+        const exists = currentQueueItems.some((r: { type: string }) => r.type === expectedType);
+        if (!exists) {
+          const missingQueueId = genId("pq_");
+          await pool.query(
+            `INSERT INTO processing_queue (id, type, status, "articleId", "inputData", progress, "createdAt", "updatedAt")
+             VALUES ($1, $2, 'pending', $3, $4, 0, NOW(), NOW())`,
+            [missingQueueId, expectedType, articleId, JSON.stringify({ articleId, type: expectedType })]
+          );
+          console.log(`[AI] Created missing queue entry: ${expectedType} for article ${articleId}`);
+        }
+      }
+
+      // Re-fetch queue items after creating missing ones
       const { rows: remainingItems } = await pool.query(
-        `SELECT status FROM processing_queue WHERE "articleId" = $1`,
+        `SELECT type, status FROM processing_queue WHERE "articleId" = $1`,
         [articleId]
       );
       const hasPending = remainingItems.some((r: { status: string }) => r.status === "pending" || r.status === "processing");

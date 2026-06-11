@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { xpProgressInLevel, getGradeName } from "@/lib/gamification";
+import { xpProgressInLevel, getGradeName, calculateLevel } from "@/lib/gamification";
 import { useEffect, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -40,8 +40,10 @@ function getBarGradient(tier: string): string {
   }
 }
 
-export function XPBar({ currentXp, level, className, showLabel = true, compact = false }: XPBarProps) {
+export function XPBar({ currentXp, level: _levelProp, className, showLabel = true, compact = false }: XPBarProps) {
   const isMobile = useIsMobile();
+  // Always calculate level from total XP to avoid stale level prop mismatches
+  const level = calculateLevel(currentXp);
   const { current, required, percentage } = xpProgressInLevel(currentXp);
   const tier = getLevelTier(level);
   const gradeName = getGradeName(level);

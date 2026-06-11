@@ -444,6 +444,25 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [fetchQueue, onQueueChange]);
 
+  /** Reset articles stuck in processing for too long */
+  const handleResetStuck = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset-stuck" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось сбросить зависшие задачи");
+    }
+  }, [fetchQueue, onQueueChange]);
+
   // ── KEYBOARD SHORTCUTS ──
 
   useEffect(() => {
@@ -541,6 +560,15 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           >
             <FileText className="h-3.5 w-3.5" />
             Найти PDF
+          </Button>
+          {/* Reset stuck articles */}
+          <Button
+            size="sm"
+            onClick={handleResetStuck}
+            className="h-8 text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 gap-1.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Сбросить зависшие
           </Button>
           {/* Clear Queue — with confirmation */}
           {items.length > 0 && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+
+import { Plus, Loader2, FileText, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -19,8 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, FileText, Sparkles } from "lucide-react";
-import { toast } from "sonner";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -30,12 +31,7 @@ interface CreateArticleDialogProps {
   onArticleCreated: () => void;
 }
 
-interface Space {
-  id: string;
-  name: string;
-  slug: string;
-  icon: string | null;
-}
+// Space interface removed — AI auto-categorizes articles
 
 // ── Slug generator (Cyrillic → Latin) ─────────────────────────
 
@@ -72,44 +68,20 @@ export function CreateArticleDialog({
   onArticleCreated,
 }: CreateArticleDialogProps) {
   const [title, setTitle] = useState("");
-  const [spaceId, setSpaceId] = useState("");
   const [summary, setSummary] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  const [loadingSpaces, setLoadingSpaces] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Fetch spaces when dialog opens
-  const fetchSpaces = useCallback(async () => {
-    setLoadingSpaces(true);
-    try {
-      const res = await fetch("/api/knowledge/spaces");
-      if (res.ok) {
-        const data = await res.json();
-        setSpaces(Array.isArray(data) ? data : []);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setLoadingSpaces(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (open) {
-      fetchSpaces();
-    }
-  }, [open, fetchSpaces]);
+  // Spaces fetch removed — AI auto-categorizes, no manual selection needed
 
   // Reset form when dialog closes
   useEffect(() => {
     if (!open) {
       setTitle("");
-      setSpaceId("");
       setSummary("");
       setContent("");
       setTags("");
@@ -135,7 +107,7 @@ export function CreateArticleDialog({
       const body: Record<string, unknown> = {
         title: title.trim(),
         slug,
-        spaceId: spaceId || null,
+        spaceId: null, // AI auto-categorizes
         summary: summary.trim() || null,
         content: content.trim() || null,
         tags: tagsArray.length > 0 ? tagsArray : null,
@@ -153,39 +125,54 @@ export function CreateArticleDialog({
       if (res.ok) {
         const article = await res.json();
         toast.success("Статья создана", {
-          description: `"${title.trim()}" добавлена в библиотеку`,
+          description: `"${title.trim()}" добавлена в библиотеку. Начинаю AI-обработку...`,
         });
 
         // Fire-and-forget AI processing — sequential chain for best results
         const articleId = article.id;
         const processChain = async () => {
           try {
+            // Step 0: Create ALL queue entries upfront so auto-publish logic works correctly
+            // (without this, auto-publish triggers after the first step completes)
+            try {
+              await fetch("/api/knowledge/queue", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "ensure-queue-items", articleId }),
+              });
+            } catch {
+              // Non-critical — queue items will be created on-the-fly as fallback
+            }
             // Step 1: Metadata + Categorization (auto-assigns space if none)
-            await fetch("/api/knowledge/ai", {
+            const metaRes = await fetch("/api/knowledge/ai", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ articleId, type: "metadata" }),
             });
+            console.log(`[CreateArticle] metadata: ${metaRes.status}`);
             // Step 2: Glossary
-            await fetch("/api/knowledge/ai", {
+            const glossRes = await fetch("/api/knowledge/ai", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ articleId, type: "glossary" }),
             });
+            console.log(`[CreateArticle] glossary: ${glossRes.status}`);
             // Step 3: Graph
-            await fetch("/api/knowledge/ai", {
+            const graphRes = await fetch("/api/knowledge/ai", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ articleId, type: "graph" }),
             });
+            console.log(`[CreateArticle] graph: ${graphRes.status}`);
             // Step 4: Course (Quiz + Practice)
-            await fetch("/api/knowledge/ai", {
+            const courseRes = await fetch("/api/knowledge/ai", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ articleId, type: "course" }),
             });
-          } catch {
-            // Silently fail — user can retry from queue
+            console.log(`[CreateArticle] course: ${courseRes.status}`);
+          } catch (err) {
+            console.error("[CreateArticle] AI processing chain failed:", err);
           }
         };
         processChain();
@@ -229,36 +216,15 @@ export function CreateArticleDialog({
             />
           </div>
 
-          {/* Space */}
+          {/* Space — AI auto-determines, show info badge */}
           <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground font-medium">
               Раздел
-              <span className="text-emerald-400/60 text-[10px] ml-1.5">(если не выбрать — AI определит автоматически)</span>
             </label>
-            {loadingSpaces ? (
-              <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Загрузка разделов...
-              </div>
-            ) : spaces.length === 0 ? (
-              <div className="px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                AI автоматически создаст подходящий раздел
-              </div>
-            ) : (
-              <Select value={spaceId || "_auto"} onValueChange={(v) => setSpaceId(v === "_auto" ? "" : v)}>
-                <SelectTrigger className="bg-white/5 border-white/10">
-                  <SelectValue placeholder="Авто-определение AI" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#111118] border-white/10">
-                  <SelectItem value="_auto">🤖 Авто-определение AI</SelectItem>
-                  {spaces.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.icon || "📚"} {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+              <Sparkles className="h-3 w-3" />
+              AI автоматически определит подходящий раздел
+            </div>
           </div>
 
           {/* Summary */}

@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-12 (обновлено до v0.17.0 — Grade System: текстовые ранги по уровням, Quiz Gamification: таймер 30с/вопрос, single-question режим, XP за квиз через API; AI Course Pipeline: обязательные 5+ quiz вопросов и practical_task; Course Navigation: сортировка по сложности внутри ранга; S3 для видео полностью удалён). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-12 (обновлено до v0.17.1 — bugfix: auto-publish premature fix, XP level calculation from totalXp, remove category dropdown (AI auto-categorizes), reset-stuck queue action, ensure-queue-items on article creation). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -419,7 +419,7 @@ src/
 ## 4. Current State
 
 ### Метрики проекта
-- **Версия**: 0.17.0
+- **Версия**: 0.17.1
 - **Строк кода**: ~27,000 (src/ только .ts/.tsx)
 - **Страниц**: 17
 - **API маршрутов**: 48+
