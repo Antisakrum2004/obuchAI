@@ -139,6 +139,7 @@ export default function LearnLessonPage({
   // Lesson flow state
   const [activeBlock, setActiveBlock] = useState<LessonBlock>("summary");
   const [completedBlocks, setCompletedBlocks] = useState<Set<LessonBlock>>(new Set());
+  const [lessonCompleted, setLessonCompleted] = useState(false);
 
   // Quiz state
   const [quizAnswers, setQuizAnswers] = useState<Map<number, number>>(new Map());
@@ -232,6 +233,10 @@ export default function LearnLessonPage({
     setCompletedBlocks((prev) => {
       const next = new Set(prev);
       next.add(block);
+      // Check if all blocks are now completed
+      if (next.size >= availableBlocks.length) {
+        setLessonCompleted(true);
+      }
       return next;
     });
     // Auto-advance to the next available block
@@ -467,6 +472,46 @@ export default function LearnLessonPage({
 
         {/* Active Block Content */}
         <AnimatePresence mode="wait">
+          {lessonCompleted ? (
+            <motion.div
+              key="lesson-complete"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="glass border-white/5 text-center">
+                <CardContent className="py-10 space-y-4">
+                  <div className="text-5xl mb-4">🎉</div>
+                  <h3 className="text-xl font-semibold text-foreground">Урок завершён!</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Вы прошли все разделы урока «{article.title}»
+                  </p>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+                    {nextLesson ? (
+                      <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
+                        <Button className="bg-emerald-600 hover:bg-emerald-500 gap-2">
+                          Следующий урок: {nextLesson.title}
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link href="/knowledge/materials">
+                        <Button className="bg-emerald-600 hover:bg-emerald-500 gap-2">
+                          Вернуться к материалам
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    )}
+                    <Link href={`/knowledge/article/${article.id}`}>
+                      <Button variant="outline" size="sm">
+                        Перечитать статью
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : (
           <motion.div
             key={activeBlock}
             initial={{ opacity: 0, x: 20 }}
@@ -521,9 +566,11 @@ export default function LearnLessonPage({
               />
             )}
           </motion.div>
+          )}
         </AnimatePresence>
 
-        {/* Navigation Footer */}
+        {/* Navigation Footer — hidden when lesson is completed */}
+        {!lessonCompleted && (
         <div className="flex items-center justify-between pt-4">
           {prevLesson ? (
             <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`}>
@@ -565,6 +612,7 @@ export default function LearnLessonPage({
             <div />
           )}
         </div>
+        )}
       </div>
     </AppLayout>
   );

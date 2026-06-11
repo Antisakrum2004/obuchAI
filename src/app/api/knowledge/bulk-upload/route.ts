@@ -296,8 +296,8 @@ export async function POST(request: NextRequest) {
         Promise.allSettled(
           results.map(async (article) => {
             try {
-              // Process each AI type sequentially: content → metadata → glossary
-              const aiTypes = ["content", "metadata", "glossary"];
+              // Process each AI type sequentially: content → metadata → glossary → course (quiz + practice)
+              const aiTypes = ["content", "metadata", "glossary", "course"];
               for (const type of aiTypes) {
                 try {
                   const res = await fetch(`${baseUrl}/api/knowledge/ai`, {
