@@ -144,3 +144,38 @@ export function typeLabel(type: string): string {
     default: return type;
   }
 }
+
+// Grade name based on level (Russian)
+export function getGradeName(level: number): string {
+  if (level >= 25) return "Легенда";
+  if (level >= 20) return "Звезда";
+  if (level >= 15) return "Про";
+  if (level >= 10) return "Мастер";
+  if (level >= 5) return "Специалист";
+  return "Начинающий";
+}
+
+// Grade color class based on level
+export function getGradeColor(level: number): string {
+  if (level >= 25) return "text-rose-400";
+  if (level >= 20) return "text-yellow-400";
+  if (level >= 15) return "text-amber-400";
+  if (level >= 10) return "text-purple-400";
+  if (level >= 5) return "text-blue-400";
+  return "text-emerald-400";
+}
+
+// XP earned for a quiz attempt
+export function xpForQuiz(correctCount: number, totalCount: number, difficulty: string): number {
+  const baseXpPerCorrect: Record<string, number> = {
+    easy: 5,
+    medium: 10,
+    hard: 15,
+  };
+  const baseXp = (baseXpPerCorrect[difficulty] ?? 5) * correctCount;
+  const allCorrect = correctCount === totalCount && totalCount > 0;
+  return allCorrect ? Math.floor(baseXp * 1.5) : baseXp;
+}
+
+// Seconds per quiz question
+export const QUIZ_TIME_PER_QUESTION = 30;

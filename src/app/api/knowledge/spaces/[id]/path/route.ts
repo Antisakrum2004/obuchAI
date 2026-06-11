@@ -157,8 +157,19 @@ export async function GET(
     // Group by rank for the learning path visualization
     const maxRank = Math.max(...Array.from(ranks.values()), 0);
     const levels: Array<{ rank: number; articles: typeof pathResult }> = [];
+
+    // Difficulty sort order for within-rank ordering
+    const difficultyOrder: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+
     for (let r = 0; r <= maxRank; r++) {
-      const articlesAtRank = pathResult.filter((a) => a.rank === r);
+      const articlesAtRank = pathResult
+        .filter((a) => a.rank === r)
+        .sort((a, b) => {
+          // Within same rank, sort by difficulty (easy first)
+          const diffA = difficultyOrder[a.difficulty || "medium"] ?? 1;
+          const diffB = difficultyOrder[b.difficulty || "medium"] ?? 1;
+          return diffA - diffB;
+        });
       if (articlesAtRank.length > 0) {
         levels.push({ rank: r, articles: articlesAtRank });
       }

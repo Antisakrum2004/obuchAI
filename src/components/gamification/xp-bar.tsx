@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { xpProgressInLevel } from "@/lib/gamification";
+import { xpProgressInLevel, getGradeName } from "@/lib/gamification";
 import { useEffect, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -44,6 +44,7 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
   const isMobile = useIsMobile();
   const { current, required, percentage } = xpProgressInLevel(currentXp);
   const tier = getLevelTier(level);
+  const gradeName = getGradeName(level);
   const barGradient = getBarGradient(tier);
   const prevPercentageRef = useRef(percentage);
   const [pulse, setPulse] = useState(false);
@@ -69,8 +70,8 @@ export function XPBar({ currentXp, level, className, showLabel = true, compact =
     <div className={cn("flex items-center gap-2", className)}>
       {/* Current level on left */}
       {!compact && (
-        <span className="text-xs font-bold text-emerald-400 tabular-nums shrink-0">
-          {level}
+        <span className="text-xs font-bold text-emerald-400 tabular-nums shrink-0 whitespace-nowrap">
+          {level} <span className="font-normal text-muted-foreground text-[10px] ml-0.5">{gradeName}</span>
         </span>
       )}
 

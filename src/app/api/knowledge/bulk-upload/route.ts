@@ -227,6 +227,7 @@ export async function POST(request: NextRequest) {
         queueTypes.push("ai_metadata");
         if (autoProcess) {
           queueTypes.push("glossary_extract");
+          queueTypes.push("course_draft"); // Generates quiz + practice + timecodes
         }
 
         for (const type of queueTypes) {

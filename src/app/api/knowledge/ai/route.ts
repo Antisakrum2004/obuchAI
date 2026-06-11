@@ -1039,7 +1039,7 @@ async function processCourseContent(
       "correctIndex": 0,  // индекс правильного ответа (0-3)
       "explanation": "Объяснение почему этот ответ правильный"
     }
-  ],  // 3-5 вопросов с 4 вариантами ответа
+  ],  // 5-10 вопросов с 4 вариантами ответа (ОБЯЗАТЕЛЬНО минимум 5)
 
   "practical_task": {
     "title": "Название практического задания",
@@ -1060,19 +1060,23 @@ async function processCourseContent(
 - Каждый фрагмент — это отдельная тема/идея/шаг
 - Title — краткое название (до 50 символов), Summary — 1-2 предложения
 
-ПРАВИЛА ДЛЯ КВИЗА:
-- 3-5 вопросов по ключевым темам урока
+ПРАВИЛА ДЛЯ КВИЗА (КРИТИЧЕСКИ ВАЖНО):
+- ОБЯЗАТЕЛЬНО минимум 5 вопросов (лучше 7-10 для объёмных уроков)
 - Вопросы должны проверять ПОНИМАНИЕ, а не запоминание
 - 4 варианта ответа, один правильный
 - Explanation — 1-2 предложения, объясняющие правильный ответ
 - Избегайте тривиальных вопросов («какой цвет кнопки»)
+- НЕ возвращай пустой массив quiz — квиз ОБЯЗАТЕЛЕН для каждого урока
+- Если материала мало — создай минимум 5 вопросов, пусть простых
 
-ПРАВИЛА ДЛЯ ПРАКТИЧЕСКОГО ЗАДАНИЯ:
+ПРАВИЛА ДЛЯ ПРАКТИЧЕСКОГО ЗАДАНИЯ (КРИТИЧЕСКИ ВАЖНО):
+- ОБЯЗАТЕЛЬНО для каждого урока — НЕ возвращай null для practical_task
 - Задание должно быть выполнимым на основе материала урока
 - Description — чёткое описание что нужно сделать
 - Hint — направление мысли без прямого ответа
 - Solution — пошаговое решение с объяснением каждого шага
 - Difficulty должна соответствовать сложности урока
+- Даже для простых уроков создавай практическое задание
 
 ПРАВИЛА ДЛЯ РАНЖИРОВАНИЯ:
 - rank = 0: вводный урок, не требует предварительных знаний
@@ -1126,6 +1130,7 @@ ${courseContext}`;
   const validPrerequisites = (parsed.prerequisites || []).filter((id: string) => validSiblingIds.has(id));
 
   // ─── Step 6: Sanitize and validate quiz data ───
+  // Quiz is MANDATORY — minimum 5 questions required for a valid lesson
   const validQuiz = (parsed.quiz || [])
     .filter((q) =>
       q.question &&
@@ -1134,6 +1139,10 @@ ${courseContext}`;
       q.explanation
     )
     .slice(0, 10); // Max 10 questions
+
+  if (validQuiz.length < 5) {
+    console.warn(`[Course] Article ${articleId}: only ${validQuiz.length} quiz questions (minimum 5 recommended). AI may need re-processing.`);
+  }
 
   // ─── Step 7: Sanitize practical task ───
   const validPracticalTask = parsed.practical_task?.title && parsed.practical_task?.description

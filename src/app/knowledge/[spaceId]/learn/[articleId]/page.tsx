@@ -41,7 +41,10 @@ import {
   BarChart3,
   Sparkles,
   List,
+  Timer,
 } from "lucide-react";
+import { xpForQuiz, QUIZ_TIME_PER_QUESTION } from "@/lib/gamification";
+import { useUserStore } from "@/store/user-store";
 
 // ═══════════════════════════════════════════════════════════════════
 // Types
@@ -546,6 +549,8 @@ export default function LearnLessonPage({
             {activeBlock === "quiz" && (
               <QuizBlock
                 quiz={quiz}
+                articleId={articleId}
+                difficulty={article.difficulty}
                 answers={quizAnswers}
                 setAnswers={setQuizAnswers}
                 checked={quizChecked}
@@ -872,6 +877,8 @@ function ArticleBlock({
 
 function QuizBlock({
   quiz,
+  articleId,
+  difficulty,
   answers,
   setAnswers,
   checked,
@@ -879,16 +886,104 @@ function QuizBlock({
   onComplete,
 }: {
   quiz: QuizQuestion[];
+  articleId: string;
+  difficulty: string | null;
   answers: Map<number, number>;
   setAnswers: React.Dispatch<React.SetStateAction<Map<number, number>>>;
   checked: boolean;
   setChecked: React.Dispatch<React.SetStateAction<boolean>>;
   onComplete: () => void;
 }) {
-  const allAnswered = answers.size === quiz.length;
-  const correctCount = quiz.filter(
-    (q, i) => answers.get(i) === q.correctIndex
-  ).length;
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(QUIZ_TIME_PER_QUESTION);
+  const [xpEarned, setXpEarned] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Timer countdown
+  useEffect(() => {
+    if (checked) return;
+    if (timeLeft <= 0) {
+      // Time's up for this question — auto-advance
+      if (currentQuestion < quiz.length - 1) {
+        setCurrentQuestion((prev) => prev + 1);
+        setTimeLeft(QUIZ_TIME_PER_QUESTION);
+      } else {
+        // Last question — auto check
+        setChecked(true);
+      }
+      return;
+    }
+    const timer = setTimeout(() => setTimeLeft((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [timeLeft, checked, currentQuestion, quiz.length, setChecked]);
+
+  // Calculate XP and submit when quiz is checked
+  const handleCheckAnswers = useCallback(() => {
+    setChecked(true);
+    const correctCount = quiz.filter((q, i) => answers.get(i) === q.correctIndex).length;
+    const earnedXp = xpForQuiz(correctCount, quiz.length, difficulty || "medium");
+    setXpEarned(earnedXp);
+
+    // Submit quiz results for XP
+    (async () => {
+      try {
+        setIsSubmitting(true);
+        const res = await fetch("/api/knowledge/quiz/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            articleId,
+            correctCount,
+            totalCount: quiz.length,
+            difficulty: difficulty || "medium",
+            timeSpent: quiz.length * QUIZ_TIME_PER_QUESTION - timeLeft,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Update user store with new XP and level
+          const store = useUserStore.getState();
+          store.addXp(data.xpEarned);
+          store.setLevel(data.newLevel);
+        }
+      } catch (err) {
+        console.error("Failed to submit quiz results:", err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    })();
+  }, [quiz, answers, difficulty, articleId, timeLeft, setChecked]);
+
+  // Navigate to next question
+  const handleNextQuestion = useCallback(() => {
+    if (currentQuestion < quiz.length - 1) {
+      setCurrentQuestion((prev) => prev + 1);
+      setTimeLeft(QUIZ_TIME_PER_QUESTION);
+    }
+  }, [currentQuestion, quiz.length]);
+
+  // Select answer for current question
+  const handleSelectAnswer = useCallback((oIdx: number) => {
+    if (checked) return;
+    setAnswers((prev) => {
+      const next = new Map(prev);
+      next.set(currentQuestion, oIdx);
+      return next;
+    });
+  }, [checked, currentQuestion, setAnswers]);
+
+  const correctCount = quiz.filter((q, i) => answers.get(i) === q.correctIndex).length;
+  const isLastQuestion = currentQuestion === quiz.length - 1;
+
+  // Timer color based on time remaining
+  const timerColor =
+    timeLeft > 20 ? "text-emerald-400" : timeLeft > 10 ? "text-amber-400" : "text-red-400";
+  const timerBarColor =
+    timeLeft > 20
+      ? "[&>div]:bg-emerald-500"
+      : timeLeft > 10
+      ? "[&>div]:bg-amber-500"
+      : "[&>div]:bg-red-500";
 
   return (
     <Card className="glass border-white/5">
@@ -897,104 +992,140 @@ function QuizBlock({
           <HelpCircle className="h-5 w-5 text-purple-400" />
           Проверка знаний
           <Badge variant="outline" className="text-xs border-white/10 ml-auto">
-            {quiz.length} вопросов
+            {currentQuestion + 1} / {quiz.length}
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {quiz.map((q, qIdx) => {
-          const selectedAnswer = answers.get(qIdx);
-          const isCorrect = selectedAnswer === q.correctIndex;
-          const isWrong = checked && selectedAnswer !== undefined && !isCorrect;
-
-          return (
-            <div
-              key={qIdx}
-              className={`p-4 rounded-lg border transition-colors ${
-                checked
-                  ? isCorrect
-                    ? "border-green-500/30 bg-green-500/5"
-                    : isWrong
-                    ? "border-red-500/30 bg-red-500/5"
-                    : "border-white/5 bg-white/[0.02]"
-                  : "border-white/5 bg-white/[0.02]"
-              }`}
-            >
-              <h4 className="text-sm font-medium mb-3">
-                {qIdx + 1}. {q.question}
-              </h4>
-
-              <div className="space-y-2">
-                {q.options.map((option, oIdx) => {
-                  const isSelected = selectedAnswer === oIdx;
-                  const isCorrectOption = checked && oIdx === q.correctIndex;
-
-                  return (
-                    <button
-                      key={oIdx}
-                      onClick={() => {
-                        if (checked) return;
-                        setAnswers((prev) => {
-                          const next = new Map(prev);
-                          next.set(qIdx, oIdx);
-                          return next;
-                        });
-                      }}
-                      disabled={checked}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
-                        checked
-                          ? isCorrectOption
-                            ? "bg-green-500/10 border border-green-500/30 text-green-400"
-                            : isSelected && !isCorrectOption
-                            ? "bg-red-500/10 border border-red-500/30 text-red-400"
-                            : "bg-white/[0.02] border border-white/5 text-muted-foreground"
-                          : isSelected
-                          ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-                          : "bg-white/[0.02] border border-white/5 text-foreground hover:bg-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      <span className="w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0">
-                        {checked && isCorrectOption ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-400" />
-                        ) : checked && isSelected && !isCorrectOption ? (
-                          <XCircle className="h-4 w-4 text-red-400" />
-                        ) : (
-                          String.fromCharCode(65 + oIdx)
-                        )}
-                      </span>
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Explanation */}
-              {checked && q.explanation && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="mt-3 p-3 rounded-lg bg-white/[0.03] border border-white/5"
-                >
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Пояснение:</span>{" "}
-                    {q.explanation}
-                  </p>
-                </motion.div>
-              )}
+      <CardContent className="space-y-4">
+        {/* Timer bar */}
+        {!checked && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className={`flex items-center gap-1 font-medium ${timerColor}`}>
+                <Timer className="h-3.5 w-3.5" />
+                {timeLeft}с
+              </span>
+              <span className="text-muted-foreground">
+                Вопрос {currentQuestion + 1} из {quiz.length}
+              </span>
             </div>
-          );
-        })}
+            <Progress
+              value={(timeLeft / QUIZ_TIME_PER_QUESTION) * 100}
+              className={`h-1.5 ${timerBarColor}`}
+            />
+          </div>
+        )}
 
-        {/* Check Answers / Results */}
-        {!checked ? (
-          <Button
-            onClick={() => setChecked(true)}
-            disabled={!allAnswered}
-            size="sm"
-            className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50"
+        {/* Current question */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentQuestion}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
           >
-            Проверить ответы
-          </Button>
+            {(() => {
+              const q = quiz[currentQuestion];
+              const selectedAnswer = answers.get(currentQuestion);
+              const isCorrect = selectedAnswer === q.correctIndex;
+              const isWrong = checked && selectedAnswer !== undefined && !isCorrect;
+              const isUnanswered = checked && selectedAnswer === undefined;
+
+              return (
+                <div
+                  className={`p-4 rounded-lg border transition-colors ${
+                    checked
+                      ? isCorrect
+                        ? "border-green-500/30 bg-green-500/5"
+                        : isWrong || isUnanswered
+                        ? "border-red-500/30 bg-red-500/5"
+                        : "border-white/5 bg-white/[0.02]"
+                      : "border-white/5 bg-white/[0.02]"
+                  }`}
+                >
+                  <h4 className="text-sm font-medium mb-3">
+                    {currentQuestion + 1}. {q.question}
+                  </h4>
+
+                  <div className="space-y-2">
+                    {q.options.map((option, oIdx) => {
+                      const isSelected = selectedAnswer === oIdx;
+                      const isCorrectOption = checked && oIdx === q.correctIndex;
+
+                      return (
+                        <button
+                          key={oIdx}
+                          onClick={() => handleSelectAnswer(oIdx)}
+                          disabled={checked}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
+                            checked
+                              ? isCorrectOption
+                                ? "bg-green-500/10 border border-green-500/30 text-green-400"
+                                : isSelected && !isCorrectOption
+                                ? "bg-red-500/10 border border-red-500/30 text-red-400"
+                                : "bg-white/[0.02] border border-white/5 text-muted-foreground"
+                              : isSelected
+                              ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                              : "bg-white/[0.02] border border-white/5 text-foreground hover:bg-white/5 hover:border-white/10"
+                          }`}
+                        >
+                          <span className="w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0">
+                            {checked && isCorrectOption ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-400" />
+                            ) : checked && isSelected && !isCorrectOption ? (
+                              <XCircle className="h-4 w-4 text-red-400" />
+                            ) : (
+                              String.fromCharCode(65 + oIdx)
+                            )}
+                          </span>
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Explanation */}
+                  {checked && q.explanation && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="mt-3 p-3 rounded-lg bg-white/[0.03] border border-white/5"
+                    >
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Пояснение:</span>{" "}
+                        {q.explanation}
+                      </p>
+                    </motion.div>
+                  )}
+                </div>
+              );
+            })()}
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Navigation / Check / Results */}
+        {!checked ? (
+          <div className="flex gap-3">
+            {!isLastQuestion ? (
+              <Button
+                onClick={handleNextQuestion}
+                size="sm"
+                className="flex-1 bg-purple-600 hover:bg-purple-500"
+              >
+                Следующий вопрос
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleCheckAnswers}
+                size="sm"
+                className="flex-1 bg-purple-600 hover:bg-purple-500"
+              >
+                Проверить ответы
+              </Button>
+            )}
+          </div>
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -1020,16 +1151,48 @@ function QuizBlock({
                   ? "Хороший результат, но есть что улучшить"
                   : "Рекомендуем перечитать материал"}
               </p>
+              {/* XP earned */}
+              <div className="mt-2 pt-2 border-t border-white/10">
+                <span className="text-amber-400 font-bold text-base">
+                  +{xpEarned} XP
+                </span>
+                <span className="text-muted-foreground text-sm ml-1.5">за квиз!</span>
+              </div>
             </div>
             <Button
               onClick={onComplete}
               size="sm"
+              disabled={isSubmitting}
               className="w-full bg-emerald-600 hover:bg-emerald-500"
             >
-              Перейти к практике
-              <ChevronRight className="h-4 w-4 ml-1" />
+              {isSubmitting ? "Сохраняем..." : "Перейти к практике"}
+              {!isSubmitting && <ChevronRight className="h-4 w-4 ml-1" />}
             </Button>
           </motion.div>
+        )}
+
+        {/* Question dots navigation (not checked) */}
+        {!checked && quiz.length > 1 && (
+          <div className="flex items-center justify-center gap-1.5 pt-1">
+            {quiz.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  if (!checked) {
+                    setCurrentQuestion(idx);
+                    setTimeLeft(QUIZ_TIME_PER_QUESTION);
+                  }
+                }}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  idx === currentQuestion
+                    ? "bg-purple-400 w-4"
+                    : answers.has(idx)
+                    ? "bg-emerald-400/60"
+                    : "bg-white/20 hover:bg-white/40"
+                }`}
+              />
+            ))}
+          </div>
         )}
       </CardContent>
     </Card>
