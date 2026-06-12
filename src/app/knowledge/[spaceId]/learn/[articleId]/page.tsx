@@ -43,6 +43,7 @@ import {
   List,
   Timer,
   RotateCcw,
+  Play,
 } from "lucide-react";
 import { xpForQuiz, QUIZ_TIME_PER_QUESTION, xpProgressInLevel } from "@/lib/gamification";
 import { useUserStore } from "@/store/user-store";
@@ -165,6 +166,14 @@ export default function LearnLessonPage({
     nextLesson: { id: string; title: string } | null;
   } | null>(null);
   const [lessonSubmitting, setLessonSubmitting] = useState(false);
+
+  // Scroll to top when switching blocks — runs after render so content is in DOM
+  useEffect(() => {
+    const mainEl = document.querySelector('main.flex-1.overflow-y-auto');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, [activeBlock]);
 
   // Parse params
   useEffect(() => {
@@ -503,10 +512,6 @@ export default function LearnLessonPage({
                 onClick={() => {
                   setActiveBlock(block.id);
                   if (lessonCompleted) setLessonCompleted(false);
-                  // Scroll the main content area to top when switching tabs
-                  const mainEl = document.querySelector('main.flex-1.overflow-y-auto');
-                  if (mainEl) mainEl.scrollTo({ top: 0, behavior: "smooth" });
-                  else window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                   isActive
@@ -535,18 +540,18 @@ export default function LearnLessonPage({
             >
               <Card className="glass border-emerald-500/20 text-center overflow-hidden">
                 {/* Gradient top accent */}
-                <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" />
-                <CardContent className="py-8 px-6 space-y-5">
+                <div className="h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" />
+                <CardContent className="py-4 px-5 space-y-3">
                   {/* Emoji + Title */}
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200, delay: 0.1 }}
                   >
-                    <div className="text-5xl mb-3">🎉</div>
+                    <div className="text-3xl mb-1">🎉</div>
                   </motion.div>
-                  <h3 className="text-2xl font-bold text-foreground">Урок завершён!</h3>
-                  <p className="text-sm text-muted-foreground">
+                  <h3 className="text-xl font-bold text-foreground">Урок завершён!</h3>
+                  <p className="text-xs text-muted-foreground">
                     Вы прошли все разделы урока «{article.title}»
                   </p>
 
@@ -557,35 +562,32 @@ export default function LearnLessonPage({
                     transition={{ delay: 0.3 }}
                     className="inline-block"
                   >
-                    <div className="px-6 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <div className="px-4 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
                       {lessonSubmitting ? (
-                        <span className="text-amber-400 text-lg font-bold animate-pulse">Начисляем XP...</span>
+                        <span className="text-amber-400 text-sm font-bold animate-pulse">Начисляем XP...</span>
                       ) : lessonXpResult ? (
-                        <span className="text-amber-400 text-2xl font-black">+{lessonXpResult.xpEarned} XP</span>
+                        <span className="text-amber-400 text-xl font-black">+{lessonXpResult.xpEarned} XP</span>
                       ) : (
-                        <span className="text-amber-400 text-lg font-bold">+XP</span>
+                        <span className="text-amber-400 text-sm font-bold">+XP</span>
                       )}
                     </div>
                   </motion.div>
 
-                  {/* Level progress motivation */}
+                  {/* Level progress motivation — compact inline */}
                   {lessonXpResult && !lessonSubmitting && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.5 }}
-                      className="space-y-2"
+                      className="space-y-1.5"
                     >
-                      <div className="flex items-center justify-center gap-2 text-sm">
+                      <div className="flex items-center justify-center gap-2 text-xs">
                         <span className="text-muted-foreground">Уровень {lessonXpResult.newLevel}</span>
                         <span className="text-cyan-400 font-medium">{lessonXpResult.grade}</span>
+                        <span className="text-muted-foreground">· {lessonXpResult.xpToNextLevel} XP до ур. {lessonXpResult.newLevel + 1}</span>
                       </div>
                       <div className="max-w-xs mx-auto">
-                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                          <span>{lessonXpResult.progressInLevel.current} XP</span>
-                          <span>Осталось {lessonXpResult.xpToNextLevel} XP до уровня {lessonXpResult.newLevel + 1}</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${lessonXpResult.progressInLevel.percentage}%` }}
@@ -600,7 +602,7 @@ export default function LearnLessonPage({
                   <Separator className="bg-white/5" />
 
                   {/* Action buttons — compact row */}
-                  <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
                     {(() => {
                       const next = lessonXpResult?.nextLesson || nextLesson;
                       return next ? (
@@ -667,7 +669,6 @@ export default function LearnLessonPage({
             {activeBlock === "materials" && (
               <MaterialsBlock
                 article={article}
-                timecodes={timecodes}
                 nextBlockLabel={getNextBlockLabel("materials", availableBlocks)}
                 onComplete={() => completeBlock("materials")}
               />
@@ -864,86 +865,119 @@ function SummaryBlock({
 
 function MaterialsBlock({
   article,
-  timecodes,
   nextBlockLabel,
   onComplete,
 }: {
   article: ArticleData;
-  timecodes: TimecodeEntry[];
   nextBlockLabel: string;
   onComplete: () => void;
 }) {
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+
+  // Detect video source for label
+  const videoLabel = useMemo(() => {
+    if (!article.videoUrl) return "";
+    try {
+      const h = new URL(article.videoUrl).hostname.toLowerCase();
+      if (h.includes("youtube.com") || h.includes("youtu.be")) return "YouTube";
+      if (h.includes("rutube.ru")) return "Rutube";
+      if (h.includes("vk.com") || h.includes("vkvideo")) return "VK Видео";
+      if (h.includes("disk.yandex") || h.includes("yandex")) return "Яндекс Диск";
+      return "Видео";
+    } catch {
+      return "Видео";
+    }
+  }, [article.videoUrl]);
+
   return (
-    <Card className="glass border-white/5">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Video className="h-5 w-5 text-blue-400" />
-          Видеоматериалы
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Video Player */}
-        {article.videoUrl && (
-          <div className="rounded-lg overflow-hidden border border-white/5">
+    <>
+      <Card className="glass border-white/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Video className="h-5 w-5 text-blue-400" />
+            Видеоматериалы
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Video link — opens in modal */}
+          {article.videoUrl && (
+            <button
+              type="button"
+              onClick={() => setVideoModalOpen(true)}
+              className="w-full glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all text-left group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors shrink-0">
+                  <Video className="h-5 w-5 text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
+                    Смотреть видеоматериал
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {videoLabel} · Нажмите для просмотра
+                  </p>
+                </div>
+                <Play className="h-5 w-5 text-muted-foreground/40 group-hover:text-emerald-400 transition-colors shrink-0" />
+              </div>
+            </button>
+          )}
+
+          {!article.videoUrl && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Видеоматериалы не добавлены
+            </p>
+          )}
+
+          {/* Source Link */}
+          {article.sourceUrl && (
+            <div className="pt-2">
+              <a
+                href={article.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-emerald-400 hover:underline flex items-center gap-1"
+              >
+                Открыть исходный материал
+                <ChevronRight className="h-3 w-3" />
+              </a>
+            </div>
+          )}
+
+          <Button
+            onClick={onComplete}
+            size="sm"
+            className="w-full bg-emerald-600 hover:bg-emerald-500"
+          >
+            {nextBlockLabel}
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Video Modal */}
+      {videoModalOpen && article.videoUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setVideoModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-xl overflow-hidden border border-white/10 bg-[#0a0a0f]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={() => setVideoModalOpen(false)}
+              className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 hover:bg-black/70 transition-colors text-white/70 hover:text-white"
+            >
+              <XCircle className="h-5 w-5" />
+            </button>
             <VideoEmbed url={article.videoUrl} />
           </div>
-        )}
-
-        {/* Timecodes Navigation */}
-        {timecodes.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium flex items-center gap-1.5">
-              <List className="h-4 w-4 text-blue-400" />
-              Таймкоды
-            </h4>
-            <div className="glass rounded-lg p-3 space-y-1">
-              {timecodes.map((tc, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 text-sm py-1.5 px-2 rounded hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <span className="text-xs font-mono text-emerald-400 shrink-0 mt-0.5 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                    {tc.time}
-                  </span>
-                  <div>
-                    <span className="font-medium">{tc.title}</span>
-                    {tc.summary && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {tc.summary}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Source Link */}
-        {article.sourceUrl && (
-          <div className="pt-2">
-            <a
-              href={article.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-emerald-400 hover:underline flex items-center gap-1"
-            >
-              Открыть исходный материал
-              <ChevronRight className="h-3 w-3" />
-            </a>
-          </div>
-        )}
-
-        <Button
-          onClick={onComplete}
-          size="sm"
-          className="w-full bg-emerald-600 hover:bg-emerald-500"
-        >
-          {nextBlockLabel}
-          <ChevronRight className="h-4 w-4 ml-1" />
-        </Button>
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </>
   );
 }
 

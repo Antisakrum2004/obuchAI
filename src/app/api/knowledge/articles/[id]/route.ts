@@ -300,6 +300,8 @@ export async function PUT(
       "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType",
       "difficulty", "estimatedTime", "status", "aiGenerated",
       "errorMessage",
+      // Complexity ranking
+      "complexityOrder",
     ];
     const jsonFields = ["tags", "keyTopics", "keyConcepts", "prerequisites", "nextTopics",
       // Sprint 7: JSONB fields for interactive lessons

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus,
   Trash2,
@@ -25,6 +24,7 @@ import {
   Loader2,
   Video,
   Paperclip,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -216,14 +216,14 @@ export function KnowledgeAdmin() {
 
   // ── Articles CRUD ────────────────────────────────────────────
 
-  const emptyArtForm = { title: "", slug: "", content: "", summary: "", spaceId: "__none__", isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
+  const emptyArtForm = { title: "", slug: "", content: "", summary: "", spaceId: null as string | null, isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
   const [artForm, setArtForm] = useState(emptyArtForm);
   const [editingArtId, setEditingArtId] = useState<string | null>(null);
   const [editArtForm, setEditArtForm] = useState<Record<string, unknown>>({});
   const [showPreview, setShowPreview] = useState(false);
 
   const createArticle = async () => {
-    if (!artForm.title || !artForm.slug || !artForm.spaceId || artForm.spaceId === "__none__") { showToast("title, slug и spaceId обязательны", "err"); return; }
+    if (!artForm.title || !artForm.slug) { showToast("title и slug обязательны", "err"); return; }
     setSaving(true);
     try {
       const tags = artForm.tags ? artForm.tags.split(",").map((t) => t.trim()).filter(Boolean) : null;
@@ -236,7 +236,7 @@ export function KnowledgeAdmin() {
           slug: artForm.slug,
           content: artForm.content,
           summary: artForm.summary || null,
-          spaceId: artForm.spaceId,
+          spaceId: null, // AI auto-categorizes
           isPublished: artForm.isPublished,
           tags,
           keyTopics,
@@ -247,9 +247,52 @@ export function KnowledgeAdmin() {
         }),
       });
       if (res.ok) {
-        showToast("Статья создана");
+        const article = await res.json();
+        showToast("Статья создана. AI определяет раздел и сложность...");
         setArtForm(emptyArtForm);
         fetchArticles();
+
+        // Fire-and-forget AI processing chain
+        const articleId = article.id;
+        const processChain = async () => {
+          try {
+            // Step 0: Ensure queue items
+            try {
+              await fetch("/api/knowledge/queue", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "ensure-queue-items", articleId }),
+              });
+            } catch {}
+            // Step 1: Metadata + Categorization
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "metadata" }),
+            });
+            // Step 2: Glossary
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "glossary" }),
+            });
+            // Step 3: Graph
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "graph" }),
+            });
+            // Step 4: Course
+            await fetch("/api/knowledge/ai", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articleId, type: "course" }),
+            });
+          } catch (err) {
+            console.error("[KnowledgeAdmin] AI processing chain failed:", err);
+          }
+        };
+        processChain();
       } else {
         const err = await res.json();
         showToast(err.error || "Ошибка", "err");
@@ -518,17 +561,13 @@ export function KnowledgeAdmin() {
               </div>
               <Input placeholder="Краткое описание" value={artForm.summary} onChange={(e) => setArtForm({ ...artForm, summary: e.target.value })} className="bg-white/5 border-white/10" />
               <div className="grid gap-3 md:grid-cols-2">
-                <Select value={artForm.spaceId} onValueChange={(v) => setArtForm({ ...artForm, spaceId: v })}>
-                  <SelectTrigger className="bg-white/5 border-white/10"><SelectValue placeholder="Раздел" /></SelectTrigger>
-                  <SelectContent className="bg-[#111118] border-white/10">
-                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите раздел</SelectItem>
-                    {spaces.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.icon || "📚"} {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Раздел</label>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+                    <Sparkles className="h-3 w-3" />
+                    AI автоматически определит подходящий раздел
+                  </div>
+                </div>
                 <Input placeholder="Теги (через запятую)" value={artForm.tags} onChange={(e) => setArtForm({ ...artForm, tags: e.target.value })} className="bg-white/5 border-white/10" />
               </div>
 

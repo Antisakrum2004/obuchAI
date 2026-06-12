@@ -21,6 +21,7 @@ import {
   ArrowRight,
   Video,
   GraduationCap,
+  Hash,
 } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
@@ -35,6 +36,8 @@ interface ArticleData {
   spaceId: string;
   videoUrl?: string | null;
   sourceType?: string | null;
+  difficulty?: string | null;
+  complexityOrder?: number;
   isPublished: boolean;
   createdAt: string;
 }
@@ -224,7 +227,7 @@ export default function KnowledgeSpacePage({
                             className="shrink-0"
                           >
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
-                              <GraduationCap className="h-5 w-5 text-emerald-400" />
+                              <span className="text-sm font-bold text-emerald-400">{article.complexityOrder ?? (idx + 1)}</span>
                             </div>
                           </Link>
                           <div className="flex-1 min-w-0">

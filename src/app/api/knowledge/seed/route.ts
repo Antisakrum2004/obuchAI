@@ -135,6 +135,7 @@ async function ensureKnowledgeTables() {
     `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
     `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
     `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
+    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`,
   ];
 
   for (const sql of sprint7Columns) {

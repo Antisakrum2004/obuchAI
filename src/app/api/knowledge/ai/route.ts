@@ -422,6 +422,9 @@ ${JSON.stringify(spaceList, null, 2)}
       `UPDATE articles SET "spaceId" = $1, "updatedAt" = NOW() WHERE id = $2`,
       [assignedSpaceId, articleId]
     );
+
+    // Re-rank complexityOrder for articles in the new space
+    await recalculateComplexityOrder(articleId);
   }
 }
 
@@ -523,6 +526,46 @@ async function processMetadata(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
     [JSON.stringify(parsed), queueId]
   );
+
+  // ─── Re-rank complexityOrder for all articles in the same space ───
+  await recalculateComplexityOrder(articleId);
+}
+
+/**
+ * Re-rank complexityOrder for all articles in the same space as the given article.
+ * Articles are sorted by difficulty (easy → medium → hard) then by title.
+ * Each article gets a sequential complexityOrder starting from 1.
+ */
+async function recalculateComplexityOrder(articleId: string) {
+  // Get the spaceId of the article
+  const { rows: [art] } = await pool.query(
+    `SELECT "spaceId" FROM articles WHERE id = $1`,
+    [articleId]
+  );
+  if (!art?.spaceId) return;
+
+  // Get all articles in this space, ordered by difficulty then title
+  const difficultyOrder = { easy: 1, medium: 2, hard: 3 };
+  const { rows: spaceArticles } = await pool.query(
+    `SELECT id, difficulty, title FROM articles WHERE "spaceId" = $1 ORDER BY difficulty ASC, title ASC`,
+    [art.spaceId]
+  );
+
+  // Sort with proper difficulty ordering
+  const sorted = spaceArticles.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+    const da = difficultyOrder[(a.difficulty as string) || "medium"] || 2;
+    const db = difficultyOrder[(b.difficulty as string) || "medium"] || 2;
+    if (da !== db) return da - db;
+    return String(a.title).localeCompare(String(b.title));
+  });
+
+  // Update each article's complexityOrder
+  for (let i = 0; i < sorted.length; i++) {
+    await pool.query(
+      `UPDATE articles SET "complexityOrder" = $1, "updatedAt" = NOW() WHERE id = $2`,
+      [i + 1, sorted[i].id]
+    );
+  }
 }
 
 /**
