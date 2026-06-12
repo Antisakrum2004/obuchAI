@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { calculateLevel } from "@/lib/gamification";
 
 // Parse a User-Agent string into a short human-readable device description
 function parseUserAgent(ua: string): string {
@@ -72,6 +73,13 @@ export async function GET(request: NextRequest) {
     }
 
     const user = userResult.rows[0];
+
+    // Auto-correct level if it's stale (can happen if XP was added without updating level)
+    const correctLevel = calculateLevel(user.xp ?? 0);
+    if (user.level !== correctLevel) {
+      await query(`UPDATE users SET level = $1 WHERE id = $2`, [correctLevel, userId]);
+      user.level = correctLevel;
+    }
 
     // Auto-generate referral code if missing
     if (!user.referralCode) {

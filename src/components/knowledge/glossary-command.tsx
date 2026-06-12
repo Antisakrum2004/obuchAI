@@ -43,41 +43,11 @@ const EN_TO_RU: Record<string, string> = Object.fromEntries(
   Object.entries(RU_TO_EN).map(([k, v]) => [v, k])
 );
 
-// ── Visual / phonetic similarity between Latin and Cyrillic ──
-// When a user types "МСП" they likely mean "MCP" — the letters look/sound similar
-const LAT_TO_CYR: Record<string, string> = {
-  'a':'а','b':'в','c':'с','d':'д','e':'е','f':'ф','g':'г','h':'н','i':'и',
-  'j':'й','k':'к','l':'л','m':'м','n':'н','o':'о','p':'п','q':'ку','r':'р',
-  's':'с','t':'т','u':'у','v':'в','w':'в','x':'кс','y':'у','z':'з',
-};
-const CYR_TO_LAT: Record<string, string> = {
-  'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z',
-  'и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r',
-  'с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch',
-  'ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
-};
-
 /** Convert a string typed on the wrong keyboard layout */
 function switchLayout(str: string, map: Record<string, string>): string {
   return str
     .split("")
     .map((ch) => map[ch.toLowerCase()] || ch)
-    .join("");
-}
-
-/** Transliterate Latin → Cyrillic (visual/phonetic) */
-function latToCyr(str: string): string {
-  return str
-    .split("")
-    .map((ch) => LAT_TO_CYR[ch.toLowerCase()] || ch)
-    .join("");
-}
-
-/** Transliterate Cyrillic → Latin (visual/phonetic) */
-function cyrToLat(str: string): string {
-  return str
-    .split("")
-    .map((ch) => CYR_TO_LAT[ch.toLowerCase()] || ch)
     .join("");
 }
 
@@ -152,42 +122,45 @@ export function GlossaryCommand() {
     }
   }, [loadTerms]);
 
-  // Filter terms based on search with aliases + keyboard layout switching + visual transliteration
+  // Filter terms based on search with aliases + keyboard layout switching
   const filteredTerms = terms.filter((t) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
 
-    // Generate alternative queries:
-    // 1. Wrong keyboard layout (RU↔EN physical keys)
+    // Generate alternative query in case user typed on wrong keyboard layout
     const qAltRu = switchLayout(q, EN_TO_RU); // EN keys → RU letters
     const qAltEn = switchLayout(q, RU_TO_EN); // RU keys → EN letters
 
-    // 2. Visual/phonetic transliteration (МСП↔MSP-like, MCP→МСП)
-    const qCyr = latToCyr(q); // Latin letters → Cyrillic look-alikes
-    const qLat = cyrToLat(q); // Cyrillic letters → Latin transliteration
-
-    // Collect all query variants (deduplicated)
-    const queries = [q, qAltRu, qAltEn, qCyr, qLat];
-
-    // Check a field against all query variants
-    const matchesAny = (field: string | null | undefined): boolean => {
-      if (!field) return false;
-      const fl = field.toLowerCase();
-      return queries.some((qv) => qv && fl.includes(qv));
-    };
-
     // Check term name
-    const termMatch = matchesAny(t.term);
+    const termMatch =
+      t.term.toLowerCase().includes(q) ||
+      t.term.toLowerCase().includes(qAltRu) ||
+      t.term.toLowerCase().includes(qAltEn);
 
     // Check short definition
-    const defMatch = matchesAny(t.shortDefinition);
+    const defMatch =
+      t.shortDefinition && (
+        t.shortDefinition.toLowerCase().includes(q) ||
+        t.shortDefinition.toLowerCase().includes(qAltRu) ||
+        t.shortDefinition.toLowerCase().includes(qAltEn)
+      );
 
     // Check category
-    const catMatch = matchesAny(t.category);
+    const catMatch =
+      t.category && (
+        t.category.toLowerCase().includes(q) ||
+        t.category.toLowerCase().includes(qAltRu) ||
+        t.category.toLowerCase().includes(qAltEn)
+      );
 
     // Check aliases
     const aliases = parseAliases(t.aliases);
-    const aliasMatch = aliases.some((alias) => matchesAny(alias));
+    const aliasMatch = aliases.some(
+      (alias) =>
+        alias.toLowerCase().includes(q) ||
+        alias.toLowerCase().includes(qAltRu) ||
+        alias.toLowerCase().includes(qAltEn)
+    );
 
     return termMatch || defMatch || catMatch || aliasMatch;
   });
@@ -256,7 +229,7 @@ export function GlossaryCommand() {
 
         {!selectedTerm ? (
           <CommandGroup heading="Термины">
-            {filteredTerms.slice(0, 50).map((term) => (
+            {filteredTerms.slice(0, 20).map((term) => (
               <CommandItem
                 key={term.id}
                 onSelect={() => handleSelectTerm(term)}
@@ -387,7 +360,7 @@ export function GlossaryCommand() {
             <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono border border-white/10">
               Esc
             </kbd>{" "}
-            для закрытия • Поддерживается поиск на обоих раскладках и транслитерация
+            для закрытия • Поддерживается поиск на обоих раскладках
           </p>
         </div>
       )}

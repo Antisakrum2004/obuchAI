@@ -1200,36 +1200,78 @@ ${courseContext}`;
     }))
     .slice(0, 30);
 
-  // ─── Step 9: Save everything to the article ───
-  await pool.query(
-    `UPDATE articles SET
-      summary = COALESCE($1, summary),
-      difficulty = COALESCE($2, difficulty),
-      "keyConcepts" = COALESCE($3, "keyConcepts"),
-      "estimatedTime" = COALESCE($4, "estimatedTime"),
-      tags = COALESCE($5, tags),
-      "keyTopics" = COALESCE($6, "keyTopics"),
-      quiz = $7,
-      practical_task = $8,
-      timecodes = $9,
-      prerequisites = COALESCE($10, prerequisites),
-      "aiGenerated" = true,
-      "updatedAt" = NOW()
-    WHERE id = $11`,
-    [
-      parsed.summary || null,
-      parsed.difficulty || null,
-      parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
-      parsed.estimatedTime || null,
-      parsed.tags ? JSON.stringify(parsed.tags) : null,
-      parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
-      validQuiz.length > 0 ? JSON.stringify(validQuiz) : null,
-      validPracticalTask ? JSON.stringify(validPracticalTask) : null,
-      validTimecodes.length > 0 ? JSON.stringify(validTimecodes) : null,
-      validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
-      articleId,
-    ]
-  );
+  // ─── Step 9: Ensure Sprint 7 columns exist (auto-migrate) ───
+  try {
+    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`);
+    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`);
+    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`);
+    console.log(`[Course] Sprint 7 columns ensured for articles table`);
+  } catch (migErr: any) {
+    console.warn(`[Course] Sprint 7 auto-migration warning: ${migErr.message}`);
+  }
+
+  // ─── Step 10: Save everything to the article ───
+  try {
+    await pool.query(
+      `UPDATE articles SET
+        summary = COALESCE($1, summary),
+        difficulty = COALESCE($2, difficulty),
+        "keyConcepts" = COALESCE($3, "keyConcepts"),
+        "estimatedTime" = COALESCE($4, "estimatedTime"),
+        tags = COALESCE($5, tags),
+        "keyTopics" = COALESCE($6, "keyTopics"),
+        quiz = $7,
+        practical_task = $8,
+        timecodes = $9,
+        prerequisites = COALESCE($10, prerequisites),
+        "aiGenerated" = true,
+        "updatedAt" = NOW()
+      WHERE id = $11`,
+      [
+        parsed.summary || null,
+        parsed.difficulty || null,
+        parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
+        parsed.estimatedTime || null,
+        parsed.tags ? JSON.stringify(parsed.tags) : null,
+        parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
+        validQuiz.length > 0 ? JSON.stringify(validQuiz) : null,
+        validPracticalTask ? JSON.stringify(validPracticalTask) : null,
+        validTimecodes.length > 0 ? JSON.stringify(validTimecodes) : null,
+        validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
+        articleId,
+      ]
+    );
+  } catch (updateErr: any) {
+    // Fallback: if Sprint 7 columns still missing (error 42703), save without quiz/practical_task/timecodes
+    if (updateErr?.code === '42703' || /does not exist/.test(updateErr?.message || '')) {
+      console.warn(`[Course] Sprint 7 columns still missing after auto-migration, saving without quiz/practice/timecodes`);
+      await pool.query(
+        `UPDATE articles SET
+          summary = COALESCE($1, summary),
+          difficulty = COALESCE($2, difficulty),
+          "keyConcepts" = COALESCE($3, "keyConcepts"),
+          "estimatedTime" = COALESCE($4, "estimatedTime"),
+          tags = COALESCE($5, tags),
+          "keyTopics" = COALESCE($6, "keyTopics"),
+          prerequisites = COALESCE($7, prerequisites),
+          "aiGenerated" = true,
+          "updatedAt" = NOW()
+        WHERE id = $8`,
+        [
+          parsed.summary || null,
+          parsed.difficulty || null,
+          parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
+          parsed.estimatedTime || null,
+          parsed.tags ? JSON.stringify(parsed.tags) : null,
+          parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
+          validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
+          articleId,
+        ]
+      );
+    } else {
+      throw updateErr; // Re-throw if it's not a missing column error
+    }
+  }
 
   console.log(`[Course] Article ${articleId} processed: ${validQuiz.length} quiz questions, ${validTimecodes.length} timecodes, practical: ${!!validPracticalTask}, prerequisites: ${validPrerequisites.length}`);
 
@@ -1238,7 +1280,7 @@ ${courseContext}`;
     [queueId]
   );
 
-  // ─── Step 10: Update queue result ───
+  // ─── Step 11: Update queue result ───
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 95, "updatedAt" = NOW() WHERE id = $2`,
     [

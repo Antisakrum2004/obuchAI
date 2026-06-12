@@ -304,5 +304,5 @@ function pluralize(n: number, one: string, few: string, many: string): string {
 }
 
 function pluralizeR(n: number): string {
-  return pluralize(n, "статья", "статьи", "статей");
+  return pluralize(n, "материал", "материала", "материалов");
 }

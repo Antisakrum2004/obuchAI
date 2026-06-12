@@ -89,7 +89,7 @@ export default function LandingPage() {
             <Link href="/login">
               <Button
                 size="lg"
-                className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-lg h-14 px-8 glow-emerald"
+                className="btn-bounce bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-lg h-14 px-8"
               >
                 <Zap className="mr-2 h-5 w-5" />
                 Начать обучение

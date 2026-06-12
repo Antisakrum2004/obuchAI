@@ -25,7 +25,7 @@ export function AchievementCard({
         "relative flex items-start gap-3 rounded-xl border p-4 transition-all duration-200",
         earned
           ? "border-purple-500/30 bg-purple-500/5 glass-hover"
-          : "border-dashed border-white/10 bg-white/[0.02] hover:shadow-[0_0_15px_rgba(139,92,246,0.15)] hover:border-purple-500/20",
+          : "border-dashed border-white/10 bg-white/[0.02] hover:border-purple-500/20",
         className
       )}
     >

@@ -21,7 +21,7 @@ import { useSession } from "next-auth/react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // Read version from package.json at build time
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.18.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.16.0";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
@@ -53,7 +53,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
     <div className={cn("flex h-full flex-col", className)}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20 glow-emerald">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20">
           <Zap className="h-5 w-5 text-emerald-400" />
         </div>
         <div>
@@ -80,7 +80,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 isActive
-                  ? "bg-emerald-500/15 text-emerald-400 glow-emerald"
+                  ? "bg-emerald-500/15 text-emerald-400"
                   : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
               )}
             >

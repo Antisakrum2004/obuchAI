@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { calculateLevel } from "@/lib/gamification";
 
 interface UserState {
   id: string | null;
@@ -41,7 +42,11 @@ const initialState = {
 export const useUserStore = create<UserState>((set) => ({
   ...initialState,
   setUser: (user) => set((state) => ({ ...state, ...user })),
-  addXp: (amount) => set((state) => ({ xp: state.xp + amount })),
+  addXp: (amount) => set((state) => {
+    const newXp = state.xp + amount;
+    const newLevel = calculateLevel(newXp);
+    return { xp: newXp, level: newLevel };
+  }),
   setLevel: (level) => set({ level }),
   setStreak: (streak) => set({ streak }),
   setLoading: (isLoading) => set({ isLoading }),

@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-12 (обновлено до v0.17.1 — bugfix: auto-publish premature fix, XP level calculation from totalXp, remove category dropdown (AI auto-categorizes), reset-stuck queue action, ensure-queue-items on article creation). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-12 (обновлено до v0.18.1 — fix: lesson completion XP now fires correctly, обзор урока → «Что вас ждёт» без таймингов, убрать scrollbar в видеоматериалах, «9 статей» → «9 материалов»). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -399,7 +399,7 @@ src/
 - **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
 - **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах
 
-### 3.18 AI Course Pipeline — `processCourseContent()` (v0.17.0 улучшен)
+### 3.18 AI Course Pipeline — `processCourseContent()` (v0.17.0 улучшен, v0.17.2 auto-migrate)
 - **Очередь**: Тип `course_draft` в ProcessingQueue → генерация quiz + practical_task + timecodes
 - **Обязательный минимум quiz**: 5 вопросов (раньше 3-5 опционально). Промпт явно требует 5-10 вопросов. Валидация предупреждает если < 5 вопросов: `console.warn`
 - **Обязательный practical_task**: Для каждого урока (раньше опционально). Промпт требует: «ОБЯЗАТЕЛЬНО для каждого урока — НЕ возвращай null»
@@ -407,6 +407,8 @@ src/
 - **Валидация**: `validQuiz.length < 5` → warning в логах (AI может не сгенерировать достаточно — нужна перепроверка)
 - **bulk-upload**: При `autoProcess=true` включает `course_draft` в очередь обработки: `["content", "metadata", "glossary", "course"]` → quiz + practice + timecodes генерируются автоматически
 - **Контекст курса**: processCourseContent получает sibling-статьи того же пространства для корректного ранжирования и prerequisites
+- **Auto-migration (v0.17.2)**: Перед записью quiz/practical_task/timecodes автоматически выполняется `ALTER TABLE articles ADD COLUMN IF NOT EXISTS` для Sprint 7 колонок. Если колонки всё ещё отсутствуют — fallback UPDATE без этих полей.
+- **Quiz Submit fallback (v0.17.2)**: `/api/knowledge/quiz/submit` при ошибке 42703 (column not found) автоматически мигрирует Sprint 7 колонки и повторяет запрос.
 
 ### 3.19 Course Navigation — Learning Path API (v0.17.0 улучшен)
 - **API**: GET `/api/knowledge/spaces/[id]/path` — топологическая сортировка (Kahn's algorithm / BFS)
@@ -419,7 +421,7 @@ src/
 ## 4. Current State
 
 ### Метрики проекта
-- **Версия**: 0.17.1
+- **Версия**: 0.17.2
 - **Строк кода**: ~27,000 (src/ только .ts/.tsx)
 - **Страниц**: 17
 - **API маршрутов**: 48+
@@ -567,3 +569,13 @@ src/
 
 > **Корневая причина**: Два раздельных connection pool (Prisma adapter создавал свой), отсутствие таймаутов, холодные старты с множественными подключениями.
 > **Исправление**: Shared pool (Prisma переиспользует глобальный пул), connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, max: 10, WebSocket fallback вынесен на уровень модуля.
+
+### Кнопка «Завершить урок» не работала при повторном прохождении — ✅ ИСПРАВЛЕНО v0.17.3
+
+> **Корневая причина**: При завершении урока `lessonCompleted = true`, экран «🎉 Урок завершён!» блокировал весь контент. При клике на таб блока состояние `lessonCompleted` не сбрасывалось, поэтому кнопка «Завершить урок» в PracticeBlock вызывала `completeBlock()`, который ставил `lessonCompleted = true` снова, но UI уже был в этом состоянии — ничего не происходило визуально.
+> **Исправление**: (1) Клик по табу блока теперь сбрасывает `lessonCompleted = false`, позволяя вернуться к содержимому. (2) Добавлена кнопка «🔄 Пройти заново» на экране завершения — полностью сбрасывает весь прогресс (completedBlocks, quizAnswers, quizChecked, hint/solution/practice state) и возвращает к началу.
+
+### Кнопки квиза — ядовито-фиолетовый цвет — ✅ ИСПРАВЛЕНО v0.17.3
+
+> **Корневая причина**: Кнопки «Следующий вопрос» и «Проверить ответы» использовали `bg-purple-600 hover:bg-purple-500` — насыщенный яркий фиолетовый (#9333ea), который выглядел слишком кричащим в тёмной теме.
+> **Исправление**: Заменено на `bg-violet-400/50 hover:bg-violet-400/70` — мягкий пастельный фиолетовый с полупрозрачностью, органично вписывается в midnight-тему. Также смягчены: иконка HelpCircle (`text-purple-400` → `text-violet-300`), точка активного вопроса (`bg-purple-400` → `bg-violet-300/70`).

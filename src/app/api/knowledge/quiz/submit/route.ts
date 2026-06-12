@@ -53,10 +53,29 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Validate that the article exists and has a quiz
-    const articleResult = await pool.query(
-      `SELECT id, quiz FROM articles WHERE id = $1`,
-      [articleId]
-    );
+    // Try with quiz column first; fallback if Sprint 7 columns missing
+    let articleResult: any;
+    try {
+      articleResult = await pool.query(
+        `SELECT id, quiz FROM articles WHERE id = $1`,
+        [articleId]
+      );
+    } catch (queryErr: any) {
+      if (queryErr?.code === '42703' || /does not exist/.test(queryErr?.message || '')) {
+        // Sprint 7 columns missing — try auto-migrate then retry
+        try {
+          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`);
+          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`);
+          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`);
+        } catch {}
+        articleResult = await pool.query(
+          `SELECT id, quiz FROM articles WHERE id = $1`,
+          [articleId]
+        );
+      } else {
+        throw queryErr;
+      }
+    }
 
     if (!articleResult.rows[0]) {
       return NextResponse.json(

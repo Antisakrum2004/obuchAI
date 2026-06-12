@@ -242,17 +242,17 @@
   animation: float-up 1.5s ease-out forwards;
 }
 
-/* Glow effects */
+/* Glow effects — disabled (too distracting) */
 .glow-emerald {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.1);
+  box-shadow: none;
 }
 
 .glow-purple {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3), 0 0 40px rgba(139, 92, 246, 0.1);
+  box-shadow: none;
 }
 
 .glow-amber {
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.1);
+  box-shadow: none;
 }
 
 /* Progress bar gradient */
