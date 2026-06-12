@@ -120,13 +120,13 @@ export default function DashboardPage() {
         achievement={currentAchievement}
         onClose={() => setShowAchievementModal(false)}
       />
-      <div className="mx-auto max-w-6xl space-y-2.5">
-        {/* Row 1: Welcome + XP — ultra compact */}
+      <div className="mx-auto max-w-6xl space-y-3">
+        {/* Row 1: Welcome + XP */}
         <div className="flex items-center gap-3">
           <AvatarFrame level={level} image={image} name={name} size="md" role={role} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <h1 className="text-lg font-bold">
+              <h1 className="text-xl font-bold">
                 Привет, <span className="gradient-text">{name || "Разработчик"}</span>
               </h1>
               <div className="flex items-center gap-2 shrink-0">
@@ -140,49 +140,52 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Row 2: 3 CTA cards — compact */}
-        <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
+        {/* Row 2: 3 CTA cards — ORIGINAL full size */}
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
           <Link href={nextLesson?.pathUrl || "/knowledge"} className="block">
-            <div className="card-hover relative overflow-hidden rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 via-violet-500/5 to-cyan-500/10 p-3 group hover:border-violet-500/50 transition-all duration-300">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20 shrink-0 group-hover:scale-110 transition-transform">
-                  <BookOpen className="h-4 w-4 text-violet-400" />
+            <div className="card-hover relative overflow-hidden rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 via-violet-500/5 to-cyan-500/10 p-5 group hover:border-violet-500/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-r from-violet-500/5 via-transparent to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <BookOpen className="h-6 w-6 text-violet-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-sm font-bold group-hover:text-violet-400 transition-colors">Начать курс</h2>
-                  <p className="text-[10px] text-muted-foreground truncate">{nextLesson?.space?.name || "База знаний"}</p>
+                  <h2 className="text-lg font-bold text-foreground group-hover:text-violet-400 transition-colors">Начать курс</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5 truncate">{nextLesson?.space?.name || "База знаний"}</p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-violet-400/60 group-hover:text-violet-400 group-hover:translate-x-1 transition-all shrink-0" />
+                <ArrowRight className="h-5 w-5 text-violet-400/60 group-hover:text-violet-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
               </div>
             </div>
           </Link>
 
           <Link href="/challenges" className="block">
-            <div className="card-hover relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 p-3 group hover:border-emerald-500/50 transition-all duration-300">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 shrink-0 group-hover:scale-110 transition-transform">
-                  <Target className="h-4 w-4 text-emerald-400" />
+            <div className="card-hover relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 p-5 group hover:border-emerald-500/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-transparent to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Target className="h-6 w-6 text-emerald-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-sm font-bold group-hover:text-emerald-400 transition-colors">К задачам</h2>
-                  <p className="text-[10px] text-muted-foreground">Решай, зарабатывай опыт</p>
+                  <h2 className="text-lg font-bold text-foreground group-hover:text-emerald-400 transition-colors">К задачам</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Решай, зарабатывай опыт</p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-emerald-400/60 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
+                <ArrowRight className="h-5 w-5 text-emerald-400/60 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
               </div>
             </div>
           </Link>
 
           <Link href="/marathon" className="block">
-            <div className="card-hover relative overflow-hidden rounded-xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-red-500/5 to-amber-500/10 p-3 group hover:border-orange-500/50 transition-all duration-300">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/20 shrink-0 group-hover:scale-110 transition-transform">
-                  <Flame className="h-4 w-4 text-orange-400" />
+            <div className="card-hover relative overflow-hidden rounded-2xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-red-500/5 to-amber-500/10 p-5 group hover:border-orange-500/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Flame className="h-6 w-6 text-orange-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-sm font-bold group-hover:text-orange-400 transition-colors">Марафон</h2>
-                  <p className="text-[10px] text-muted-foreground">Серия ответов × множитель</p>
+                  <h2 className="text-lg font-bold text-foreground group-hover:text-orange-400 transition-colors">Марафон</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Серия ответов × множитель XP</p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 text-orange-400/60 group-hover:text-orange-400 group-hover:translate-x-1 transition-all shrink-0" />
+                <ArrowRight className="h-5 w-5 text-orange-400/60 group-hover:text-orange-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
               </div>
             </div>
           </Link>
@@ -198,13 +201,13 @@ export default function DashboardPage() {
           }}
         />
 
-        {/* Row 4: Activity + Streak — reduced height */}
+        {/* Row 4: Activity + Streak — half height */}
         <div className="grid gap-2 md:grid-cols-2">
           <WeeklyXpChart data={weeklyXp} />
           <StreakCalendar streak={streak} activeDays={activeDays} />
         </div>
 
-        {/* Row 5: Daily Challenge — horizontal compact */}
+        {/* Row 5: Daily Challenge — horizontal full-width */}
         {!dailyLoading && (
           <DailyChallengeWidget
             challenge={dailyData?.challenge || null}
