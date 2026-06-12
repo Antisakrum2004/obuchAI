@@ -77,3 +77,4 @@ worklog.md
 .env.production
 .env*.local
 .env*
+tool-results/
