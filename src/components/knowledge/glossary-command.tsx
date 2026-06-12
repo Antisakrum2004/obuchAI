@@ -217,9 +217,9 @@ export function GlossaryCommand() {
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent mx-auto mb-2" />
             Загрузка...
           </div>
-        ) : (
+        ) : filteredTerms.length === 0 && search.trim() ? (
           <CommandEmpty>Ничего не найдено</CommandEmpty>
-        )}
+        ) : null}
 
         {!selectedTerm ? (
           <CommandGroup heading="Термины">

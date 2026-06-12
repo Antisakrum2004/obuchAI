@@ -503,8 +503,10 @@ export default function LearnLessonPage({
                 onClick={() => {
                   setActiveBlock(block.id);
                   if (lessonCompleted) setLessonCompleted(false);
-                  // Scroll to top of content when switching tabs
-                  window.scrollTo({ top: 0, behavior: "smooth" });
+                  // Scroll the main content area to top when switching tabs
+                  const mainEl = document.querySelector('main.flex-1.overflow-y-auto');
+                  if (mainEl) mainEl.scrollTo({ top: 0, behavior: "smooth" });
+                  else window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                   isActive
@@ -704,51 +706,6 @@ export default function LearnLessonPage({
           </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Navigation Footer — hidden when lesson is completed */}
-        {!lessonCompleted && (
-        <div className="flex items-center justify-between pt-4">
-          {prevLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`}>
-              <Button variant="outline" size="sm" className="gap-1">
-                <ArrowLeft className="h-4 w-4" />
-                {prevLesson.title}
-              </Button>
-            </Link>
-          ) : (
-            <div />
-          )}
-
-          <div className="flex items-center gap-2">
-            {activeBlock !== availableBlocks[availableBlocks.length - 1] ? (
-              <Button
-                onClick={goToNextBlock}
-                size="sm"
-                className="gap-1 bg-emerald-600 hover:bg-emerald-500"
-              >
-                Далее
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <span className="text-sm text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" />
-                Урок пройден!
-              </span>
-            )}
-          </div>
-
-          {nextLesson ? (
-            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
-              <Button variant="outline" size="sm" className="gap-1">
-                {nextLesson.title}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          ) : (
-            <div />
-          )}
-        </div>
-        )}
       </div>
     </AppLayout>
   );
