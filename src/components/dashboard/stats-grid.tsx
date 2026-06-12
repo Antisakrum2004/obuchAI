@@ -23,27 +23,27 @@ const statCards = [
 
 export function StatsGrid({ stats, className }: StatsGridProps) {
   return (
-    <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-4", className)}>
+    <div className={cn("grid grid-cols-2 gap-2 lg:grid-cols-4", className)}>
       {statCards.map((card) => {
         const value = stats[card.key];
         return (
           <div
             key={card.key}
-            className="glass rounded-xl p-4 transition-all duration-200 hover:bg-white/[0.07]"
+            className="glass rounded-xl p-2.5 transition-all duration-200 hover:bg-white/[0.07]"
           >
-            <div className="flex items-center gap-2 mb-2">
-              <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", card.bgColor)}>
-                <card.icon className={cn("h-4 w-4", card.color)} />
+            <div className="flex items-center gap-2 mb-1">
+              <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg", card.bgColor)}>
+                <card.icon className={cn("h-3.5 w-3.5", card.color)} />
               </div>
             </div>
-            <p className={cn("text-2xl font-bold", card.color)}>
+            <p className={cn("text-xl font-bold", card.color)}>
               {card.key === "rank" ? (
                 <>#{value}</>
               ) : (
                 <AnimatedNumber value={value} />
               )}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">{card.label}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{card.label}</p>
           </div>
         );
       })}

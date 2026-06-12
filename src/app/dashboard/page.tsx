@@ -54,15 +54,13 @@ export default function DashboardPage() {
   const [currentAchievement, setCurrentAchievement] = useState<AchievementData | null>(null);
   const prevAchievementsRef = useRef<AchievementItem[]>([]);
 
-  // Check for newly earned achievements (compare with previous session)
+  // Check for newly earned achievements
   useEffect(() => {
     if (achievements.length === 0) return;
     if (prevAchievementsRef.current.length === 0) {
-      // First load — just store current achievements
       prevAchievementsRef.current = achievements;
       return;
     }
-    // Compare to find new achievements
     const prevNames = new Set(prevAchievementsRef.current.map((a) => a.name));
     const newOnes = achievements.filter((a) => !prevNames.has(a.name));
     if (newOnes.length > 0) {
@@ -111,7 +109,7 @@ export default function DashboardPage() {
       })
       .catch(() => {});
 
-    // Fetch activity data (weekly XP, active days, hearts)
+    // Fetch activity data
     fetch("/api/user/activity")
       .then((r) => r.json())
       .then((data) => {
@@ -130,179 +128,116 @@ export default function DashboardPage() {
         achievement={currentAchievement}
         onClose={() => setShowAchievementModal(false)}
       />
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Welcome Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <AvatarFrame level={level} image={image} name={name} size="lg" role={role} />
-              <div>
-                <h1 className="text-2xl font-bold md:text-3xl">
-                  Привет, <span className="gradient-text">{name || "Разработчик"}</span>
-                </h1>
-                <p className="text-muted-foreground mt-1">
-                  Продолжай обучение — каждый день на шаг ближе к мастерству
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right space-y-1 flex items-center gap-3">
-                <StreakCounter streak={streak} />
-                <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
-              </div>
+      <div className="mx-auto max-w-7xl space-y-3">
+        {/* Welcome Section — compact */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AvatarFrame level={level} image={image} name={name} size="md" role={role} />
+            <div>
+              <h1 className="text-xl font-bold">
+                Привет, <span className="gradient-text">{name || "Разработчик"}</span>
+              </h1>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Продолжай обучение — каждый день на шаг ближе к мастерству
+              </p>
             </div>
           </div>
-
-          {/* XP Progress */}
-          <div className="glass rounded-xl p-4 mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Прогресс уровня</span>
-              <span className="text-sm font-medium text-emerald-400">Уровень {level}</span>
-            </div>
-            <XPBar currentXp={xp} level={level} showLabel={true} />
+          <div className="flex items-center gap-3">
+            <StreakCounter streak={streak} />
+            <HeartsDisplay hearts={hearts} nextHeartAt={nextHeartAt} />
           </div>
-        </motion.div>
-
-        {/* 🎯 BIG CTA: Go to Challenges */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.05 }}
-        >
-          <Link href="/challenges" className="block">
-            <div className="card-hover relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-purple-500/10 p-5 group hover:border-emerald-500/50 transition-all duration-300">
-              {/* Glow effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
-              <div className="relative flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
-                  <Target className="h-6 w-6 text-emerald-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-foreground group-hover:text-emerald-400 transition-colors">
-                    Перейти к задачам
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Решай задачи, зарабатывай опыт, прокачивай навыки
-                  </p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-emerald-400/60 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
-              </div>
-            </div>
-          </Link>
-        </motion.div>
-
-        {/* Stats Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        >
-          <StatsGrid
-            stats={{
-              completedChallenges: completedChallenges || 0,
-              totalXp: xp || 0,
-              rank: rank || 0,
-              level: level || 1,
-            }}
-          />
-        </motion.div>
-
-        {/* Weekly Activity + Streak Calendar row */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.15 }}
-          className="grid gap-4 md:grid-cols-2"
-        >
-          <WeeklyXpChart data={weeklyXp} />
-          <StreakCalendar streak={streak} activeDays={activeDays} />
-        </motion.div>
-
-        {/* Daily Challenge */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          {!dailyLoading && (
-            <DailyChallengeWidget
-              challenge={dailyData?.challenge || null}
-              completed={dailyData?.completed || false}
-            />
-          )}
-          {dailyLoading && (
-            <div className="glass rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Skeleton className="h-5 w-5 rounded" />
-                <Skeleton className="h-5 w-32" />
-              </div>
-              <Skeleton className="h-6 w-3/4 mb-2" />
-              <Skeleton className="h-4 w-full mb-1" />
-              <Skeleton className="h-4 w-2/3 mb-4" />
-              <Skeleton className="h-9 w-28 rounded-lg" />
-            </div>
-          )}
-        </motion.div>
-
-        {/* Marathon Mode Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.25 }}
-        >
-          <Link href="/marathon" className="block">
-            <div className="card-hover relative overflow-hidden rounded-2xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-red-500/5 to-amber-500/10 p-5 group hover:border-orange-500/50 transition-all duration-300">
-              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
-                  <Flame className="h-6 w-6 text-orange-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-foreground group-hover:text-orange-400 transition-colors">
-                    Марафон
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Решайте без перерыва — серия правильных ответов увеличивает множитель XP
-                  </p>
-                </div>
-                <ArrowRight className="h-5 w-5 text-orange-400/60 group-hover:text-orange-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
-              </div>
-            </div>
-          </Link>
-        </motion.div>
-
-        {/* Bottom Grid: Leaderboard + Achievements + Referral */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-          >
-            <MiniLeaderboard entries={leaderboard} />
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-          >
-            <RecentAchievements achievements={achievements} />
-          </motion.div>
         </div>
 
-        {/* Referral Widget */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.55 }}
-        >
-          <ReferralCard compact />
-        </motion.div>
+        {/* XP Progress — compact */}
+        <div className="glass rounded-xl p-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground">Прогресс уровня</span>
+            <span className="text-xs font-medium text-emerald-400">Уровень {level}</span>
+          </div>
+          <XPBar currentXp={xp} level={level} showLabel={true} />
+        </div>
+
+        {/* Quick Actions Row: Challenges + Marathon */}
+        <div className="grid grid-cols-2 gap-2">
+          <Link href="/challenges" className="block">
+            <div className="card-hover relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-purple-500/10 p-3 group hover:border-emerald-500/50 transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Target className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-sm font-bold text-foreground group-hover:text-emerald-400 transition-colors">
+                    Перейти к задачам
+                  </h2>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Решай, зарабатывай XP, прокачивай
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-emerald-400/60 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/marathon" className="block">
+            <div className="card-hover relative overflow-hidden rounded-xl border border-orange-500/30 bg-gradient-to-r from-orange-500/10 via-red-500/5 to-amber-500/10 p-3 group hover:border-orange-500/50 transition-all duration-300">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-500/20 shrink-0 group-hover:scale-110 transition-transform duration-300">
+                  <Flame className="h-4 w-4 text-orange-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-sm font-bold text-foreground group-hover:text-orange-400 transition-colors">
+                    Марафон
+                  </h2>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Серия ответов увеличивает множитель
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-orange-400/60 group-hover:text-orange-400 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
+              </div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Stats Grid */}
+        <StatsGrid
+          stats={{
+            completedChallenges: completedChallenges || 0,
+            totalXp: xp || 0,
+            rank: rank || 0,
+            level: level || 1,
+          }}
+        />
+
+        {/* Activity + Streak row — compact */}
+        <div className="grid gap-2 md:grid-cols-2">
+          <WeeklyXpChart data={weeklyXp} />
+          <StreakCalendar streak={streak} activeDays={activeDays} />
+        </div>
+
+        {/* Daily Challenge — compact single-line */}
+        {!dailyLoading && (
+          <DailyChallengeWidget
+            challenge={dailyData?.challenge || null}
+            completed={dailyData?.completed || false}
+          />
+        )}
+        {dailyLoading && (
+          <div className="glass rounded-xl p-3">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-4 rounded" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Grid: Leaderboard + Achievements — equal width/height */}
+        <div className="grid gap-2 md:grid-cols-2">
+          <MiniLeaderboard entries={leaderboard} />
+          <RecentAchievements achievements={achievements} />
+        </div>
+
+        {/* Referral Widget — compact */}
+        <ReferralCard compact />
       </div>
     </AppLayout>
   );

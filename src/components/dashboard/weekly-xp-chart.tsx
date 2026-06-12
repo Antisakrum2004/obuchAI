@@ -22,39 +22,38 @@ export function WeeklyXpChart({ data, className }: WeeklyXpChartProps) {
   const totalXp = data.reduce((sum, v) => sum + v, 0);
 
   return (
-    <div className={cn("glass rounded-xl p-4", className)}>
-      <div className="flex items-center justify-between mb-3 pt-1">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-semibold">Активность</span>
+    <div className={cn("glass rounded-xl p-3", className)}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <BarChart3 className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="text-xs font-semibold">Активность</span>
         </div>
-        <span className="text-xs text-muted-foreground">{totalXp} XP за неделю</span>
+        <span className="text-[10px] text-muted-foreground">{totalXp} XP за неделю</span>
       </div>
 
       {/* Bar chart */}
-      <div className="flex items-end gap-2 h-32">
+      <div className="flex items-end gap-1.5 h-16">
         {data.map((value, i) => {
-          // Cap at 70% max to leave headroom for value labels above the bars
           const height = Math.max((value / maxVal) * 70, value > 0 ? 8 : 2);
           const isToday = i === todayIndex;
           const hasValue = value > 0;
 
           return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              {/* Value label — placed ABOVE the bar container */}
+            <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+              {/* Value label */}
               <span className={cn(
-                "text-[10px] font-medium transition-opacity h-5 flex items-end pb-0.5",
+                "text-[9px] font-medium transition-opacity h-3 flex items-end",
                 hasValue ? "text-emerald-400 opacity-100" : "text-muted-foreground/30 opacity-0"
               )}>
                 {value > 0 ? value : ""}
               </span>
               {/* Bar container */}
-              <div className="w-full relative" style={{ height: "90px" }}>
+              <div className="w-full relative" style={{ height: "44px" }}>
                 <div
                   className={cn(
-                    "absolute bottom-0 w-full rounded-t-md transition-all duration-500",
+                    "absolute bottom-0 w-full rounded-t transition-all duration-500",
                     isToday && hasValue
-                      ? "bg-emerald-500/40 glow-emerald"
+                      ? "bg-emerald-500/40"
                       : hasValue
                       ? "bg-emerald-500/20"
                       : "bg-white/5"
@@ -64,7 +63,7 @@ export function WeeklyXpChart({ data, className }: WeeklyXpChartProps) {
               </div>
               {/* Day label */}
               <span className={cn(
-                "text-[10px]",
+                "text-[9px]",
                 isToday ? "text-emerald-400 font-bold" : "text-muted-foreground/50"
               )}>
                 {DAY_LABELS[i]}
