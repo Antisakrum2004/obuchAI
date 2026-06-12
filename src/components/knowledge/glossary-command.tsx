@@ -166,8 +166,10 @@ export function GlossaryCommand() {
       return queries.some(qv => qv && fl.includes(qv));
     };
 
-    return matchesAny(t.term) || matchesAny(t.shortDefinition) || matchesAny(t.definition)
-      || matchesAny(t.category) || parseAliases(t.aliases).some(alias => matchesAny(alias));
+    // ONLY search in: term name, shortDefinition, category, aliases
+    // Do NOT search in full definition body — that causes false matches like "сдд" finding "One Source of Truth" just because "SDD" appears in the text
+    return matchesAny(t.term) || matchesAny(t.shortDefinition) || matchesAny(t.category)
+      || parseAliases(t.aliases).some(alias => matchesAny(alias));
   });
 
   const handleSearch = useCallback((value: string) => {

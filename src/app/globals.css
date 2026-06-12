@@ -1027,3 +1027,27 @@ iframe[src*="vercel"],
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin: 2em 0;
 }
+
+/* ── Global cursor & interaction styles ── */
+/* Pointer cursor on ALL clickable elements */
+button,
+a,
+[role="button"],
+[onclick],
+select,
+summary,
+input[type="submit"],
+input[type="reset"],
+input[type="image"],
+label[for],
+.tab-trigger,
+[href] {
+  cursor: pointer !important;
+}
+
+/* Subtle hover effect on buttons that lack their own */
+button:not(:disabled):hover,
+[role="button"]:not(:disabled):hover {
+  filter: brightness(1.08);
+  transition: filter 0.15s ease;
+}

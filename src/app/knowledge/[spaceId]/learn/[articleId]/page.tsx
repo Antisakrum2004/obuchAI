@@ -503,6 +503,8 @@ export default function LearnLessonPage({
                 onClick={() => {
                   setActiveBlock(block.id);
                   if (lessonCompleted) setLessonCompleted(false);
+                  // Scroll to top of content when switching tabs
+                  window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                   isActive
