@@ -4,21 +4,16 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen,
   ChevronRight,
-  Circle,
   CheckCircle2,
   Lock,
   Play,
-  ArrowRight,
   Trophy,
-  Sparkles,
   MapPin,
   Target,
 } from "lucide-react";
@@ -163,76 +158,68 @@ export default function CourseMapPage() {
   return (
     <AppLayout>
       <div className="mx-auto max-w-5xl space-y-6">
-        {/* Page Header */}
+        {/* Page Header — compact */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center gap-3"
+          transition={{ duration: 0.4 }}
+          className="flex items-center gap-2.5"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
-            <MapPin className="h-5 w-5 text-violet-400" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20">
+            <MapPin className="h-4 w-4 text-violet-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold md:text-3xl">Карта курса</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Пройдите все разделы по порядку — от основ к продвинутым темам
+            <h1 className="text-lg font-bold">Карта курса</h1>
+            <p className="text-muted-foreground text-xs">
+              Разделы по порядку — от основ к продвинутым
             </p>
           </div>
         </motion.div>
 
-        {/* Total Progress */}
+        {/* Total Progress — compact inline bar */}
         {courseMap && courseMap.totalArticles > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: 0.05 }}
-            className="glass rounded-2xl border border-white/5 p-5"
+            transition={{ duration: 0.3, delay: 0.03 }}
+            className="glass rounded-xl border border-white/5 px-4 py-2.5"
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {courseMap.isComplete ? (
-                  <Trophy className="h-5 w-5 text-amber-400" />
+                  <Trophy className="h-3.5 w-3.5 text-amber-400" />
                 ) : courseMap.hasStarted ? (
-                  <Target className="h-5 w-5 text-violet-400" />
+                  <Target className="h-3.5 w-3.5 text-violet-400" />
                 ) : (
-                  <BookOpen className="h-5 w-5 text-emerald-400" />
+                  <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
                 )}
-                <span className="text-sm font-medium">
-                  {courseMap.isComplete
-                    ? "Курс пройден!"
-                    : courseMap.hasStarted
-                    ? "Ваш прогресс"
-                    : "Готовы начать?"}
+                <span className="text-xs font-medium">
+                  {courseMap.isComplete ? "Пройден!" : courseMap.hasStarted ? "Прогресс" : "Начать?"}
                 </span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {courseMap.totalCompleted} из {courseMap.totalArticles} уроков
+              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+                <motion.div
+                  className={cn(
+                    "h-full rounded-full",
+                    courseMap.isComplete
+                      ? "bg-gradient-to-r from-amber-500 to-yellow-400"
+                      : "bg-gradient-to-r from-violet-500 to-cyan-400"
+                  )}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${courseMap.percentage}%` }}
+                  transition={{ duration: 0.8, delay: 0.2 }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground shrink-0">
+                {courseMap.totalCompleted}/{courseMap.totalArticles} · {courseMap.percentage}%
               </span>
-            </div>
-            <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
-              <motion.div
-                className={cn(
-                  "h-full rounded-full transition-all duration-1000",
-                  courseMap.isComplete
-                    ? "bg-gradient-to-r from-amber-500 to-yellow-400"
-                    : "bg-gradient-to-r from-violet-500 to-cyan-400"
-                )}
-                initial={{ width: 0 }}
-                animate={{ width: `${courseMap.percentage}%` }}
-                transition={{ duration: 1, delay: 0.3 }}
-              />
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{courseMap.percentage}%</span>
               {courseMap.nextLesson && !courseMap.isComplete && (
                 <Link
                   href={`/knowledge/${encodeURIComponent(courseMap.nextLesson.spaceSlug)}/learn/${courseMap.nextLesson.id}`}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"
+                  className="inline-flex items-center gap-0.5 text-[10px] font-medium text-violet-400 hover:text-violet-300 transition-colors shrink-0"
                 >
-                  <Play className="h-3 w-3" />
-                  Продолжить: {courseMap.nextLesson.title}
-                  <ArrowRight className="h-3 w-3" />
+                  <Play className="h-2.5 w-2.5" />
+                  {courseMap.nextLesson.title}
                 </Link>
               )}
             </div>
@@ -257,16 +244,15 @@ export default function CourseMapPage() {
           </div>
         )}
 
-        {/* Course Map — Sections with progress dots */}
+        {/* Course Map — compact rows, all on one screen */}
         {!loading && courseMap && courseMap.spaces.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {courseMap.spaces.map((space, idx) => {
               const state = getSpaceState(space, idx);
               const isLocked = state === "locked";
               const isComplete = state === "complete";
               const isCurrent = state === "current";
               const isAvailable = state === "available";
-              const pct = space.totalArticles > 0 ? Math.round((space.completedArticles / space.totalArticles) * 100) : 0;
               const isExpanded = expandedSpace === space.id;
 
               // Progress dots: ● for completed, ○ for available, ◌ for locked
@@ -279,228 +265,205 @@ export default function CourseMapPage() {
               return (
                 <motion.div
                   key={space.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: isLocked ? 0.35 : 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: idx * 0.05 }}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: isLocked ? 0.35 : 1, x: 0 }}
+                  transition={{ duration: 0.25, delay: idx * 0.03 }}
                 >
-                  <Card
+                  <div
                     className={cn(
-                      "glass rounded-2xl transition-all duration-300 cursor-pointer border",
+                      "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all cursor-pointer group",
                       isLocked
-                        ? "border-white/5 bg-white/[0.01]"
+                        ? "bg-white/[0.01] hover:bg-white/[0.02]"
                         : isComplete
-                        ? "border-emerald-500/20 bg-emerald-500/[0.03] hover:border-emerald-500/40"
+                        ? "bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08]"
                         : isCurrent
-                        ? "border-violet-500/20 bg-violet-500/[0.03] hover:border-violet-500/40"
-                        : "border-white/5 hover:border-emerald-500/30"
+                        ? "bg-violet-500/[0.04] hover:bg-violet-500/[0.08]"
+                        : "bg-white/[0.02] hover:bg-white/[0.04]"
                     )}
                     onClick={() => !isLocked && setExpandedSpace(isExpanded ? null : space.id)}
                   >
-                    <CardContent className="p-5">
-                      {/* Row 1: Icon + Info + Arrow */}
-                      <div className="flex items-start gap-3">
-                        {/* Space icon */}
-                        <div
-                          className={cn(
-                            "flex h-12 w-12 items-center justify-center rounded-xl shrink-0 text-lg",
-                            isComplete
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : isCurrent
-                              ? "bg-violet-500/20 text-violet-400"
-                              : isAvailable
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : "bg-white/5 text-muted-foreground/40"
-                          )}
-                        >
-                          {isComplete ? (
-                            <CheckCircle2 className="h-6 w-6" />
-                          ) : isLocked ? (
-                            <Lock className="h-5 w-5" />
-                          ) : isEmojiIcon(space.icon || "") ? (
-                            <span>{space.icon}</span>
-                          ) : (
-                            <span className="text-sm font-bold">{getAbbrev(space.name)}</span>
-                          )}
-                        </div>
+                    {/* Space icon — small */}
+                    <div
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-lg shrink-0 text-sm",
+                        isComplete
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : isCurrent
+                          ? "bg-violet-500/20 text-violet-400"
+                          : isAvailable
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "bg-white/5 text-muted-foreground/40"
+                      )}
+                    >
+                      {isComplete ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : isLocked ? (
+                        <Lock className="h-3.5 w-3.5" />
+                      ) : isEmojiIcon(space.icon || "") ? (
+                        <span>{space.icon}</span>
+                      ) : (
+                        <span className="text-[10px] font-bold">{getAbbrev(space.name)}</span>
+                      )}
+                    </div>
 
-                        {/* Space info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3
-                              className={cn(
-                                "font-semibold",
-                                isLocked
-                                  ? "text-muted-foreground/50"
-                                  : isComplete
-                                  ? "text-emerald-400"
-                                  : isCurrent
-                                  ? "text-violet-400"
-                                  : "text-foreground"
-                              )}
-                            >
-                              {space.name}
-                            </h3>
-                            {isLocked && (
-                              <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-white/10 text-muted-foreground/50 bg-white/5">
-                                <Lock className="h-2 w-2 mr-0.5" />
-                                Пройдите предыдущий
-                              </Badge>
-                            )}
-                            {isCurrent && (
-                              <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-violet-500/30 text-violet-400 bg-violet-500/10">
-                                <Sparkles className="h-2 w-2 mr-0.5" />
-                                Текущий
-                              </Badge>
-                            )}
-                            {isComplete && (
-                              <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                                <CheckCircle2 className="h-2 w-2 mr-0.5" />
-                                Пройден
-                              </Badge>
-                            )}
-                          </div>
+                    {/* Space info — inline */}
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "text-xs font-medium truncate",
+                          isLocked
+                            ? "text-muted-foreground/50"
+                            : isComplete
+                            ? "text-emerald-400"
+                            : isCurrent
+                            ? "text-violet-400"
+                            : "text-foreground"
+                        )}
+                      >
+                        {space.name}
+                      </span>
 
-                          {space.description && !isLocked && (
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                              {space.description}
-                            </p>
-                          )}
-
-                          {/* Progress row */}
-                          <div className="mt-2 flex items-center gap-3">
-                            {/* Progress dots */}
-                            <div className="flex items-center gap-0.5">
-                              {progressDots.map((dot, i) => (
-                                <div
-                                  key={i}
-                                  className={cn(
-                                    "h-2 w-2 rounded-full transition-colors",
-                                    dot === "completed"
-                                      ? "bg-emerald-400"
-                                      : dot === "locked"
-                                      ? "bg-white/10"
-                                      : "bg-white/20"
-                                  )}
-                                />
-                              ))}
-                              {space.totalArticles > 10 && (
-                                <span className="text-[9px] text-muted-foreground ml-1">
-                                  +{space.totalArticles - 10}
-                                </span>
-                              )}
-                            </div>
-                            {/* Count */}
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                              {space.completedArticles}/{space.totalArticles}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Chevron / CTA */}
-                        {!isLocked && (
-                          <div className="shrink-0">
-                            {isCurrent && courseMap.nextLesson && space.id === courseMap.spaces.find(
-                              (s) => s.completedArticles < s.totalArticles && s.totalArticles > 0
-                            )?.id ? (
-                              <Link
-                                href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${courseMap.nextLesson.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Button
-                                  size="sm"
-                                  className="h-8 gap-1 bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30"
-                                >
-                                  <Play className="h-3 w-3" />
-                                  Продолжить
-                                </Button>
-                              </Link>
-                            ) : isAvailable && space.totalArticles > 0 ? (
-                              <Link
-                                href={`/knowledge/${encodeURIComponent(space.slug)}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Button
-                                  size="sm"
-                                  className="h-8 gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-                                >
-                                  <Play className="h-3 w-3" />
-                                  Начать
-                                </Button>
-                              </Link>
-                            ) : (
-                              <ChevronRight
-                                className={cn(
-                                  "h-4 w-4 transition-transform",
-                                  isExpanded ? "rotate-90 text-foreground" : "text-muted-foreground/40"
-                                )}
-                              />
+                      {/* Progress dots — inline */}
+                      <div className="flex items-center gap-[3px] shrink-0">
+                        {progressDots.map((dot, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              dot === "completed"
+                                ? "bg-emerald-400"
+                                : dot === "locked"
+                                ? "bg-white/10"
+                                : "bg-white/20"
                             )}
-                          </div>
+                          />
+                        ))}
+                        {space.totalArticles > 10 && (
+                          <span className="text-[8px] text-muted-foreground ml-0.5">
+                            +{space.totalArticles - 10}
+                          </span>
                         )}
                       </div>
 
-                      {/* Expanded: Articles list */}
-                      {isExpanded && !isLocked && space.articles.length > 0 && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="mt-4 pt-4 border-t border-white/5 space-y-1.5"
-                        >
-                          {space.articles.map((article, artIdx) => (
-                            <Link
-                              key={article.id}
-                              href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${article.id}`}
-                              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group"
-                            >
-                              <div
-                                className={cn(
-                                  "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold shrink-0",
-                                  article.completed
-                                    ? "bg-emerald-500/20 text-emerald-400"
-                                    : "bg-white/5 text-muted-foreground/50"
-                                )}
-                              >
-                                {article.completed ? (
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                ) : (
-                                  artIdx + 1
-                                )}
-                              </div>
-                              <span
-                                className={cn(
-                                  "flex-1 text-xs truncate",
-                                  article.completed
-                                    ? "text-muted-foreground line-through"
-                                    : "text-foreground group-hover:text-emerald-400"
-                                )}
-                              >
-                                {article.title}
-                              </span>
-                              {article.difficulty && (
-                                <Badge
-                                  variant="outline"
-                                  className={cn("text-[8px] px-1.5 py-0 shrink-0", getDifficultyColor(article.difficulty))}
-                                >
-                                  {getDifficultyLabel(article.difficulty)}
-                                </Badge>
-                              )}
-                              <ChevronRight className="h-3 w-3 text-muted-foreground/20 group-hover:text-emerald-400 shrink-0" />
-                            </Link>
-                          ))}
-                        </motion.div>
-                      )}
-                    </CardContent>
-                  </Card>
+                      {/* Count */}
+                      <span className="text-[9px] text-muted-foreground shrink-0">
+                        {space.completedArticles}/{space.totalArticles}
+                      </span>
 
-                  {/* Arrow between sections */}
-                  {idx < courseMap.spaces.length - 1 && (
-                    <div className="flex justify-center py-1">
-                      <div className="flex items-center gap-1">
-                        <div className="h-4 w-px bg-white/10" />
-                        <ArrowRight className="h-3 w-3 text-muted-foreground/20" />
-                        <div className="h-4 w-px bg-white/10" />
+                      {/* Status badge — minimal */}
+                      {isLocked && (
+                        <Lock className="h-2.5 w-2.5 text-muted-foreground/30 shrink-0" />
+                      )}
+                      {isCurrent && (
+                        <Badge variant="outline" className="text-[7px] px-1 py-0 border-violet-500/30 text-violet-400 bg-violet-500/10 shrink-0">
+                          Текущий
+                        </Badge>
+                      )}
+                      {isComplete && (
+                        <Badge variant="outline" className="text-[7px] px-1 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 shrink-0">
+                          Пройден
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* CTA — compact */}
+                    {!isLocked && (
+                      <div className="shrink-0">
+                        {isCurrent && courseMap.nextLesson && space.id === courseMap.spaces.find(
+                          (s) => s.completedArticles < s.totalArticles && s.totalArticles > 0
+                        )?.id ? (
+                          <Link
+                            href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${courseMap.nextLesson.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              size="sm"
+                              className="h-6 gap-1 bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30 text-[10px] px-2"
+                            >
+                              <Play className="h-2.5 w-2.5" />
+                              Продолжить
+                            </Button>
+                          </Link>
+                        ) : isAvailable && space.totalArticles > 0 ? (
+                          <Link
+                            href={`/knowledge/${encodeURIComponent(space.slug)}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              size="sm"
+                              className="h-6 gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-[10px] px-2"
+                            >
+                              <Play className="h-2.5 w-2.5" />
+                              Начать
+                            </Button>
+                          </Link>
+                        ) : (
+                          <ChevronRight
+                            className={cn(
+                              "h-3 w-3 transition-transform",
+                              isExpanded ? "rotate-90 text-foreground" : "text-muted-foreground/30"
+                            )}
+                          />
+                        )}
                       </div>
+                    )}
+                  </div>
+
+                  {/* Expanded: Articles list — compact */}
+                  {isExpanded && !isLocked && space.articles.length > 0 && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="ml-11 mt-1 space-y-0.5"
+                    >
+                      {space.articles.map((article, artIdx) => (
+                        <Link
+                          key={article.id}
+                          href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${article.id}`}
+                          className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-white/5 transition-colors group"
+                        >
+                          <div
+                            className={cn(
+                              "flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold shrink-0",
+                              article.completed
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : "bg-white/5 text-muted-foreground/50"
+                            )}
+                          >
+                            {article.completed ? (
+                              <CheckCircle2 className="h-2.5 w-2.5" />
+                            ) : (
+                              artIdx + 1
+                            )}
+                          </div>
+                          <span
+                            className={cn(
+                              "flex-1 text-[11px] truncate",
+                              article.completed
+                                ? "text-muted-foreground line-through"
+                                : "text-foreground group-hover:text-emerald-400"
+                            )}
+                          >
+                            {article.title}
+                          </span>
+                          {article.difficulty && (
+                            <Badge
+                              variant="outline"
+                              className={cn("text-[7px] px-1 py-0 shrink-0", getDifficultyColor(article.difficulty))}
+                            >
+                              {getDifficultyLabel(article.difficulty)}
+                            </Badge>
+                          )}
+                        </Link>
+                      ))}
+                    </motion.div>
+                  )}
+
+                  {/* Arrow between sections — minimal */}
+                  {idx < courseMap.spaces.length - 1 && (
+                    <div className="flex justify-center py-0.5">
+                      <div className="h-2 w-px bg-white/10" />
                     </div>
                   )}
                 </motion.div>
@@ -514,34 +477,23 @@ export default function CourseMapPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center py-16"
+            className="text-center py-8"
           >
-            <BookOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-muted-foreground">
+            <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+            <h3 className="text-sm font-medium text-muted-foreground">
               Разделы пока не добавлены
             </h3>
-            <p className="text-sm text-muted-foreground/60 mt-1">
+            <p className="text-xs text-muted-foreground/60 mt-0.5">
               Скоро здесь появится карта курса с темами и уроками
             </p>
           </motion.div>
         )}
 
-        {/* Quick tip */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          className="glass rounded-xl p-4 border border-white/5"
-        >
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <span className="text-lg">💡</span>
-            <span>
-              Разделы открываются последовательно — пройдите все уроки текущего раздела, чтобы разблокировать следующий. Кнопка{" "}
-              <kbd className="px-1.5 py-0.5 rounded bg-secondary text-[10px] font-mono border border-white/10">Начать курс</kbd>{" "}
-              на главной ведёт прямо сюда.
-            </span>
-          </div>
-        </motion.div>
+        {/* Quick tip — minimal */}
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 px-1">
+          <span>💡</span>
+          <span>Разделы открываются последовательно. Кнопка «Начать курс» на главной ведёт сюда.</span>
+        </div>
       </div>
     </AppLayout>
   );

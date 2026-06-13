@@ -1,14 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -29,13 +22,6 @@ import { toast } from "sonner";
 
 interface BulkUploadProps {
   onUploadComplete?: () => void;
-}
-
-interface Space {
-  id: string;
-  name: string;
-  slug: string;
-  icon: string | null;
 }
 
 interface UploadResult {
@@ -81,9 +67,7 @@ const ACCEPTED_EXTENSIONS = ".pdf,.pptx,.ppt,.docx,.doc,.mp4,.webm,.mov,.png,.jp
 
 export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const [files, setFiles] = useState<File[]>([]);
-  const [spaceId, setSpaceId] = useState<string>("");
   const [autoProcess, setAutoProcess] = useState(true);
-  const [spaces, setSpaces] = useState<Space[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileIndex, setCurrentFileIndex] = useState(-1);
@@ -95,26 +79,7 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   // Track per-file upload status
   const [fileStatuses, setFileStatuses] = useState<Array<"pending" | "uploading" | "success" | "error">>([]);
 
-  // Fetch spaces only (categories are auto-created by AI)
-  const fetchSpaces = useCallback(async () => {
-    try {
-      const spacesRes = await fetch("/api/knowledge/spaces?all=true");
-      if (!spacesRes.ok) return;
-      const spacesData = await spacesRes.json();
-      const spacesList = Array.isArray(spacesData) ? spacesData : [];
-      setSpaces(spacesList);
-
-      if (!spaceId && spacesList.length > 0) {
-        setSpaceId(spacesList[0].id);
-      }
-    } catch {
-      // silently fail
-    }
-  }, [spaceId]);
-
-  useEffect(() => {
-    fetchSpaces();
-  }, [fetchSpaces]);
+  // No manual space selection — AI auto-determines
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -160,16 +125,7 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const handleUpload = async () => {
     if (files.length === 0) return;
 
-    // Resolve spaceId: explicit > none
-    let resolvedSpaceId = spaceId;
-    if (!resolvedSpaceId && spaces.length > 0) {
-      resolvedSpaceId = spaces[0].id;
-    }
-
-    if (!resolvedSpaceId) {
-      setError("Выберите раздел знаний (space) для загрузки файлов");
-      return;
-    }
+    // AI auto-determines space — no manual selection needed
 
     setUploading(true);
     setUploadProgress(0);
@@ -194,7 +150,7 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
         const file = files[i];
         const formData = new FormData();
         formData.append("files", file);
-        formData.append("spaceId", resolvedSpaceId);
+        formData.append("spaceId", ""); // AI auto-assigns
         formData.append("autoProcess", String(autoProcess));
         formData.append("autoCategorize", "true");
 
@@ -433,36 +389,10 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
         </div>
       )}
 
-      {/* Space Selection */}
-      <div className="space-y-1.5">
-        <label className="text-xs text-muted-foreground">Раздел знаний</label>
-        {spaces.length === 0 ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
-            <AlertCircle className="h-3 w-3 shrink-0" />
-            Нет разделов. Создайте раздел знаний сначала.
-          </div>
-        ) : (
-          <Select value={spaceId} onValueChange={setSpaceId}>
-            <SelectTrigger className="bg-white/5 border-white/10">
-              <SelectValue placeholder="Выберите раздел" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#111118] border-white/10">
-              {spaces.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.icon || "📚"} {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
-      {/* AI Auto-Categorize — always on, no manual category selection */}
+      {/* AI auto-determines space & category */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
         <Sparkles className="h-3.5 w-3.5 shrink-0" />
-        <span>
-          AI автоматически определит раздел и создаст категорию
-        </span>
+        AI автоматически определит раздел, сложность и создаст категорию
       </div>
 
       {/* AI Processing toggle */}
