@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud, RefreshCw, Loader2, VolumeX } from "lucide-react";
+import { ExternalLink, Play, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -99,278 +99,84 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player — native <video> via Piped API + fallbacks ───
-// Strategy: proxy (native <video>) → piped embed → youtube iframe → link
-
-type YouTubeStrategy = "proxy" | "piped" | "nocookie" | "direct" | "link";
-
-interface VideoInfo {
-  streamUrl: string | null;
-  audioUrl: string | null;
-  title: string;
-  quality: string;
-  isVideoOnly: boolean;
-  pipedEmbedUrl: string;
-}
+// ─── YouTube Player — standard embed + prominent "Open on YouTube" ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YouTubeStrategy>("proxy");
-  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [embedFailed, setEmbedFailed] = useState(false);
+  const [showEmbed, setShowEmbed] = useState(true);
 
-  // Fetch video stream info from our server-side API
-  useEffect(() => {
-    if (strategy !== "proxy") {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    fetch(`/api/video/youtube-info?videoId=${videoId}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: VideoInfo & { error?: string }) => {
-        if (cancelled) return;
-        if (data.error) {
-          setError(data.error);
-          setStrategy("piped");
-          return;
-        }
-        if (!data.streamUrl) {
-          setError("Не удалось получить ссылку на видео");
-          setStrategy("piped");
-          return;
-        }
-        setVideoInfo(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        if (cancelled) return;
-        console.error("[YouTubePlayer] fetch error:", err);
-        setError("Ошибка загрузки видео");
-        setStrategy("piped");
-      });
-
-    return () => { cancelled = true; };
-  }, [videoId, strategy]);
-
-  const switchTo = useCallback((s: YouTubeStrategy) => {
-    setStrategy(s);
-    setError(null);
-  }, []);
-
-  const embedUrl = (() => {
-    switch (strategy) {
-      case "piped":
-        return `https://piped.video/embed/${videoId}`;
-      case "nocookie":
-        return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
-      case "direct":
-        return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
-      default:
-        return null;
-    }
-  })();
-
-  const strategyBtnLabel: Record<YouTubeStrategy, string> = {
-    proxy: "Плеер",
-    piped: "Piped",
-    nocookie: "YT",
-    direct: "YT2",
-    link: "Link",
-  };
-
-  const strategyBtnTooltip: Record<YouTubeStrategy, string> = {
-    proxy: "Встроенный плеер (без блокировок)",
-    piped: "Piped — альт. YouTube плеер",
-    nocookie: "YouTube nocookie",
-    direct: "YouTube прямой",
-    link: "Открыть на YouTube",
-  };
+  const youtubeWatchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
 
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
         <Play className="h-4 w-4 text-emerald-400" />
         <span className="text-sm font-medium">Видео</span>
-        <Badge variant="outline" className={cn(
-          "text-[10px] px-1.5 py-0",
-          strategy === "proxy"
-            ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
-            : strategy === "piped"
-              ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
-              : "border-red-500/30 text-red-400 bg-red-500/10"
-        )}>
-          {strategy === "proxy" ? "Плеер" : strategy === "piped" ? "Piped" : sourceTypeLabels.youtube}
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+          {sourceTypeLabels.youtube}
         </Badge>
-        {/* Manual strategy switcher */}
-        <div className="ml-auto flex items-center gap-1">
-          {(["proxy", "piped", "nocookie", "direct"] as YouTubeStrategy[]).map(s => (
-            <button
-              key={s}
-              onClick={() => switchTo(s)}
-              className={cn(
-                "text-[9px] px-1.5 py-0.5 rounded transition-colors",
-                strategy === s
-                  ? "bg-white/15 text-white font-medium"
-                  : "text-muted-foreground hover:text-white hover:bg-white/5"
-              )}
-              title={strategyBtnTooltip[s]}
-            >
-              {strategyBtnLabel[s]}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* Error banner */}
-      {error && strategy !== "link" && (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-xs">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>{error}</span>
-          <button
-            onClick={() => switchTo("piped")}
-            className="ml-auto shrink-0 underline hover:text-yellow-300"
-          >
-            Piped
-          </button>
-        </div>
-      )}
-
-      {/* Strategy: Proxy — native <video> with stream from Piped API */}
-      {strategy === "proxy" && (
-        <>
-          {loading ? (
-            <div className="flex items-center justify-center rounded-xl border border-white/5 bg-black/20" style={{ paddingBottom: "56.25%", position: "relative" }}>
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
-                <span className="text-xs text-muted-foreground">Загрузка видео...</span>
-              </div>
-            </div>
-          ) : videoInfo?.streamUrl ? (
-            <div className="glass rounded-xl p-1 border-white/5 overflow-hidden">
-              <video
-                ref={videoRef}
-                src={videoInfo.streamUrl}
-                controls
-                className="w-full rounded-lg"
-                preload="metadata"
-                autoPlay
-              >
-                Ваш браузер не поддерживает воспроизведение видео.
-              </video>
-              {videoInfo.isVideoOnly && (
-                <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-yellow-400">
-                  <VolumeX className="h-3 w-3" />
-                  Видеоряд без звука (нет прогрессивного потока). Попробуйте Piped или YT.
-                </div>
-              )}
-            </div>
-          ) : null}
-        </>
-      )}
-
-      {/* Strategy: iframe (piped / nocookie / direct) */}
-      {(strategy === "piped" || strategy === "nocookie" || strategy === "direct") && embedUrl && (
+      {/* YouTube embed iframe */}
+      {showEmbed && !embedFailed && (
         <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
           <iframe
-            key={strategy}
             src={embedUrl}
             title={title || "YouTube видео"}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowFullScreen
             referrerPolicy="no-referrer"
             className="absolute inset-0 h-full w-full"
-            onError={() => {
-              // Auto-fallback chain
-              if (strategy === "piped") switchTo("nocookie");
-              else if (strategy === "nocookie") switchTo("direct");
-              else switchTo("link");
-            }}
+            onError={() => setEmbedFailed(true)}
           />
         </div>
       )}
 
-      {/* Strategy: link — just show buttons */}
-      {strategy === "link" && (
-        <div className="glass rounded-xl p-5 border-white/5">
-          <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить плеер. Нажмите кнопку ниже, чтобы посмотреть видео.
+      {/* Failed embed message */}
+      {embedFailed && (
+        <div className="glass rounded-xl p-4 border border-white/5 text-center">
+          <p className="text-sm text-muted-foreground mb-2">
+            Не удалось загрузить встроенный плеер YouTube
           </p>
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={`https://www.youtube.com/watch?v=${videoId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
-            >
-              <Play className="h-4 w-4" />
-              Открыть на YouTube
-            </a>
-            <button
-              onClick={() => switchTo("proxy")}
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Попробовать плеер
-            </button>
-            <button
-              onClick={() => switchTo("piped")}
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-colors text-sm font-medium"
-            >
-              <ShieldCheck className="h-4 w-4" />
-              Piped
-            </button>
-          </div>
         </div>
       )}
 
-      {/* Hints */}
-      {strategy !== "link" && (
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] text-muted-foreground/60">
-            {strategy === "proxy"
-              ? "Встроенный плеер — видео без ограничений YouTube"
-              : strategy === "piped"
-                ? "Piped — альтернативный YouTube без блокировок"
-                : "Если видео не играет — нажмите Плеер или Piped"
-            }
-          </p>
-          <a
-            href={`https://www.youtube.com/watch?v=${videoId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
+      {/* Always-visible action buttons */}
+      <div className="flex items-center gap-2">
+        <a
+          href={youtubeWatchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
+        >
+          <Play className="h-4 w-4" />
+          Смотреть на YouTube
+        </a>
+        {embedFailed && (
+          <button
+            onClick={() => { setEmbedFailed(false); setShowEmbed(true); }}
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 transition-colors text-sm"
           >
-            <ExternalLink className="h-2.5 w-2.5" />
-            YouTube
-          </a>
-        </div>
-      )}
+            Попробовать плеер ещё раз
+          </button>
+        )}
+      </div>
+
+      <p className="text-[10px] text-muted-foreground/60">
+        Если встроенный плеер не работает (просит войти в аккаунт) — нажмите «Смотреть на YouTube»
+      </p>
     </div>
   );
 }
 
-// ─── Yandex Disk Video Player with fallback strategies ───
-
-type YandexStrategy = "iframe" | "link";
+// ─── Yandex Disk Video Player with fallback ───
 
 function YandexDiskPlayer({ url, title, className }: { url: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YandexStrategy>("iframe");
   const [iframeFailed, setIframeFailed] = useState(false);
 
-  // If iframe also fails, show link
-  if (iframeFailed || strategy === "link") {
-    return (
-      <CloudLinkButton url={url} label={sourceTypeLabels.yandex_disk} className={className} />
-    );
+  if (iframeFailed) {
+    return <CloudLinkButton url={url} label={sourceTypeLabels.yandex_disk} className={className} />;
   }
 
   let playerSrc = url;
@@ -397,10 +203,7 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
           allowFullScreen
           allow="autoplay; encrypted-media; fullscreen"
           className="absolute inset-0 h-full w-full"
-          onError={() => {
-            setIframeFailed(true);
-            setStrategy("link");
-          }}
+          onError={() => setIframeFailed(true)}
         />
       </div>
       <div className="flex items-center justify-between mt-2 px-1">
@@ -426,7 +229,6 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → native <video> via Piped API + fallbacks
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
@@ -480,12 +282,10 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
-  // Yandex Disk — iframe → fallback to cloud link button
   if (type === "yandex_disk") {
     return <YandexDiskPlayer url={url} title={title} className={className} />;
   }
 
-  // Direct video URL — native <video> element
   if (type === "direct") {
     return (
       <div className={cn("space-y-2", className)}>
@@ -510,6 +310,5 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
-  // Other / unknown — show cloud link button
   return <CloudLinkButton url={url} label={sourceTypeLabels[type] || sourceTypeLabels.other} className={className} />;
 }
