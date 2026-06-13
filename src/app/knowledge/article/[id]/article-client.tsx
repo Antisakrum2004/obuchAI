@@ -45,6 +45,9 @@ import {
   X as XIcon,
   Loader2,
   FileText,
+  Video,
+  Plus,
+  Link as LinkIcon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { VideoEmbed } from "@/components/knowledge/video-embed";
@@ -172,6 +175,11 @@ export function ArticleClient({
   const [deleting, setDeleting] = useState(false);
   const [contentPreview, setContentPreview] = useState(false);
 
+  // Video URL editing
+  const [editingVideo, setEditingVideo] = useState(false);
+  const [editVideoUrl, setEditVideoUrl] = useState("");
+  const [savingVideo, setSavingVideo] = useState(false);
+
   const headingIdCountsRef = useRef<Map<string, number>>(new Map());
 
   // ─── Fetch article data on mount ────────────────────────────────
@@ -281,6 +289,45 @@ export function ArticleClient({
       setDeleting(false);
     }
   };
+
+  // ─── Save video URL ──────────────────────────────────────────
+  const handleSaveVideo = useCallback(async () => {
+    if (!article) return;
+    setSavingVideo(true);
+    try {
+      const videoUrl = editVideoUrl.trim() || null;
+      // Auto-detect sourceType
+      let sourceType: string | null = null;
+      if (videoUrl) {
+        try {
+          const h = new URL(videoUrl).hostname.toLowerCase();
+          if (h.includes("youtube.com") || h.includes("youtu.be")) sourceType = "youtube";
+          else if (h.includes("rutube.ru")) sourceType = "rutube";
+          else if (h.includes("vk.com") || h.includes("vkvideo")) sourceType = "vk";
+          else if (h.includes("disk.yandex") || h.includes("yandex")) sourceType = "yandex_disk";
+          else if (videoUrl.endsWith(".mp4")) sourceType = "direct";
+          else sourceType = "other";
+        } catch { sourceType = "other"; }
+      }
+      const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl, sourceType }),
+      });
+      if (res.ok) {
+        toast.success(videoUrl ? "Видео добавлено" : "Видео удалено");
+        setArticle((prev) => prev ? { ...prev, videoUrl, sourceType } : prev);
+        setEditingVideo(false);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Ошибка сохранения");
+      }
+    } catch {
+      toast.error("Не удалось сохранить");
+    } finally {
+      setSavingVideo(false);
+    }
+  }, [article, editVideoUrl]);
 
   // ─── Extract content ─────────────────────────────────────────
   const handleExtractContent = async () => {
@@ -575,12 +622,105 @@ export function ArticleClient({
               </div>
             </div>
 
-            {/* Video */}
-            {article.videoUrl && (
+            {/* Video — show embed if exists, or "Add video" button for admins */}
+            {article.videoUrl ? (
               <div className="mb-6">
-                <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
+                <div className="flex items-center gap-2 mb-2">
+                  <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} className="flex-1" />
+                </div>
+                {isAdmin && !editingVideo && (
+                  <button
+                    onClick={() => { setEditVideoUrl(article.videoUrl || ""); setEditingVideo(true); }}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                  >
+                    <Pencil className="h-3 w-3" /> Изменить ссылку на видео
+                  </button>
+                )}
+                {isAdmin && editingVideo && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input
+                      value={editVideoUrl}
+                      onChange={(e) => setEditVideoUrl(e.target.value)}
+                      placeholder="Ссылка на видео (YouTube, VK, Яндекс, MP4)"
+                      className="bg-white/5 border-white/10 h-8 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveVideo}
+                      disabled={savingVideo}
+                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8"
+                    >
+                      {savingVideo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditingVideo(false)}
+                      className="h-8"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
+            ) : isAdmin ? (
+              <div className="mb-6">
+                {editingVideo ? (
+                  <div className="glass rounded-xl p-4 border-dashed border-emerald-500/30">
+                    <h4 className="text-sm font-medium flex items-center gap-1.5 mb-3">
+                      <Video className="h-4 w-4 text-emerald-400" />
+                      Добавить видео
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editVideoUrl}
+                        onChange={(e) => setEditVideoUrl(e.target.value)}
+                        placeholder="Вставьте ссылку — YouTube, VK, Яндекс Диск, MP4"
+                        className="bg-white/5 border-white/10"
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveVideo(); }}
+                      />
+                      <Button
+                        onClick={handleSaveVideo}
+                        disabled={savingVideo || !editVideoUrl.trim()}
+                        className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                      >
+                        {savingVideo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
+                        {savingVideo ? "" : "Сохранить"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setEditingVideo(false)}
+                        className="text-muted-foreground"
+                      >
+                        <XIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-2">
+                      YouTube · Rutube · VK Видео · Яндекс Диск · Прямая ссылка MP4
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditVideoUrl(""); setEditingVideo(true); }}
+                    className="w-full glass rounded-xl p-4 border-dashed border-white/10 hover:border-emerald-500/30 transition-all text-left group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors shrink-0">
+                        <Plus className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                          Добавить видео
+                        </p>
+                        <p className="text-xs text-muted-foreground/60">
+                          YouTube, VK, Яндекс Диск, MP4
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </div>
+            ) : null}
 
             {/* Source Links */}
             {(article.pdfUrl || article.pptxUrl || article.sourceUrl) && (
