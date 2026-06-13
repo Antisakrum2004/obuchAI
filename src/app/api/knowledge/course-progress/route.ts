@@ -140,6 +140,28 @@ export async function GET() {
     const hasStarted = totalCompleted > 0;
     const isComplete = totalArticles > 0 && totalCompleted >= totalArticles;
 
+    // Get articles per space with completion status (for course map page)
+    const articlesBySpace: Record<string, Array<{ id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null; completed: boolean }>> = {};
+    for (const space of spaces) {
+      if (space.totalArticles === 0) continue;
+      const articlesResult = await pool.query(
+        `SELECT a.id, a.title, a.difficulty, a."estimatedTime", a."complexityOrder"
+         FROM articles a
+         WHERE a."spaceId" = $1
+           AND a.status = 'published'
+         ORDER BY a."complexityOrder" ASC NULLS LAST, a."createdAt" ASC`,
+        [space.id]
+      );
+      articlesBySpace[space.id] = articlesResult.rows.map((a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null }) => ({
+        id: a.id,
+        title: a.title,
+        difficulty: a.difficulty,
+        estimatedTime: a.estimatedTime,
+        complexityOrder: a.complexityOrder,
+        completed: completedArticleIds.has(a.id),
+      }));
+    }
+
     return NextResponse.json({
       spaces,
       totalArticles,
@@ -149,6 +171,7 @@ export async function GET() {
       isComplete,
       nextLesson,
       firstLesson,
+      articlesBySpace,
     });
   } catch (error) {
     console.error("[Course Progress] Error:", error);

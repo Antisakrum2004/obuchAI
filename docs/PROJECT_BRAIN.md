@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-12 (обновлено до v0.18.1 — fix: lesson completion XP now fires correctly, обзор урока → «Что вас ждёт» без таймингов, убрать scrollbar в видеоматериалах, «9 статей» → «9 материалов»). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-13 (обновлено до v0.23.0 — Карта курса, YouTube→AI статья пайплайн, удалён ручной выбор раздела, «Из видео» вкладка в CreateArticleDialog). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -54,6 +54,9 @@
 | `S3_ENDPOINT` | `https://s3.ru-7.storage.selcloud.ru` |
 | `S3_REGION` | `ru-7` |
 | `S3_BUCKET_NAME` | `ati-lab` (приватный бакет) |
+| `ZAI_BASE_URL` | Z-AI SDK API base URL |
+| `ZAI_API_KEY` | Z-AI SDK API key |
+| `OPENROUTER_API_KEY` | OpenRouter/OpenAI API key (AI content processing) |
 
 > ⚠️ **КРИТИЧЕСКИ ВАЖНО**: S3 бакет `ati-lab` используется **ТОЛЬКО для статических документов** (PDF, PPTX, DOCX, изображения). **ВИДЕО НЕ ХРАНИТСЯ НА S3** — эта архитектура действует с Sprint 7 (v0.9.0) и окончательно закреплена. Видео размещается **ИСКЛЮЧИТЕЛЬНО** через внешние облачные встраивания (YouTube, VK, Rutube, Яндекс Диск). S3 Signed URL роуты для видео удалены. Проксирование видео через Vercel полностью ликвидировано.
 
@@ -123,6 +126,8 @@ src/
 │       │   ├── quiz/submit/      # POST — отправка результатов квиза, XP начисление
 │       │   ├── spaces/[id]/path/ # GET — learning path (топологическая сортировка)
 │       │   ├── ai/               # POST — AI-обработка (content/metadata/glossary/graph/course)
+│       │   ├── ai/video-article/ # POST — YouTube→AI статья пайплайн (v0.23.0)
+│       │   ├── video/transcript/ # POST — извлечение субтитров из YouTube через Z-AI SDK (v0.23.0)
 │       │   ├── bulk-upload/      # POST — массовая загрузка файлов
 │       │   └── ...               # Остальные knowledge-роуты
 │       └── admin/                # CRUD challenges, skills, achievements, users, seed, settings, migrate
@@ -421,11 +426,11 @@ src/
 ## 4. Current State
 
 ### Метрики проекта
-- **Версия**: 0.17.2
-- **Строк кода**: ~27,000 (src/ только .ts/.tsx)
-- **Страниц**: 17
-- **API маршрутов**: 48+
-- **Компонентов**: 95+
+- **Версия**: 0.23.0
+- **Строк кода**: ~30,000 (src/ только .ts/.tsx)
+- **Страниц**: 18
+- **API маршрутов**: 55+
+- **Компонентов**: 97+
 - **Хуков**: 5
 - **Моделей Prisma**: 17 (User, Account, Session, VerificationToken, Skill, UserSkill, Challenge, ChallengeAttempt, DailyChallengeAssignment, XPLog, Achievement, UserAchievement, KnowledgeSpace, Category, Article, Media, GlossaryTerm, ProcessingQueue)
 
@@ -465,6 +470,10 @@ src/
 - **Quiz Submit API (v0.17.0)** — POST `/api/knowledge/quiz/submit` — серверная валидация, XP начисление, xp_logs
 - **Learning Path (v0.17.0)** — Сортировка по сложности внутри ранга (easy → medium → hard)
 - **AI Course Pipeline (v0.17.0)** — Обязательные 5+ quiz вопросов и practical_task для каждого урока
+- **Карта курса (v0.23.0)** — /knowledge/course-map — горизонтальная карта с прогрессом, точками, замками. Кнопка «Начать курс» ведёт сюда вместо БЗ.
+- **YouTube→AI статья (v0.23.0)** — Вставка YouTube ссылки → Z-AI SDK извлекает содержание → AI генерирует статью, глоссарий, квиз, практику. Вкладка «Из видео» в CreateArticleDialog.
+- **AI авто-раздел (v0.23.0)** — Удалён ручной Select выбора раздела из CreateArticleDialog. AI определяет раздел и сложность автоматически.
+- **VideoEmbed inline (v0.22.0)** — youtube.com/embed/ (НЕ nocookie), видео прямо на странице урока без модала, подсказка для Edge/Safari
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях

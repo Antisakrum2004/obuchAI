@@ -161,36 +161,33 @@ export default function DashboardPage() {
   }, []);
 
   // Determine CTA button state
+  // All course CTAs now go to /knowledge/course-map (the new Course Map page)
   const courseCta = (() => {
     if (!courseProgress) {
       return {
         label: "Начать курс",
-        subtitle: "База знаний",
-        href: nextLesson?.pathUrl || "/knowledge",
+        subtitle: "Карта курса",
+        href: "/knowledge/course-map",
       };
     }
     if (courseProgress.isComplete) {
       return {
         label: "Повторить курс",
-        subtitle: courseProgress.firstLesson?.spaceName || "База знаний",
-        href: courseProgress.firstLesson
-          ? `/knowledge/${encodeURIComponent(courseProgress.firstLesson.slug)}/learn/${courseProgress.firstLesson.id}`
-          : "/knowledge",
+        subtitle: "Карта курса",
+        href: "/knowledge/course-map",
       };
     }
-    if (courseProgress.hasStarted && courseProgress.nextLesson) {
+    if (courseProgress.hasStarted) {
       return {
         label: "Продолжить обучение",
-        subtitle: courseProgress.nextLesson.title,
-        href: `/knowledge/${encodeURIComponent(courseProgress.nextLesson.spaceSlug)}/learn/${courseProgress.nextLesson.id}`,
+        subtitle: courseProgress.nextLesson?.title || "Карта курса",
+        href: "/knowledge/course-map",
       };
     }
     return {
       label: "Начать курс",
-      subtitle: courseProgress.spaces[0]?.name || "База знаний",
-      href: courseProgress.nextLesson
-        ? `/knowledge/${encodeURIComponent(courseProgress.nextLesson.spaceSlug)}/learn/${courseProgress.nextLesson.id}`
-        : nextLesson?.pathUrl || "/knowledge",
+      subtitle: courseProgress.spaces[0]?.name || "Карта курса",
+      href: "/knowledge/course-map",
     };
   })();
 

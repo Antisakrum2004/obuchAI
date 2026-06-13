@@ -14,6 +14,7 @@ import {
   Award,
   BookOpen,
   Archive,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,13 +22,14 @@ import { useSession } from "next-auth/react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // Read version from package.json at build time
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.22.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.23.0";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
   { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   // { href: "/skills", label: "Навыки", icon: TreePine, adminOnly: false }, // removed
+  { href: "/knowledge/course-map", label: "Карта курса", icon: MapPin, adminOnly: false },
   { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: true },
   { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
@@ -71,7 +73,12 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
           // to avoid both /knowledge and /knowledge/materials being active
           const isExactMatch = pathname === item.href;
           const isPrefixMatch = pathname.startsWith(item.href + "/");
-          const isActive = item.href === "/knowledge" ? isExactMatch : (isExactMatch || isPrefixMatch);
+          // /knowledge should NOT highlight when on /knowledge/course-map or /knowledge/materials
+          const isActive = item.href === "/knowledge"
+            ? isExactMatch
+            : item.href === "/knowledge/course-map"
+            ? isExactMatch
+            : (isExactMatch || isPrefixMatch);
           return (
             <Link
               key={item.href}
