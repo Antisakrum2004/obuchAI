@@ -36,6 +36,7 @@ import {
   Settings,
   FileText,
   Trash2,
+  Video,
   HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -463,6 +464,25 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
     }
   }, [fetchQueue, onQueueChange]);
 
+  /** Fix video articles stuck in pending — publish them and remove content_extract tasks */
+  const handleFixVideoArticles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "fix-video-articles" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message);
+        fetchQueue();
+        onQueueChange?.();
+      }
+    } catch {
+      toast.error("Не удалось исправить видео-статьи");
+    }
+  }, [fetchQueue, onQueueChange]);
+
   // ── KEYBOARD SHORTCUTS ──
 
   useEffect(() => {
@@ -569,6 +589,15 @@ export function ProcessingQueue({ className, onQueueChange }: ProcessingQueuePro
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Сбросить зависшие
+          </Button>
+          {/* Fix video articles stuck in pending */}
+          <Button
+            size="sm"
+            onClick={handleFixVideoArticles}
+            className="h-8 text-xs bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30 gap-1.5"
+          >
+            <Video className="h-3.5 w-3.5" />
+            Исправить видео
           </Button>
           {/* Clear Queue — with confirmation */}
           {items.length > 0 && (

@@ -241,8 +241,8 @@ export function CreateArticleDialog({
         const data = await res.json();
         setCreatedArticleId(data.articleId);
         setVideoStep("done");
-        toast.success("Статья из видео создана!", {
-          description: `"${data.title}" — AI обрабатывает содержание...`,
+        toast.success("Статья из видео создана и опубликована!", {
+          description: `"${data.title}" — AI обогащает метаданные и глоссарий в фоне...`,
         });
         onArticleCreated();
       } else {

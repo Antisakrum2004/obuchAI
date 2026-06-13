@@ -183,11 +183,13 @@ export async function POST(request: NextRequest) {
       // Determine expected queue types for this article
       const expectedTypes = ["ai_metadata", "glossary_extract", "graph_build", "course_draft"];
       // Check if article has PDF → needs content_extract too
+      // BUT skip content_extract for video articles (they already have AI-generated content)
       const { rows: articlePdfCheck } = await pool.query(
-        `SELECT "pdfUrl" FROM articles WHERE id = $1`,
+        `SELECT "pdfUrl", "sourceType" FROM articles WHERE id = $1`,
         [articleId]
       );
-      if (articlePdfCheck[0]?.pdfUrl) {
+      const isVideoArticle = ["youtube", "rutube", "vk"].includes(articlePdfCheck[0]?.sourceType);
+      if (articlePdfCheck[0]?.pdfUrl && !isVideoArticle) {
         expectedTypes.unshift("content_extract");
       }
 
@@ -217,14 +219,17 @@ export async function POST(request: NextRequest) {
       if (allDone) {
         // Check if article content is still a placeholder
         const { rows: contentCheck } = await pool.query(
-          `SELECT content, "pdfUrl" FROM articles WHERE id = $1`,
+          `SELECT content, "pdfUrl", "sourceType" FROM articles WHERE id = $1`,
           [articleId]
         );
         const content = contentCheck[0]?.content || "";
         const hasPdf = !!contentCheck[0]?.pdfUrl;
+        const isVideoArticle = ["youtube", "rutube", "vk"].includes(contentCheck[0]?.sourceType);
         const isPlaceholder = content.includes("Содержимое будет добавлено после обработки") || content.length < 50;
 
-        if (isPlaceholder && hasPdf) {
+        // For video articles, content is already generated — always publish
+        // For PDF articles, don't publish if content is still placeholder
+        if (isPlaceholder && hasPdf && !isVideoArticle) {
           skippedPublish = true;
           console.log(`[AI] Article ${articleId} all tasks done but content is placeholder — not publishing`);
           await pool.query(
@@ -800,7 +805,26 @@ async function processContentExtraction(
 
   let pdfUrl = (article.pdfUrl as string) || "";
   const title = (article.title as string) || "";
+  const sourceType = (article.sourceType as string) || "";
   let pdfFileKey: string | null = null;
+
+  // ── Video articles already have AI-generated content — skip PDF extraction ──
+  if (sourceType === "youtube" || sourceType === "rutube" || sourceType === "vk") {
+    console.log(`[Content] Article ${articleId} is from video (${sourceType}) — content already generated, marking as done`);
+    // Check if content is already substantive (not a placeholder)
+    const content = (article.content as string) || "";
+    const isPlaceholder = content.includes("Содержимое будет добавлено после обработки") || content.length < 50;
+    if (!isPlaceholder) {
+      // Content is already good — mark this queue item as done
+      await pool.query(
+        `UPDATE processing_queue SET result = $1, progress = 100, "updatedAt" = NOW() WHERE id = $2`,
+        [JSON.stringify({ skipped: true, reason: "Video article — content already generated" }), queueId]
+      );
+      return; // Skip PDF download entirely
+    }
+    // If content IS still placeholder for a video article, fall through and try PDF
+    console.warn(`[Content] Video article ${articleId} has placeholder content — attempting PDF extraction as fallback`);
+  }
 
   // If pdfUrl is not set on the article, check the media table for PDF files
   if (!pdfUrl) {

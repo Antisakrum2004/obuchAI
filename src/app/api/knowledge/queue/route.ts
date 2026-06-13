@@ -173,10 +173,11 @@ export async function POST(request: NextRequest) {
 
       // Check if article has PDF (for content_extract)
       const { rows: articleRows } = await pool.query(
-        `SELECT "pdfUrl" FROM articles WHERE id = $1`,
+        `SELECT "pdfUrl", "sourceType" FROM articles WHERE id = $1`,
         [articleId]
       );
       const hasPdf = articleRows.length > 0 && articleRows[0].pdfUrl;
+      const isVideoArticle = articleRows.length > 0 && ["youtube", "rutube", "vk"].includes(articleRows[0].sourceType);
       // Also check media table for PDF
       let hasMediaPdf = false;
       if (!hasPdf) {
@@ -188,7 +189,8 @@ export async function POST(request: NextRequest) {
       }
 
       const requiredTypes: string[] = [];
-      if (hasPdf || hasMediaPdf) requiredTypes.push("content_extract");
+      // Video articles already have AI-generated content — no need for content_extract
+      if ((hasPdf || hasMediaPdf) && !isVideoArticle) requiredTypes.push("content_extract");
       requiredTypes.push("ai_metadata", "glossary_extract", "graph_build", "course_draft");
 
       // Get existing queue items for this article
@@ -304,8 +306,55 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === "fix-video-articles") {
+      // Fix video articles stuck in 'pending' — they should be published since content is already generated
+      // This handles articles created from YouTube that were left in 'pending' due to background chain failures
+      const { rows: stuckVideoArticles } = await pool.query(
+        `SELECT id, title, "sourceType" FROM articles
+         WHERE status = 'pending'
+           AND "sourceType" IN ('youtube', 'rutube', 'vk')
+           AND "aiGenerated" = true
+           AND content IS NOT NULL
+           AND content NOT LIKE '%Содержимое будет добавлено после обработки%'
+           AND LENGTH(content) > 50`
+      );
+
+      let fixedCount = 0;
+      for (const article of stuckVideoArticles) {
+        await pool.query(
+          `UPDATE articles SET status = 'published', "isPublished" = true, "updatedAt" = NOW() WHERE id = $1`,
+          [article.id]
+        );
+
+        // Delete stale pending queue items for content_extract (not needed for video articles)
+        await pool.query(
+          `DELETE FROM processing_queue WHERE "articleId" = $1 AND type = 'content_extract' AND status IN ('pending', 'error')`,
+          [article.id]
+        );
+
+        fixedCount++;
+      }
+
+      // Also delete any content_extract queue items in error state for video articles
+      // (these were created before the fix and are causing the "PDF не загружен" error)
+      const { rowCount: deletedContentExtract } = await pool.query(
+        `DELETE FROM processing_queue pq
+         USING articles a
+         WHERE pq."articleId" = a.id
+           AND a."sourceType" IN ('youtube', 'rutube', 'vk')
+           AND pq.type = 'content_extract'
+           AND pq.status IN ('pending', 'error', 'processing')`
+      );
+
+      return NextResponse.json({
+        message: `Исправлено ${fixedCount} видео-статей (опубликовано), удалено ${deletedContentExtract || 0} лишних задач content_extract`,
+        fixedArticles: stuckVideoArticles.map((a: { id: string; title: string; sourceType: string }) => ({ id: a.id, title: a.title, sourceType: a.sourceType })),
+        deletedContentExtractItems: deletedContentExtract || 0,
+      });
+    }
+
     return NextResponse.json(
-      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, reset-stuck, ensure-queue-items, create-content-tasks, publish-without-ai" },
+      { error: "Неизвестное действие. Доступные: reset-errors, clear-done, clear-pending, clear-all, reset-stuck, ensure-queue-items, create-content-tasks, publish-without-ai, fix-video-articles" },
       { status: 400 }
     );
   } catch (error) {

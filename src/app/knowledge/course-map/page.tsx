@@ -431,6 +431,10 @@ export default function CourseMapPage() {
                                 "flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold shrink-0",
                                 article.completed
                                   ? "bg-emerald-500/20 text-emerald-400"
+                                  : article.status === "processing"
+                                  ? "bg-blue-500/20 text-blue-400"
+                                  : article.status === "error"
+                                  ? "bg-red-500/20 text-red-400"
                                   : article.status === "pending"
                                   ? "bg-amber-500/20 text-amber-400"
                                   : "bg-white/5 text-muted-foreground/50"
@@ -438,6 +442,10 @@ export default function CourseMapPage() {
                             >
                               {article.completed ? (
                                 <CheckCircle2 className="h-2.5 w-2.5" />
+                              ) : article.status === "processing" ? (
+                                <span className="text-[7px]">⚡</span>
+                              ) : article.status === "error" ? (
+                                <span className="text-[7px]">!</span>
                               ) : article.status === "pending" ? (
                                 <span className="text-[7px]">⏳</span>
                               ) : (
@@ -449,6 +457,10 @@ export default function CourseMapPage() {
                                 "flex-1 text-[11px] truncate",
                                 article.completed
                                   ? "text-muted-foreground line-through"
+                                  : article.status === "processing"
+                                  ? "text-blue-400/70"
+                                  : article.status === "error"
+                                  ? "text-red-400/70"
                                   : article.status === "pending"
                                   ? "text-amber-400/70"
                                   : "text-foreground group-hover:text-emerald-400"
@@ -456,9 +468,19 @@ export default function CourseMapPage() {
                             >
                               {article.title}
                             </span>
+                            {article.status === "processing" && (
+                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
+                                Обработка
+                              </Badge>
+                            )}
+                            {article.status === "error" && (
+                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-red-500/30 text-red-400 bg-red-500/10 shrink-0">
+                                Ошибка
+                              </Badge>
+                            )}
                             {article.status === "pending" && (
                               <Badge variant="outline" className="text-[7px] px-1 py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0">
-                                AI обрабатывает
+                                В очереди
                               </Badge>
                             )}
                             {article.difficulty && (

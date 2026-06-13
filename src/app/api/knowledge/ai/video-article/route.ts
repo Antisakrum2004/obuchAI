@@ -124,7 +124,7 @@ Video ID: ${videoId}
       String(transcript.tags ? JSON.stringify(transcript.tags) : "")
     );
 
-    // Step 3: Create the article
+    // Step 3: Create the article — PUBLISH IMMEDIATELY since content is already AI-generated
     const articleTitle = customTitle || (transcript.title as string) || `Видео-урок: ${videoId}`;
     const slug = generateSlug(articleTitle) || `video-${Date.now()}`;
     const articleId = genId("art_");
@@ -137,7 +137,7 @@ Video ID: ${videoId}
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11,
-        'pending', false, true, NOW(), NOW()
+        'published', true, true, NOW(), NOW()
       )`,
       [
         articleId,
@@ -183,15 +183,19 @@ Video ID: ${videoId}
       }
     }
 
-    // Step 5: Fire-and-forget AI processing chain (metadata → categorize, glossary, graph, course)
+    // Step 5: Fire-and-forget AI processing chain (metadata → glossary → course)
+    // Article is already published, so this is supplementary enrichment.
+    // Each step updates its queue item status so the UI tracks progress.
     const processChain = async () => {
       try {
-        // Metadata: determine space, difficulty, tags → then publish
-        await processMetadata(articleId);
+        // Metadata: refine space, difficulty, tags
+        await processMetadataWithQueue(articleId);
         // Glossary: extract additional terms
-        await processGlossary(articleId);
+        await processGlossaryWithQueue(articleId);
+        // Graph: build knowledge graph connections
+        await processGraphWithQueue(articleId);
         // Course: create quiz + practice
-        await processCourse(articleId);
+        await processCourseWithQueue(articleId);
         console.log(`[VideoArticle] AI processing chain complete for ${articleId}`);
       } catch (err) {
         console.error("[VideoArticle] AI processing chain error:", err);
@@ -203,7 +207,8 @@ Video ID: ${videoId}
       articleId,
       title: articleTitle,
       slug,
-      message: "Статья из видео создана. Начинаю AI-обработку...",
+      message: "Статья из видео создана и опубликована. AI-обогащение запущено в фоне...",
+      published: true,
       transcriptPreview: {
         title: transcript.title,
         summary: String(transcript.summary || "").substring(0, 200),
@@ -290,16 +295,49 @@ async function determineSpace(title: string, contentPreview: string, tagsJson: s
   }
 }
 
-// ── AI Processing Steps ─────────────────────────────────────────
+// ── AI Processing Steps (with queue status tracking) ─────────────
 
-async function processMetadata(articleId: string) {
+/** Helper: mark a queue item as processing */
+async function markQueueProcessing(articleId: string, queueType: string) {
+  await pool.query(
+    `UPDATE processing_queue SET status = 'processing', "startedAt" = NOW(), progress = 10, "updatedAt" = NOW()
+     WHERE "articleId" = $1 AND type = $2 AND status IN ('pending', 'error')`,
+    [articleId, queueType]
+  );
+}
+
+/** Helper: mark a queue item as done */
+async function markQueueDone(articleId: string, queueType: string, result?: string) {
+  await pool.query(
+    `UPDATE processing_queue SET status = 'done', progress = 100, "completedAt" = NOW(), result = $3, "updatedAt" = NOW()
+     WHERE "articleId" = $1 AND type = $2 AND status = 'processing'`,
+    [articleId, queueType, result || null]
+  );
+}
+
+/** Helper: mark a queue item as error */
+async function markQueueError(articleId: string, queueType: string, error: string) {
+  await pool.query(
+    `UPDATE processing_queue SET status = 'error', error = $3, "completedAt" = NOW(), "updatedAt" = NOW()
+     WHERE "articleId" = $1 AND type = $2 AND status = 'processing'`,
+    [articleId, queueType, error]
+  );
+}
+
+async function processMetadataWithQueue(articleId: string) {
+  const queueType = "ai_metadata";
   try {
+    await markQueueProcessing(articleId, queueType);
+
     const articleRes = await pool.query(
       `SELECT title, content, summary FROM articles WHERE id = $1`,
       [articleId]
     );
     const article = articleRes.rows[0];
-    if (!article) return;
+    if (!article) {
+      await markQueueError(articleId, queueType, "Статья не найдена");
+      return;
+    }
 
     const completion = await createChatCompletion([
       {
@@ -315,13 +353,17 @@ async function processMetadata(articleId: string) {
     ]);
 
     const response = completion.choices[0]?.message?.content;
-    if (!response) return;
+    if (!response) {
+      await markQueueDone(articleId, queueType, "AI returned empty response");
+      return;
+    }
 
     const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(cleaned);
     } catch {
+      await markQueueDone(articleId, queueType, "AI response was not valid JSON");
       return;
     }
 
@@ -350,24 +392,34 @@ async function processMetadata(articleId: string) {
       }
 
       await pool.query(
-        `UPDATE articles SET "spaceId" = $1, difficulty = $2, tags = $3, status = 'published', "isPublished" = true, "updatedAt" = NOW() WHERE id = $4`,
+        `UPDATE articles SET "spaceId" = $1, difficulty = $2, tags = $3, "updatedAt" = NOW() WHERE id = $4`,
         [spaceId, difficulty || null, tags ? JSON.stringify(tags) : null, articleId]
       );
       console.log(`[VideoArticle] Article assigned to "${spaceName}", difficulty: ${difficulty}`);
     }
+
+    await markQueueDone(articleId, queueType, JSON.stringify({ spaceName, difficulty, tags }));
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
     console.error("[VideoArticle] processMetadata error:", err);
+    await markQueueError(articleId, queueType, errMsg);
   }
 }
 
-async function processGlossary(articleId: string) {
+async function processGlossaryWithQueue(articleId: string) {
+  const queueType = "glossary_extract";
   try {
+    await markQueueProcessing(articleId, queueType);
+
     const articleRes = await pool.query(
       `SELECT title, content FROM articles WHERE id = $1`,
       [articleId]
     );
     const article = articleRes.rows[0];
-    if (!article) return;
+    if (!article) {
+      await markQueueError(articleId, queueType, "Статья не найдена");
+      return;
+    }
 
     const completion = await createChatCompletion([
       {
@@ -381,17 +433,24 @@ async function processGlossary(articleId: string) {
     ]);
 
     const response = completion.choices[0]?.message?.content;
-    if (!response) return;
+    if (!response) {
+      await markQueueDone(articleId, queueType, "AI returned empty response");
+      return;
+    }
 
     const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     let terms: Array<{ term: string; definition: string; shortDefinition?: string; category?: string }>;
     try {
       terms = JSON.parse(cleaned);
     } catch {
+      await markQueueDone(articleId, queueType, "AI response was not valid JSON");
       return;
     }
 
-    if (!Array.isArray(terms)) return;
+    if (!Array.isArray(terms)) {
+      await markQueueDone(articleId, queueType, "AI response was not an array");
+      return;
+    }
 
     for (const term of terms) {
       if (!term.term || !term.definition) continue;
@@ -405,19 +464,85 @@ async function processGlossary(articleId: string) {
       );
     }
     console.log(`[VideoArticle] Glossary: ${terms.length} terms extracted`);
+    await markQueueDone(articleId, queueType, `${terms.length} terms extracted`);
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
     console.error("[VideoArticle] processGlossary error:", err);
+    await markQueueError(articleId, queueType, errMsg);
   }
 }
 
-async function processCourse(articleId: string) {
+async function processGraphWithQueue(articleId: string) {
+  const queueType = "graph_build";
   try {
+    await markQueueProcessing(articleId, queueType);
+
+    const articleRes = await pool.query(
+      `SELECT title, content, tags, "keyConcepts" FROM articles WHERE id = $1`,
+      [articleId]
+    );
+    const article = articleRes.rows[0];
+    if (!article) {
+      await markQueueError(articleId, queueType, "Статья не найдена");
+      return;
+    }
+
+    // Build graph connections — find related articles via shared tags/concepts
+    const tags = article.tags ? JSON.parse(article.tags) : [];
+    const keyConcepts = article.keyConcepts ? JSON.parse(article.keyConcepts) : [];
+
+    if (tags.length === 0 && keyConcepts.length === 0) {
+      await markQueueDone(articleId, queueType, "No tags/concepts to build graph");
+      return;
+    }
+
+    // Find articles with overlapping tags
+    const relatedRes = await pool.query(
+      `SELECT id, title, tags FROM articles WHERE id != $1 AND tags IS NOT NULL AND status IN ('published', 'pending')`,
+      [articleId]
+    );
+
+    const prerequisites: string[] = [];
+    const nextTopics: string[] = [];
+
+    for (const related of relatedRes.rows) {
+      try {
+        const relatedTags = JSON.parse(related.tags || "[]");
+        const overlap = tags.filter((t: string) => relatedTags.includes(t));
+        if (overlap.length > 0) {
+          prerequisites.push(related.id);
+          if (prerequisites.length >= 3) break;
+        }
+      } catch { /* skip */ }
+    }
+
+    await pool.query(
+      `UPDATE articles SET "prerequisites" = $1, "nextTopics" = $2, "updatedAt" = NOW() WHERE id = $3`,
+      [JSON.stringify(prerequisites), JSON.stringify(nextTopics), articleId]
+    );
+
+    await markQueueDone(articleId, queueType, `Found ${prerequisites.length} prerequisites`);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[VideoArticle] processGraph error:", err);
+    await markQueueError(articleId, queueType, errMsg);
+  }
+}
+
+async function processCourseWithQueue(articleId: string) {
+  const queueType = "course_draft";
+  try {
+    await markQueueProcessing(articleId, queueType);
+
     const articleRes = await pool.query(
       `SELECT title, content FROM articles WHERE id = $1`,
       [articleId]
     );
     const article = articleRes.rows[0];
-    if (!article) return;
+    if (!article) {
+      await markQueueError(articleId, queueType, "Статья не найдена");
+      return;
+    }
 
     const completion = await createChatCompletion([
       {
@@ -431,7 +556,10 @@ async function processCourse(articleId: string) {
     ]);
 
     const response = completion.choices[0]?.message?.content;
-    if (!response) return;
+    if (!response) {
+      await markQueueDone(articleId, queueType, "AI returned empty response");
+      return;
+    }
 
     const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     try {
@@ -446,11 +574,15 @@ async function processCourse(articleId: string) {
         ]
       );
       console.log(`[VideoArticle] Quiz + practice task saved`);
+      await markQueueDone(articleId, queueType, "Quiz + practice created");
     } catch {
       console.warn("[VideoArticle] Course draft was not valid JSON, skipping");
+      await markQueueDone(articleId, queueType, "AI response was not valid JSON — skipped");
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
     console.error("[VideoArticle] processCourse error:", err);
+    await markQueueError(articleId, queueType, errMsg);
   }
 }
 
