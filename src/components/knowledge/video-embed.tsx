@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { ExternalLink, Play, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -102,20 +101,10 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
 // ─── YouTube Player — standard embed (nocookie → direct → link) ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<"nocookie" | "direct" | "link">("nocookie");
-
-  const embedUrl =
-    strategy === "nocookie"
-      ? `https://www.youtube-nocookie.com/embed/${videoId}`
-      : strategy === "direct"
-        ? `https://www.youtube.com/embed/${videoId}`
-        : null;
-
-  const handleError = useCallback(() => {
-    if (strategy === "nocookie") setStrategy("direct");
-    else if (strategy === "direct") setStrategy("link");
-  }, [strategy]);
-
+  // Use youtube.com/embed/ directly — same domain as YouTube, so if user
+  // is logged into YouTube in their browser, their cookies/session apply
+  // and no "sign in to prove you're not a bot" check appears.
+  // youtube-nocookie.com is a SEPARATE domain and may trigger anti-bot.
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
@@ -125,34 +114,15 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
           {sourceTypeLabels.youtube}
         </Badge>
       </div>
-      {strategy === "link" ? (
-        <div className="glass rounded-xl p-5 border-white/5">
-          <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить встроенный плеер.
-          </p>
-          <a
-            href={`https://www.youtube.com/watch?v=${videoId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
-          >
-            <Play className="h-4 w-4" />
-            Открыть на YouTube
-          </a>
-        </div>
-      ) : (
-        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            key={strategy}
-            src={embedUrl!}
-            title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full"
-            onError={handleError}
-          />
-        </div>
-      )}
+      <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+        <iframe
+          src={`https://www.youtube.com/embed/${videoId}`}
+          title={title || "YouTube видео"}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          className="absolute inset-0 h-full w-full"
+        />
+      </div>
     </div>
   );
 }

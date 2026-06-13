@@ -872,8 +872,6 @@ function MaterialsBlock({
   nextBlockLabel: string;
   onComplete: () => void;
 }) {
-  const [videoModalOpen, setVideoModalOpen] = useState(false);
-
   // Detect video source for label
   const videoLabel = useMemo(() => {
     if (!article.videoUrl) return "";
@@ -899,28 +897,9 @@ function MaterialsBlock({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Video link — opens in modal */}
+          {/* Video — show directly on page (no modal) */}
           {article.videoUrl && (
-            <button
-              type="button"
-              onClick={() => setVideoModalOpen(true)}
-              className="w-full glass rounded-xl p-4 border-white/5 hover:border-emerald-500/20 transition-all text-left group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors shrink-0">
-                  <Video className="h-5 w-5 text-blue-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground group-hover:text-emerald-400 transition-colors">
-                    Смотреть видеоматериал
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {videoLabel} · Нажмите для просмотра
-                  </p>
-                </div>
-                <Play className="h-5 w-5 text-muted-foreground/40 group-hover:text-emerald-400 transition-colors shrink-0" />
-              </div>
-            </button>
+            <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
           )}
 
           {!article.videoUrl && (
@@ -954,29 +933,6 @@ function MaterialsBlock({
           </Button>
         </CardContent>
       </Card>
-
-      {/* Video Modal */}
-      {videoModalOpen && article.videoUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => setVideoModalOpen(false)}
-        >
-          <div
-            className="relative w-full max-w-4xl rounded-xl overflow-hidden border border-white/10 bg-[#0a0a0f]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={() => setVideoModalOpen(false)}
-              className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 hover:bg-black/70 transition-colors text-white/70 hover:text-white"
-            >
-              <XCircle className="h-5 w-5" />
-            </button>
-            <VideoEmbed url={article.videoUrl} />
-          </div>
-        </div>
-      )}
     </>
   );
 }
