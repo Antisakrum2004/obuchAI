@@ -99,14 +99,22 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player — standard embed + prominent "Open on YouTube" ───
+// ─── YouTube Player — standard embed (nocookie → direct → link) ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [embedFailed, setEmbedFailed] = useState(false);
-  const [showEmbed, setShowEmbed] = useState(true);
+  const [strategy, setStrategy] = useState<"nocookie" | "direct" | "link">("nocookie");
 
-  const youtubeWatchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
+  const embedUrl =
+    strategy === "nocookie"
+      ? `https://www.youtube-nocookie.com/embed/${videoId}`
+      : strategy === "direct"
+        ? `https://www.youtube.com/embed/${videoId}`
+        : null;
+
+  const handleError = useCallback(() => {
+    if (strategy === "nocookie") setStrategy("direct");
+    else if (strategy === "direct") setStrategy("link");
+  }, [strategy]);
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -117,55 +125,34 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
           {sourceTypeLabels.youtube}
         </Badge>
       </div>
-
-      {/* YouTube embed iframe */}
-      {showEmbed && !embedFailed && (
+      {strategy === "link" ? (
+        <div className="glass rounded-xl p-5 border-white/5">
+          <p className="text-sm text-muted-foreground mb-3">
+            Не удалось загрузить встроенный плеер.
+          </p>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
+          >
+            <Play className="h-4 w-4" />
+            Открыть на YouTube
+          </a>
+        </div>
+      ) : (
         <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
           <iframe
-            src={embedUrl}
+            key={strategy}
+            src={embedUrl!}
             title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
-            referrerPolicy="no-referrer"
             className="absolute inset-0 h-full w-full"
-            onError={() => setEmbedFailed(true)}
+            onError={handleError}
           />
         </div>
       )}
-
-      {/* Failed embed message */}
-      {embedFailed && (
-        <div className="glass rounded-xl p-4 border border-white/5 text-center">
-          <p className="text-sm text-muted-foreground mb-2">
-            Не удалось загрузить встроенный плеер YouTube
-          </p>
-        </div>
-      )}
-
-      {/* Always-visible action buttons */}
-      <div className="flex items-center gap-2">
-        <a
-          href={youtubeWatchUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
-        >
-          <Play className="h-4 w-4" />
-          Смотреть на YouTube
-        </a>
-        {embedFailed && (
-          <button
-            onClick={() => { setEmbedFailed(false); setShowEmbed(true); }}
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10 transition-colors text-sm"
-          >
-            Попробовать плеер ещё раз
-          </button>
-        )}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground/60">
-        Если встроенный плеер не работает (просит войти в аккаунт) — нажмите «Смотреть на YouTube»
-      </p>
     </div>
   );
 }
@@ -229,6 +216,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
+  // YouTube → nocookie + direct fallback
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
@@ -282,10 +270,12 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
+  // Yandex Disk — iframe → fallback to cloud link button
   if (type === "yandex_disk") {
     return <YandexDiskPlayer url={url} title={title} className={className} />;
   }
 
+  // Direct video URL — native <video> element
   if (type === "direct") {
     return (
       <div className={cn("space-y-2", className)}>
@@ -310,5 +300,6 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
+  // Other / unknown — show cloud link button
   return <CloudLinkButton url={url} label={sourceTypeLabels[type] || sourceTypeLabels.other} className={className} />;
 }
