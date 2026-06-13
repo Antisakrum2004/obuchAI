@@ -1,8 +1,29 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, Cloud } from "lucide-react";
+import { ExternalLink, Play, Cloud, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+// Detect browsers with strict tracking prevention that blocks 3rd-party cookies
+function hasStrictTrackingPrevention(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  // Edge has tracking prevention on by default
+  if (ua.includes("Edg/")) return true;
+  // Firefox with strict content blocking
+  // Safari with ITP
+  if (ua.includes("Safari/") && !ua.includes("Chrome/")) return true;
+  return false;
+}
+
+function getBrowserHint(): string {
+  if (typeof navigator === "undefined") return "";
+  const ua = navigator.userAgent;
+  if (ua.includes("Edg/")) return "Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → Основной";
+  if (ua.includes("Safari/") && !ua.includes("Chrome/")) return "Safari: Настройки → Конфиденциальность → Отключить «Предотвращать кросс-сайтовое отслеживание»";
+  return "Отключите блокировку сторонних cookie для этого сайта";
+}
 
 interface VideoEmbedProps {
   url: string;
@@ -98,13 +119,16 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player — standard embed (nocookie → direct → link) ───
+// ─── YouTube Player — standard embed + browser hint for Edge/Safari ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
   // Use youtube.com/embed/ directly — same domain as YouTube, so if user
   // is logged into YouTube in their browser, their cookies/session apply
   // and no "sign in to prove you're not a bot" check appears.
   // youtube-nocookie.com is a SEPARATE domain and may trigger anti-bot.
+  const needsHint = hasStrictTrackingPrevention();
+  const browserHint = getBrowserHint();
+
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
@@ -123,6 +147,25 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
           className="absolute inset-0 h-full w-full"
         />
       </div>
+      {/* Hint for Edge/Safari users whose browsers block 3rd-party cookies */}
+      {needsHint && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
+          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p>Если YouTube просит войти в аккаунт — ваш браузер блокирует cookies.</p>
+            <p className="text-blue-400/80">{browserHint}</p>
+            <a
+              href={`https://www.youtube.com/watch?v=${videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-emerald-400 hover:underline"
+            >
+              <ExternalLink className="h-2.5 w-2.5" />
+              Открыть на YouTube (без проблем)
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -186,7 +229,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → nocookie + direct fallback
+  // YouTube → youtube.com/embed/ + browser hint for Edge/Safari
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
