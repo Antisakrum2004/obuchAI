@@ -39,6 +39,7 @@ interface ArticleItem {
   estimatedTime: string | null;
   completed: boolean;
   complexityOrder: number | null;
+  status?: string;
 }
 
 interface SpaceWithArticles extends SpaceProgress {
@@ -113,13 +114,14 @@ export default function CourseMapPage() {
           (space: SpaceProgress) => ({
             ...space,
             articles: (articlesBySpace[space.id] || []).map(
-              (a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null; completed: boolean }) => ({
+              (a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null; completed: boolean; status?: string }) => ({
                 id: a.id,
                 title: a.title,
                 difficulty: a.difficulty,
                 estimatedTime: a.estimatedTime,
                 complexityOrder: a.complexityOrder,
                 completed: a.completed,
+                status: a.status,
               })
             ),
           })
@@ -410,53 +412,70 @@ export default function CourseMapPage() {
                   </div>
 
                   {/* Expanded: Articles list — compact */}
-                  {isExpanded && !isLocked && space.articles.length > 0 && (
+                  {isExpanded && !isLocked && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
                       className="ml-11 mt-1 space-y-0.5"
                     >
-                      {space.articles.map((article, artIdx) => (
-                        <Link
-                          key={article.id}
-                          href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${article.id}`}
-                          className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-white/5 transition-colors group"
-                        >
-                          <div
-                            className={cn(
-                              "flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold shrink-0",
-                              article.completed
-                                ? "bg-emerald-500/20 text-emerald-400"
-                                : "bg-white/5 text-muted-foreground/50"
-                            )}
+                      {space.articles.length > 0 ? (
+                        space.articles.map((article, artIdx) => (
+                          <Link
+                            key={article.id}
+                            href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${article.id}`}
+                            className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-white/5 transition-colors group"
                           >
-                            {article.completed ? (
-                              <CheckCircle2 className="h-2.5 w-2.5" />
-                            ) : (
-                              artIdx + 1
-                            )}
-                          </div>
-                          <span
-                            className={cn(
-                              "flex-1 text-[11px] truncate",
-                              article.completed
-                                ? "text-muted-foreground line-through"
-                                : "text-foreground group-hover:text-emerald-400"
-                            )}
-                          >
-                            {article.title}
-                          </span>
-                          {article.difficulty && (
-                            <Badge
-                              variant="outline"
-                              className={cn("text-[7px] px-1 py-0 shrink-0", getDifficultyColor(article.difficulty))}
+                            <div
+                              className={cn(
+                                "flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold shrink-0",
+                                article.completed
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : article.status === "pending"
+                                  ? "bg-amber-500/20 text-amber-400"
+                                  : "bg-white/5 text-muted-foreground/50"
+                              )}
                             >
-                              {getDifficultyLabel(article.difficulty)}
-                            </Badge>
-                          )}
-                        </Link>
-                      ))}
+                              {article.completed ? (
+                                <CheckCircle2 className="h-2.5 w-2.5" />
+                              ) : article.status === "pending" ? (
+                                <span className="text-[7px]">⏳</span>
+                              ) : (
+                                artIdx + 1
+                              )}
+                            </div>
+                            <span
+                              className={cn(
+                                "flex-1 text-[11px] truncate",
+                                article.completed
+                                  ? "text-muted-foreground line-through"
+                                  : article.status === "pending"
+                                  ? "text-amber-400/70"
+                                  : "text-foreground group-hover:text-emerald-400"
+                              )}
+                            >
+                              {article.title}
+                            </span>
+                            {article.status === "pending" && (
+                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0">
+                                AI обрабатывает
+                              </Badge>
+                            )}
+                            {article.difficulty && (
+                              <Badge
+                                variant="outline"
+                                className={cn("text-[7px] px-1 py-0 shrink-0", getDifficultyColor(article.difficulty))}
+                              >
+                                {getDifficultyLabel(article.difficulty)}
+                              </Badge>
+                            )}
+                          </Link>
+                        ))
+                      ) : (
+                        <div className="px-2 py-2 text-[10px] text-muted-foreground/50">
+                          Нет статей в этом разделе
+                        </div>
+                      )}
                     </motion.div>
                   )}
 

@@ -34,11 +34,11 @@ export async function GET() {
        ORDER BY ks."order" ASC`
     );
 
-    // Get total article count per space (published only)
+    // Get total article count per space (published + pending — pending means AI is still processing)
     const articleCountsResult = await pool.query(
       `SELECT a."spaceId", COUNT(*)::int as total
        FROM articles a
-       WHERE a.status = 'published'
+       WHERE a.status IN ('published', 'pending')
        GROUP BY a."spaceId"`
     );
     const articleCounts = new Map<string, number>();
@@ -53,7 +53,7 @@ export async function GET() {
        JOIN articles a ON a.id = x."referenceId"
        WHERE x."userId" = $1
          AND x.reason = 'lesson_complete'
-         AND a.status = 'published'`,
+         AND a.status IN ('published', 'pending')`,
       [userId]
     );
     const completedArticleIds = new Set<string>();
@@ -89,7 +89,7 @@ export async function GET() {
           `SELECT a.id, a.title
            FROM articles a
            WHERE a."spaceId" = $1
-             AND a.status = 'published'
+             AND a.status IN ('published', 'pending')
              AND a.id NOT IN (
                SELECT DISTINCT x."referenceId"
                FROM xp_logs x
@@ -121,7 +121,7 @@ export async function GET() {
         `SELECT a.id, a.title
          FROM articles a
          WHERE a."spaceId" = $1
-           AND a.status = 'published'
+           AND a.status IN ('published', 'pending')
          ORDER BY a."complexityOrder" ASC NULLS LAST, a."createdAt" ASC
          LIMIT 1`,
         [firstSpace.id]
@@ -145,20 +145,21 @@ export async function GET() {
     for (const space of spaces) {
       if (space.totalArticles === 0) continue;
       const articlesResult = await pool.query(
-        `SELECT a.id, a.title, a.difficulty, a."estimatedTime", a."complexityOrder"
+        `SELECT a.id, a.title, a.difficulty, a."estimatedTime", a."complexityOrder", a.status
          FROM articles a
          WHERE a."spaceId" = $1
-           AND a.status = 'published'
+           AND a.status IN ('published', 'pending')
          ORDER BY a."complexityOrder" ASC NULLS LAST, a."createdAt" ASC`,
         [space.id]
       );
-      articlesBySpace[space.id] = articlesResult.rows.map((a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null }) => ({
+      articlesBySpace[space.id] = articlesResult.rows.map((a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null; status: string }) => ({
         id: a.id,
         title: a.title,
         difficulty: a.difficulty,
         estimatedTime: a.estimatedTime,
         complexityOrder: a.complexityOrder,
         completed: completedArticleIds.has(a.id),
+        status: a.status,
       }));
     }
 
