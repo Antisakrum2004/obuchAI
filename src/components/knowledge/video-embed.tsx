@@ -99,90 +99,185 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player with nocookie + direct fallback ───
+// ─── YouTube Player with multi-strategy fallback ───
+// Strategies: nocookie → direct → invidious → link
+// nocookie/direct may show "Sign in to prove you're not a bot" in some regions
+// Invidious is an open-source YouTube frontend that bypasses this restriction
+
+const INVIDIOUS_INSTANCES = [
+  "https://inv.nadeko.net",
+  "https://yewtu.be",
+  "https://vid.puffyan.us",
+];
+
+type YouTubeStrategy = "nocookie" | "direct" | "invidious" | "link";
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<"nocookie" | "direct" | "link">("nocookie");
-  const [iframeError, setIframeError] = useState(false);
+  const [strategy, setStrategy] = useState<YouTubeStrategy>("nocookie");
+  const [invidiousIdx, setInvidiousIdx] = useState(0);
+  const [manualOverride, setManualOverride] = useState<YouTubeStrategy | null>(null);
 
-  const embedUrl =
-    strategy === "nocookie"
-      ? `https://www.youtube-nocookie.com/embed/${videoId}`
-      : strategy === "direct"
-        ? `https://www.youtube.com/embed/${videoId}`
-        : null;
+  // Current effective strategy (manual override takes precedence)
+  const effectiveStrategy = manualOverride || strategy;
 
-  // Auto-fallback: if nocookie iframe doesn't signal load within 8s, try direct
+  const embedUrl = (() => {
+    switch (effectiveStrategy) {
+      case "nocookie":
+        return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
+      case "direct":
+        return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+      case "invidious":
+        return `${INVIDIOUS_INSTANCES[invidiousIdx % INVIDIOUS_INSTANCES.length]}/embed/${videoId}`;
+      default:
+        return null;
+    }
+  })();
+
+  // Auto-fallback chain: nocookie (6s) → direct (6s) → invidious (8s) → link
   useEffect(() => {
-    if (strategy === "nocookie" && !iframeError) {
+    if (manualOverride) return; // Don't auto-fallback if user chose manually
+
+    const timeouts: Record<string, number> = {
+      nocookie: 6000,
+      direct: 6000,
+      invidious: 8000,
+    };
+
+    const nextStrategy: Record<string, YouTubeStrategy> = {
+      nocookie: "direct",
+      direct: "invidious",
+      invidious: "link",
+    };
+
+    if (strategy !== "link" && timeouts[strategy]) {
       const timer = setTimeout(() => {
-        setStrategy("direct");
-      }, 8000);
+        if (strategy === "invidious") {
+          // Try next Invidious instance first before giving up
+          if (invidiousIdx < INVIDIOUS_INSTANCES.length - 1) {
+            setInvidiousIdx(prev => prev + 1);
+          } else {
+            setStrategy("link");
+          }
+        } else {
+          setStrategy(nextStrategy[strategy]);
+        }
+      }, timeouts[strategy]);
       return () => clearTimeout(timer);
     }
-  }, [strategy, iframeError]);
+  }, [strategy, invidiousIdx, manualOverride]);
 
   const handleIframeError = useCallback(() => {
-    if (strategy === "nocookie") {
+    if (effectiveStrategy === "nocookie") {
       setStrategy("direct");
-    } else if (strategy === "direct") {
-      setStrategy("link");
+    } else if (effectiveStrategy === "direct") {
+      setStrategy("invidious");
+    } else if (effectiveStrategy === "invidious") {
+      if (invidiousIdx < INVIDIOUS_INSTANCES.length - 1) {
+        setInvidiousIdx(prev => prev + 1);
+      } else {
+        setStrategy("link");
+      }
     }
-  }, [strategy]);
+  }, [effectiveStrategy, invidiousIdx]);
 
-  const handleIframeLoad = useCallback(() => {
-    // iframe loaded successfully — stop timeout
-  }, []);
+  const strategyLabel: Record<YouTubeStrategy, string> = {
+    nocookie: "YouTube (nocookie)",
+    direct: "YouTube",
+    invidious: "Альтернативный плеер",
+    link: "Ссылка",
+  };
 
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
         <Play className="h-4 w-4 text-emerald-400" />
         <span className="text-sm font-medium">Видео</span>
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
-          {sourceTypeLabels.youtube}
+        <Badge variant="outline" className={cn(
+          "text-[10px] px-1.5 py-0",
+          effectiveStrategy === "invidious"
+            ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+            : "border-red-500/30 text-red-400 bg-red-500/10"
+        )}>
+          {effectiveStrategy === "invidious" ? "Alt Player" : sourceTypeLabels.youtube}
         </Badge>
+        {/* Manual strategy switcher */}
+        {effectiveStrategy !== "link" && (
+          <div className="ml-auto flex items-center gap-1">
+            {(["nocookie", "direct", "invidious"] as YouTubeStrategy[]).map(s => (
+              <button
+                key={s}
+                onClick={() => setManualOverride(s)}
+                className={cn(
+                  "text-[9px] px-1.5 py-0.5 rounded transition-colors",
+                  effectiveStrategy === s
+                    ? "bg-white/15 text-white font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-white/5"
+                )}
+                title={strategyLabel[s]}
+              >
+                {s === "nocookie" ? "YT" : s === "direct" ? "YT2" : "Alt"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {strategy === "link" || iframeError ? (
+      {effectiveStrategy === "link" ? (
         <div className="glass rounded-xl p-5 border-white/5">
           <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить встроенный плеер. Возможно, браузер блокирует YouTube или требуются VPN для региональных ограничений.
+            Не удалось загрузить встроенный плеер. YouTube может блокировать встраивание в вашем регионе.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`https://www.youtube.com/watch?v=${videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
+            >
+              <Play className="h-4 w-4" />
+              Открыть на YouTube
+            </a>
+            <button
+              onClick={() => { setManualOverride("invidious"); setStrategy("invidious"); }}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-colors text-sm font-medium"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Попробовать альт. плеер
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+          <iframe
+            key={`${effectiveStrategy}-${invidiousIdx}`}
+            src={embedUrl!}
+            title={title || "YouTube видео"}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 h-full w-full"
+            onError={handleIframeError}
+          />
+        </div>
+      )}
+      {/* Hints */}
+      {effectiveStrategy !== "link" && (
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-muted-foreground/60">
+            {effectiveStrategy === "invidious"
+              ? "Альт. плеер (Invidious) — обход блокировок YouTube"
+              : "Если YouTube просит войти — нажмите Alt"
+            }
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
+            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
           >
-            <Play className="h-4 w-4" />
-            Открыть на YouTube
+            <ExternalLink className="h-2.5 w-2.5" />
+            YouTube
           </a>
         </div>
-      ) : (
-        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            src={embedUrl!}
-            title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="absolute inset-0 h-full w-full"
-            onError={handleIframeError}
-            onLoad={handleIframeLoad}
-          />
-        </div>
-      )}
-      {strategy !== "link" && !iframeError && (
-        <p className="text-[10px] text-muted-foreground/60">
-          Если видео не загружается — возможны региональные ограничения. Попробуйте VPN или{" "}
-          <a
-            href={`https://www.youtube.com/watch?v=${videoId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-muted-foreground"
-          >
-            откройте на YouTube
-          </a>.
-        </p>
       )}
     </div>
   );
