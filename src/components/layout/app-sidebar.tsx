@@ -21,7 +21,7 @@ import { useSession } from "next-auth/react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // Read version from package.json at build time
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.20.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.21.0";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },

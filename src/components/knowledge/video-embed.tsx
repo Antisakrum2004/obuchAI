@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud, RefreshCw } from "lucide-react";
+import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud, RefreshCw, Loader2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -99,35 +99,77 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player with smart fallback ───
-// Default: Invidious (open-source YouTube proxy — bypasses bot check & embed restrictions)
-// Fallback: YouTube nocookie → YouTube direct → link
-// Detects Error 153 (embed blocked) via YouTube postMessage API
+// ─── YouTube Player — native <video> via Piped API + fallbacks ───
+// Strategy: proxy (native <video>) → piped embed → youtube iframe → link
 
-const INVIDIOUS_INSTANCES = [
-  "https://inv.nadeko.net",
-  "https://invidious.nerdvpn.de",
-  "https://yewtu.be",
-  "https://vid.puffyan.us",
-  "https://invidious.jing.rocks",
-];
+type YouTubeStrategy = "proxy" | "piped" | "nocookie" | "direct" | "link";
 
-type YouTubeStrategy = "invidious" | "nocookie" | "direct" | "link";
+interface VideoInfo {
+  streamUrl: string | null;
+  audioUrl: string | null;
+  title: string;
+  quality: string;
+  isVideoOnly: boolean;
+  pipedEmbedUrl: string;
+}
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YouTubeStrategy>("invidious");
-  const [invidiousIdx, setInvidiousIdx] = useState(0);
-  const [manualOverride, setManualOverride] = useState<YouTubeStrategy | null>(null);
-  const [ytError, setYtError] = useState<number | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [strategy, setStrategy] = useState<YouTubeStrategy>("proxy");
+  const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Current effective strategy (manual override takes precedence)
-  const effectiveStrategy = manualOverride || strategy;
+  // Fetch video stream info from our server-side API
+  useEffect(() => {
+    if (strategy !== "proxy") {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/video/youtube-info?videoId=${videoId}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: VideoInfo & { error?: string }) => {
+        if (cancelled) return;
+        if (data.error) {
+          setError(data.error);
+          setStrategy("piped");
+          return;
+        }
+        if (!data.streamUrl) {
+          setError("Не удалось получить ссылку на видео");
+          setStrategy("piped");
+          return;
+        }
+        setVideoInfo(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error("[YouTubePlayer] fetch error:", err);
+        setError("Ошибка загрузки видео");
+        setStrategy("piped");
+      });
+
+    return () => { cancelled = true; };
+  }, [videoId, strategy]);
+
+  const switchTo = useCallback((s: YouTubeStrategy) => {
+    setStrategy(s);
+    setError(null);
+  }, []);
 
   const embedUrl = (() => {
-    switch (effectiveStrategy) {
-      case "invidious":
-        return `${INVIDIOUS_INSTANCES[invidiousIdx % INVIDIOUS_INSTANCES.length]}/embed/${videoId}`;
+    switch (strategy) {
+      case "piped":
+        return `https://piped.video/embed/${videoId}`;
       case "nocookie":
         return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`;
       case "direct":
@@ -137,84 +179,20 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
     }
   })();
 
-  // Listen for YouTube iframe postMessage errors (Error 150, 153, etc.)
-  useEffect(() => {
-    if (effectiveStrategy !== "nocookie" && effectiveStrategy !== "direct") return;
-
-    const handler = (event: MessageEvent) => {
-      try {
-        // YouTube posts JSON messages like {"event":"infoDelivery",...} or error info
-        if (typeof event.data === "string") {
-          const data = JSON.parse(event.data);
-          // YouTube error events
-          if (data.event === "onError" || data.event === "infoDelivery") {
-            const code = data?.info?.code || data?.errorCode;
-            if (code) {
-              // Error 150 = embed not allowed, 153 = player config error
-              setYtError(code);
-              // Auto-switch to Invidious on YouTube errors
-              if (code === 150 || code === 153 || code === 100 || code === 101 || code === 5) {
-                setStrategy("invidious");
-                setManualOverride("invidious");
-              }
-            }
-          }
-        }
-      } catch {
-        // Not JSON or not a YouTube message — ignore
-      }
-    };
-
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [effectiveStrategy]);
-
-  // Auto-fallback for Invidious: try next instance after 10s if no load
-  useEffect(() => {
-    if (manualOverride) return;
-    if (strategy === "invidious") {
-      const timer = setTimeout(() => {
-        if (invidiousIdx < INVIDIOUS_INSTANCES.length - 1) {
-          setInvidiousIdx(prev => prev + 1);
-        }
-        // Don't give up entirely — just try next instance
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [strategy, invidiousIdx, manualOverride]);
-
-  const handleIframeError = useCallback(() => {
-    if (effectiveStrategy === "invidious") {
-      if (invidiousIdx < INVIDIOUS_INSTANCES.length - 1) {
-        setInvidiousIdx(prev => prev + 1);
-      } else {
-        setStrategy("nocookie");
-      }
-    } else if (effectiveStrategy === "nocookie") {
-      setStrategy("direct");
-    } else if (effectiveStrategy === "direct") {
-      setStrategy("link");
-    }
-  }, [effectiveStrategy, invidiousIdx]);
-
-  const switchTo = useCallback((s: YouTubeStrategy) => {
-    setManualOverride(s);
-    setStrategy(s);
-    setYtError(null);
-  }, []);
-
-  const strategyLabel: Record<YouTubeStrategy, string> = {
-    invidious: "Альт. плеер",
-    nocookie: "YouTube (nocookie)",
-    direct: "YouTube",
-    link: "Ссылка",
-  };
-
   const strategyBtnLabel: Record<YouTubeStrategy, string> = {
-    invidious: "Alt",
+    proxy: "Плеер",
+    piped: "Piped",
     nocookie: "YT",
     direct: "YT2",
     link: "Link",
+  };
+
+  const strategyBtnTooltip: Record<YouTubeStrategy, string> = {
+    proxy: "Встроенный плеер (без блокировок)",
+    piped: "Piped — альт. YouTube плеер",
+    nocookie: "YouTube nocookie",
+    direct: "YouTube прямой",
+    link: "Открыть на YouTube",
   };
 
   return (
@@ -224,25 +202,27 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
         <span className="text-sm font-medium">Видео</span>
         <Badge variant="outline" className={cn(
           "text-[10px] px-1.5 py-0",
-          effectiveStrategy === "invidious"
-            ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
-            : "border-red-500/30 text-red-400 bg-red-500/10"
+          strategy === "proxy"
+            ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+            : strategy === "piped"
+              ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+              : "border-red-500/30 text-red-400 bg-red-500/10"
         )}>
-          {effectiveStrategy === "invidious" ? "Alt Player" : sourceTypeLabels.youtube}
+          {strategy === "proxy" ? "Плеер" : strategy === "piped" ? "Piped" : sourceTypeLabels.youtube}
         </Badge>
         {/* Manual strategy switcher */}
         <div className="ml-auto flex items-center gap-1">
-          {(["invidious", "nocookie", "direct"] as YouTubeStrategy[]).map(s => (
+          {(["proxy", "piped", "nocookie", "direct"] as YouTubeStrategy[]).map(s => (
             <button
               key={s}
               onClick={() => switchTo(s)}
               className={cn(
                 "text-[9px] px-1.5 py-0.5 rounded transition-colors",
-                effectiveStrategy === s
+                strategy === s
                   ? "bg-white/15 text-white font-medium"
                   : "text-muted-foreground hover:text-white hover:bg-white/5"
               )}
-              title={strategyLabel[s]}
+              title={strategyBtnTooltip[s]}
             >
               {strategyBtnLabel[s]}
             </button>
@@ -250,24 +230,79 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
         </div>
       </div>
 
-      {/* YouTube error banner */}
-      {ytError && (effectiveStrategy === "nocookie" || effectiveStrategy === "direct") && (
+      {/* Error banner */}
+      {error && strategy !== "link" && (
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-xs">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>YouTube ошибка {ytError} — автор запретил встраивание или региональная блокировка</span>
+          <span>{error}</span>
           <button
-            onClick={() => switchTo("invidious")}
+            onClick={() => switchTo("piped")}
             className="ml-auto shrink-0 underline hover:text-yellow-300"
           >
-            Переключить на Alt
+            Piped
           </button>
         </div>
       )}
 
-      {effectiveStrategy === "link" ? (
+      {/* Strategy: Proxy — native <video> with stream from Piped API */}
+      {strategy === "proxy" && (
+        <>
+          {loading ? (
+            <div className="flex items-center justify-center rounded-xl border border-white/5 bg-black/20" style={{ paddingBottom: "56.25%", position: "relative" }}>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+                <span className="text-xs text-muted-foreground">Загрузка видео...</span>
+              </div>
+            </div>
+          ) : videoInfo?.streamUrl ? (
+            <div className="glass rounded-xl p-1 border-white/5 overflow-hidden">
+              <video
+                ref={videoRef}
+                src={videoInfo.streamUrl}
+                controls
+                className="w-full rounded-lg"
+                preload="metadata"
+                autoPlay
+              >
+                Ваш браузер не поддерживает воспроизведение видео.
+              </video>
+              {videoInfo.isVideoOnly && (
+                <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-yellow-400">
+                  <VolumeX className="h-3 w-3" />
+                  Видеоряд без звука (нет прогрессивного потока). Попробуйте Piped или YT.
+                </div>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
+
+      {/* Strategy: iframe (piped / nocookie / direct) */}
+      {(strategy === "piped" || strategy === "nocookie" || strategy === "direct") && embedUrl && (
+        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+          <iframe
+            key={strategy}
+            src={embedUrl}
+            title={title || "YouTube видео"}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 h-full w-full"
+            onError={() => {
+              // Auto-fallback chain
+              if (strategy === "piped") switchTo("nocookie");
+              else if (strategy === "nocookie") switchTo("direct");
+              else switchTo("link");
+            }}
+          />
+        </div>
+      )}
+
+      {/* Strategy: link — just show buttons */}
+      {strategy === "link" && (
         <div className="glass rounded-xl p-5 border-white/5">
           <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить встроенный плеер. Нажмите кнопку ниже, чтобы посмотреть видео.
+            Не удалось загрузить плеер. Нажмите кнопку ниже, чтобы посмотреть видео.
           </p>
           <div className="flex flex-wrap gap-2">
             <a
@@ -280,59 +315,43 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
               Открыть на YouTube
             </a>
             <button
-              onClick={() => switchTo("invidious")}
+              onClick={() => switchTo("proxy")}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Попробовать плеер
+            </button>
+            <button
+              onClick={() => switchTo("piped")}
               className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-colors text-sm font-medium"
             >
               <ShieldCheck className="h-4 w-4" />
-              Попробовать Alt плеер
+              Piped
             </button>
           </div>
-        </div>
-      ) : (
-        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            key={`${effectiveStrategy}-${invidiousIdx}`}
-            ref={effectiveStrategy === "nocookie" || effectiveStrategy === "direct" ? iframeRef : undefined}
-            src={embedUrl!}
-            title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-            allowFullScreen
-            referrerPolicy="no-referrer"
-            className="absolute inset-0 h-full w-full"
-            onError={handleIframeError}
-          />
         </div>
       )}
 
       {/* Hints */}
-      {effectiveStrategy !== "link" && (
+      {strategy !== "link" && (
         <div className="flex items-center justify-between">
           <p className="text-[10px] text-muted-foreground/60">
-            {effectiveStrategy === "invidious"
-              ? "Alt плеер (Invidious) — видео без ограничений YouTube"
-              : "Если видео не играет — нажмите Alt"
+            {strategy === "proxy"
+              ? "Встроенный плеер — видео без ограничений YouTube"
+              : strategy === "piped"
+                ? "Piped — альтернативный YouTube без блокировок"
+                : "Если видео не играет — нажмите Плеер или Piped"
             }
           </p>
-          <div className="flex items-center gap-3">
-            {effectiveStrategy === "invidious" && invidiousIdx > 0 && (
-              <button
-                onClick={() => setInvidiousIdx(prev => (prev + 1) % INVIDIOUS_INSTANCES.length)}
-                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-purple-400 transition-colors"
-              >
-                <RefreshCw className="h-2.5 w-2.5" />
-                Другой сервер
-              </button>
-            )}
-            <a
-              href={`https://www.youtube.com/watch?v=${videoId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
-            >
-              <ExternalLink className="h-2.5 w-2.5" />
-              YouTube
-            </a>
-          </div>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
+          >
+            <ExternalLink className="h-2.5 w-2.5" />
+            YouTube
+          </a>
         </div>
       )}
     </div>
@@ -407,7 +426,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → nocookie + direct fallback
+  // YouTube → native <video> via Piped API + fallbacks
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
