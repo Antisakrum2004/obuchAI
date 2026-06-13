@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
       `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
       `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
       `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
+      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`,
     ];
     for (const sql of sprint7Columns) {
       try {
@@ -141,10 +142,38 @@ export async function POST(request: NextRequest) {
         // Column may already exist
       }
     }
-    logs.push("   Sprint 7 columns (quiz, practical_task, timecodes) checked");
+    logs.push("   Sprint 7 columns (quiz, practical_task, timecodes, complexityOrder) checked");
 
-    // 10. Verification
-    logs.push("10. Verification:");
+    // 10. Populate complexityOrder for existing articles (based on difficulty)
+    logs.push("10. Populating complexityOrder for existing articles...");
+    try {
+      const difficultyOrder = { easy: 1, medium: 2, hard: 3 };
+      const { rows: spaces } = await pool.query(`SELECT id FROM knowledge_spaces`);
+      for (const space of spaces) {
+        const { rows: spaceArticles } = await pool.query(
+          `SELECT id, difficulty, title FROM articles WHERE "spaceId" = $1 ORDER BY difficulty ASC, title ASC`,
+          [space.id]
+        );
+        const sorted = spaceArticles.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+          const da = difficultyOrder[(a.difficulty as string) || "medium"] || 2;
+          const db = difficultyOrder[(b.difficulty as string) || "medium"] || 2;
+          if (da !== db) return da - db;
+          return String(a.title).localeCompare(String(b.title));
+        });
+        for (let i = 0; i < sorted.length; i++) {
+          await pool.query(
+            `UPDATE articles SET "complexityOrder" = $1 WHERE id = $2 AND "complexityOrder" IS NULL`,
+            [i + 1, sorted[i].id]
+          );
+        }
+      }
+      logs.push("   complexityOrder populated for all articles");
+    } catch (e: any) {
+      logs.push(`   Warning: ${e.message}`);
+    }
+
+    // 11. Verification
+    logs.push("11. Verification:");
     try {
       const articleWithSpace = await pool.query(`
         SELECT COUNT(*) as count FROM articles WHERE "spaceId" IS NOT NULL AND "spaceId" != ''
