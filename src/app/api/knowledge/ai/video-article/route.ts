@@ -116,7 +116,15 @@ Video ID: ${videoId}
 
     console.log(`[VideoArticle] AI response parsed, title: ${transcript.title}, content length: ${String(transcript.content || "").length}`);
 
-    // Step 2: Create the article
+    // Step 2: Determine space via AI (spaceId is NOT NULL in DB)
+    // Use AI to categorize the article into a space
+    const spaceId = await determineSpace(
+      customTitle || (transcript.title as string) || `Видео-урок: ${videoId}`,
+      String(transcript.content || "").substring(0, 2000),
+      String(transcript.tags ? JSON.stringify(transcript.tags) : "")
+    );
+
+    // Step 3: Create the article
     const articleTitle = customTitle || (transcript.title as string) || `Видео-урок: ${videoId}`;
     const slug = generateSlug(articleTitle) || `video-${Date.now()}`;
     const articleId = genId("art_");
@@ -128,7 +136,7 @@ Video ID: ${videoId}
         status, "isPublished", "aiGenerated", "createdAt", "updatedAt"
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
-        NULL, $8, $9, $10,
+        $8, $9, $10, $11,
         'pending', false, true, NOW(), NOW()
       )`,
       [
@@ -139,6 +147,7 @@ Video ID: ${videoId}
         transcript.summary || null,
         transcript.tags ? JSON.stringify(transcript.tags) : null,
         transcript.keyConcepts ? JSON.stringify(transcript.keyConcepts) : null,
+        spaceId,
         url,
         url,
         "youtube",
@@ -209,6 +218,75 @@ Video ID: ${videoId}
       { error: "Ошибка создания статьи из видео", details: message },
       { status: 500 }
     );
+  }
+}
+
+// ── Determine Space via AI ──────────────────────────────────────
+
+async function determineSpace(title: string, contentPreview: string, tagsJson: string): Promise<string> {
+  try {
+    // First try to find existing spaces
+    const spacesRes = await pool.query(
+      `SELECT id, name FROM knowledge_spaces ORDER BY "order" ASC`
+    );
+    const existingSpaces = spacesRes.rows as Array<{ id: string; name: string }>;
+
+    if (existingSpaces.length === 0) {
+      // No spaces exist — create a default one
+      const defaultSpaceId = genId("ks_");
+      await pool.query(
+        `INSERT INTO knowledge_spaces (id, name, slug, "isPublished", "order", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, true, 1, NOW(), NOW())`,
+        [defaultSpaceId, "Основы AI", "osnovy-ai"]
+      );
+      console.log(`[VideoArticle] Created default space "Основы AI" (${defaultSpaceId})`);
+      return defaultSpaceId;
+    }
+
+    // Ask AI which space fits best
+    const spaceNames = existingSpaces.map((s) => `"${s.name}"`).join(", ");
+
+    const completion = await createChatCompletion([
+      {
+        role: "system",
+        content: `Определи, в какой раздел лучше всего поместить статью. Доступные разделы: ${spaceNames}. Ответь ТОЛЬКО названием раздела (точно как в списке), без кавычек и пояснений.`,
+      },
+      {
+        role: "user",
+        content: `Статья: "${title}"\nТеги: ${tagsJson}\n\n${contentPreview.substring(0, 1500)}`,
+      },
+    ], { temperature: 0.1 });
+
+    const aiChoice = completion.choices[0]?.message?.content?.trim();
+    if (aiChoice) {
+      const matched = existingSpaces.find((s) =>
+        s.name.toLowerCase() === aiChoice.toLowerCase() ||
+        s.name.toLowerCase().includes(aiChoice.toLowerCase()) ||
+        aiChoice.toLowerCase().includes(s.name.toLowerCase())
+      );
+      if (matched) {
+        console.log(`[VideoArticle] AI chose space: "${matched.name}" (${matched.id})`);
+        return matched.id;
+      }
+    }
+
+    // Fallback: use first space
+    const firstSpace = existingSpaces[0];
+    console.log(`[VideoArticle] AI space match failed, using first: "${firstSpace.name}" (${firstSpace.id})`);
+    return firstSpace.id;
+  } catch (err) {
+    console.error("[VideoArticle] determineSpace error:", err);
+    // Last resort — try to get any space
+    const res = await pool.query(`SELECT id FROM knowledge_spaces LIMIT 1`);
+    if (res.rows[0]) return res.rows[0].id;
+    // Create default
+    const id = genId("ks_");
+    await pool.query(
+      `INSERT INTO knowledge_spaces (id, name, slug, "isPublished", "order", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, true, 1, NOW(), NOW())`,
+      [id, "Основы AI", "osnovy-ai"]
+    );
+    return id;
   }
 }
 
@@ -357,13 +435,17 @@ async function processCourse(articleId: string) {
 
     const cleaned = response.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     try {
-      JSON.parse(cleaned); // validate
-      // Store as article metadata
+      const parsed = JSON.parse(cleaned); // validate
+      // Store quiz and practical task in real DB columns
       await pool.query(
-        `UPDATE articles SET "courseDraft" = $1, "updatedAt" = NOW() WHERE id = $2`,
-        [cleaned, articleId]
+        `UPDATE articles SET quiz = $1, practical_task = $2, "updatedAt" = NOW() WHERE id = $3`,
+        [
+          parsed.quiz ? JSON.stringify(parsed.quiz) : null,
+          parsed.practice ? JSON.stringify(parsed.practice) : null,
+          articleId,
+        ]
       );
-      console.log(`[VideoArticle] Course draft created`);
+      console.log(`[VideoArticle] Quiz + practice task saved`);
     } catch {
       console.warn("[VideoArticle] Course draft was not valid JSON, skipping");
     }
