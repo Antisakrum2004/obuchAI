@@ -3,8 +3,23 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
+// Auto-migrate: ensure complexityOrder column exists (runs once, then no-op)
+let complexityOrderMigrated = false;
+async function ensureComplexityOrderColumn() {
+  if (complexityOrderMigrated) return;
+  complexityOrderMigrated = true;
+  try {
+    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`);
+  } catch {
+    // Column already exists
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
+    // Auto-migrate complexityOrder column on first request
+    await ensureComplexityOrderColumn();
+
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
     const recent = searchParams.get("recent");
