@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
+import { cn } from "@/lib/utils";
 
 interface ArticleData {
   id: string;
@@ -244,9 +245,9 @@ export default function KnowledgeSpacePage({
                           </div>
                           <div className="hidden sm:flex items-center gap-1 shrink-0">
                             {article.videoUrl && (
-                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
+                              <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0", getVideoBadgeStyle(article.videoUrl, article.sourceType))}>
                                 <Video className="h-2.5 w-2.5 mr-0.5" />
-                                Видео
+                                {getVideoBadgeLabel(article.videoUrl, article.sourceType)}
                               </Badge>
                             )}
                             {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
@@ -308,4 +309,44 @@ function pluralize(n: number, one: string, few: string, many: string): string {
 
 function pluralizeR(n: number): string {
   return pluralize(n, "материал", "материала", "материалов");
+}
+
+function detectVideoSource(url: string): string {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    if (h.includes("youtube.com") || h.includes("youtu.be")) return "youtube";
+    if (h.includes("rutube.ru")) return "rutube";
+    if (h.includes("vk.com") || h.includes("vkvideo")) return "vk";
+    if (h.includes("disk.yandex") || h.includes("yandex")) return "yandex_disk";
+    if (url.endsWith(".mp4")) return "direct";
+    return "other";
+  } catch {
+    return "other";
+  }
+}
+
+function getVideoBadgeLabel(url: string, sourceType?: string | null): string {
+  const type = sourceType || detectVideoSource(url);
+  const labels: Record<string, string> = {
+    youtube: "YouTube",
+    rutube: "Rutube",
+    vk: "VK Видео",
+    yandex_disk: "Яндекс",
+    direct: "MP4",
+    other: "Видео",
+  };
+  return labels[type] || "Видео";
+}
+
+function getVideoBadgeStyle(url: string, sourceType?: string | null): string {
+  const type = sourceType || detectVideoSource(url);
+  const styles: Record<string, string> = {
+    youtube: "border-red-500/30 text-white bg-red-500/80",
+    rutube: "border-blue-500/30 text-white bg-blue-500/80",
+    vk: "border-blue-500/30 text-white bg-blue-600/80",
+    yandex_disk: "border-yellow-500/30 text-white bg-yellow-600/80",
+    direct: "border-emerald-500/30 text-white bg-emerald-500/80",
+    other: "border-emerald-500/30 text-white bg-emerald-500/80",
+  };
+  return styles[type] || styles.other;
 }

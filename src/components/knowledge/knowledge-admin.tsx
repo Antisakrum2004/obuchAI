@@ -29,6 +29,43 @@ import {
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 
+// ── Video Source Detection ──────────────────────────────────────
+
+function detectSourceType(url: string): string | null {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
+    if (hostname.includes("rutube.ru")) return "rutube";
+    if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
+    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    if (hostname.endsWith(".mp4") || url.endsWith(".mp4")) return "direct";
+    return "other";
+  } catch {
+    return null;
+  }
+}
+
+const sourceTypeLabels: Record<string, { label: string; color: string }> = {
+  youtube: { label: "YouTube", color: "border-red-500/30 text-red-400 bg-red-500/10" },
+  rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
+  vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
+  yandex_disk: { label: "Яндекс", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
+  direct: { label: "MP4", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
+  other: { label: "Ссылка", color: "border-white/10 text-muted-foreground" },
+};
+
+function VideoSourceBadge({ url }: { url: string }) {
+  const type = detectSourceType(url);
+  if (!type) return null;
+  const config = sourceTypeLabels[type] || sourceTypeLabels.other;
+  return (
+    <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0 shrink-0", config.color)}>
+      {config.label}
+    </Badge>
+  );
+}
+
 // ── Types ──────────────────────────────────────────────────────
 
 interface SpaceData {
@@ -244,6 +281,7 @@ export function KnowledgeAdmin() {
           pdfUrl: artForm.pdfUrl || null,
           pptxUrl: artForm.pptxUrl || null,
           sourceUrl: artForm.sourceUrl || null,
+          sourceType: artForm.videoUrl ? detectSourceType(artForm.videoUrl) : (artForm.sourceUrl ? detectSourceType(artForm.sourceUrl) : null),
         }),
       });
       if (res.ok) {
@@ -601,7 +639,15 @@ export function KnowledgeAdmin() {
 
               {/* URL Fields */}
               <div className="grid gap-3 md:grid-cols-2">
-                <Input placeholder="Ссылка на видео (YouTube, Rutube...)" value={artForm.videoUrl} onChange={(e) => setArtForm({ ...artForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10" />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Input placeholder="Ссылка на видео (YouTube, Rutube, VK, MP4)" value={artForm.videoUrl} onChange={(e) => setArtForm({ ...artForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10" />
+                    {artForm.videoUrl && <VideoSourceBadge url={artForm.videoUrl} />}
+                  </div>
+                  {artForm.videoUrl && detectSourceType(artForm.videoUrl) && (
+                    <p className="text-[10px] text-muted-foreground">Видео появится в разделе «Материалы» при прохождении курса</p>
+                  )}
+                </div>
                 <Input placeholder="Ссылка на PDF" value={artForm.pdfUrl} onChange={(e) => setArtForm({ ...artForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10" />
                 <Input placeholder="Ссылка на презентацию (PPTX)" value={artForm.pptxUrl} onChange={(e) => setArtForm({ ...artForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10" />
                 <Input placeholder="Ссылка на источник" value={artForm.sourceUrl} onChange={(e) => setArtForm({ ...artForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10" />
@@ -639,7 +685,10 @@ export function KnowledgeAdmin() {
                     />
                     <Input value={typeof editArtForm.tags === "string" ? editArtForm.tags : (Array.isArray(editArtForm.tags) ? editArtForm.tags.join(", ") : "")} onChange={(e) => setEditArtForm({ ...editArtForm, tags: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Теги (через запятую)" />
                     <div className="grid gap-2 md:grid-cols-2">
-                      <Input value={(editArtForm.videoUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на видео" />
+                      <div className="flex items-center gap-2">
+                        <Input value={(editArtForm.videoUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на видео" />
+                        {(editArtForm.videoUrl as string) && <VideoSourceBadge url={editArtForm.videoUrl as string} />}
+                      </div>
                       <Input value={(editArtForm.pdfUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на PDF" />
                       <Input value={(editArtForm.pptxUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на презентацию" />
                       <Input value={(editArtForm.sourceUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на источник" />

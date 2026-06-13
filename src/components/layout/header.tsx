@@ -2,7 +2,7 @@
 
 import { useUserStore } from "@/store/user-store";
 import { XPBar } from "@/components/gamification/xp-bar";
-import { StreakCounter } from "@/components/gamification/streak-counter";
+
 import { Button } from "@/components/ui/button";
 import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { AnimatedNumber } from "@/components/gamification/animated-number";
@@ -19,7 +19,7 @@ interface HeaderProps {
 export function Header({ onMenuToggle }: HeaderProps) {
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
-  const { xp, level, streak, name, image, role, id: userId } = useUserStore();
+  const { xp, level, name, image, role, id: userId } = useUserStore();
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -42,7 +42,6 @@ export function Header({ onMenuToggle }: HeaderProps) {
       {/* Right side */}
       <div className="flex items-center gap-3">
         <ThemeToggle size="small" />
-        <StreakCounter streak={streak} />
 
         {session ? (
           <Link

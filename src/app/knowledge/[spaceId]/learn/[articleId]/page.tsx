@@ -224,7 +224,7 @@ export default function LearnLessonPage({
   const getAvailableBlocks = useCallback((): LessonBlock[] => {
     if (!article) return ["summary"];
     const blocks: LessonBlock[] = ["summary"];
-    if (article.videoUrl || article.timecodes?.length) blocks.push("materials");
+    if (article.videoUrl) blocks.push("materials");
     if (article.content && article.content.length > 100) blocks.push("article");
     if (article.quiz && article.quiz.length > 0) blocks.push("quiz");
     if (article.practical_task) blocks.push("practice");

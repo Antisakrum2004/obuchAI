@@ -13,8 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
-import { Plus, Loader2, FileText, Sparkles } from "lucide-react";
+import { Plus, Loader2, FileText, Sparkles, Video } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -22,6 +24,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// ── Video Source Detection ──────────────────────────────────────
+
+function detectSourceType(url: string): string | null {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
+    if (hostname.includes("rutube.ru")) return "rutube";
+    if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
+    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    if (hostname.endsWith(".mp4") || url.endsWith(".mp4")) return "direct";
+    return "other";
+  } catch {
+    return null;
+  }
+}
+
+const sourceTypeLabels: Record<string, { label: string; color: string }> = {
+  youtube: { label: "YouTube", color: "border-red-500/30 text-red-400 bg-red-500/10" },
+  rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
+  vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
+  yandex_disk: { label: "Яндекс", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
+  direct: { label: "MP4", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
+  other: { label: "Ссылка", color: "border-white/10 text-muted-foreground" },
+};
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -114,6 +142,7 @@ export function CreateArticleDialog({
         difficulty: difficulty || null,
         videoUrl: videoUrl.trim() || null,
         pdfUrl: pdfUrl.trim() || null,
+        sourceType: videoUrl.trim() ? detectSourceType(videoUrl.trim()) : null,
       };
 
       const res = await fetch("/api/knowledge/articles", {
@@ -294,12 +323,28 @@ export function CreateArticleDialog({
               <label className="text-xs text-muted-foreground font-medium">
                 Видео URL
               </label>
-              <Input
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="https://..."
-                className="bg-white/5 border-white/10"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  placeholder="YouTube, Rutube, VK, MP4..."
+                  className="bg-white/5 border-white/10"
+                />
+                {videoUrl && (() => {
+                  const type = detectSourceType(videoUrl);
+                  if (!type) return null;
+                  const config = sourceTypeLabels[type] || sourceTypeLabels.other;
+                  return (
+                    <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0 shrink-0", config.color)}>
+                      <Video className="h-2.5 w-2.5 mr-0.5" />
+                      {config.label}
+                    </Badge>
+                  );
+                })()}
+              </div>
+              {videoUrl && detectSourceType(videoUrl) && (
+                <p className="text-[10px] text-muted-foreground">Видео появится в разделе «Материалы» при прохождении курса</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground font-medium">
