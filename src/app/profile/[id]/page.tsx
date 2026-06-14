@@ -374,25 +374,14 @@ export default function ProfilePage() {
           </div>
         </motion.div>
 
-        {/* Referral Card (only on own profile) */}
-        {isOwnProfile && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.15 }}
-          >
-            <ReferralCard />
-          </motion.div>
-        )}
-
-        {/* Achievements section (full width) */}
+        {/* ── Achievements section (MOVED UP — above referrals) ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
         >
           <div className="glass rounded-xl p-4">
-            <h3 className="font-semibold mb-4">
+            <h3 className="font-semibold mb-3 text-sm">
               Достижения ({profile.achievements.length})
             </h3>
               {profile.achievements.length === 0 ? (
@@ -401,7 +390,7 @@ export default function ProfilePage() {
                 </p>
               ) : (
                 <div
-                  className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-96 overflow-y-auto pr-1"
+                  className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-80 overflow-y-auto pr-1"
                 >
                   {profile.achievements.map((achievement) => {
                     const slugKey = achievement.slug?.toLowerCase().replace(/_/g, "-") || "";
@@ -421,6 +410,7 @@ export default function ProfilePage() {
                         xpReward={achievement.xpReward}
                         earned={true}
                         earnedAt={achievement.earnedAt}
+                        className="compact"
                       />
                     );
                   })}
@@ -428,6 +418,17 @@ export default function ProfilePage() {
               )}
             </div>
           </motion.div>
+
+        {/* ── Referral Card (MOVED DOWN — below achievements) ── */}
+        {isOwnProfile && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <ReferralCard />
+          </motion.div>
+        )}
 
         {/* Account actions — only on own profile */}
         {isOwnProfile && (

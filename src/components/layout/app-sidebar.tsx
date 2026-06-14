@@ -15,6 +15,9 @@ import {
   BookOpen,
   Archive,
   Map,
+  Database,
+  Users,
+  LayoutList,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -23,19 +26,32 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.31.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.32.0";
 
-const allNavItems = [
-  { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
-  { href: "/challenges", label: "Задачи", icon: Target, adminOnly: false },
-  { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
-  { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: true },
-  { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
-  { href: "/knowledge/course-map", label: "Карта курса", icon: Map, adminOnly: false },
-  { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
-  { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
-  { href: "/about", label: "О проекте", icon: Info, adminOnly: false },
-  { href: "/admin", label: "Управление", icon: Settings, adminOnly: true },
+/**
+ * Navigation items for all users.
+ * Order: Главная → Обучение → Задачи → Рейтинг → Ачивки → О проекте
+ *
+ * "База знаний" (knowledge) is adminOnly — regular users access
+ * learning content through "Обучение" (course-map) instead.
+ */
+const userNavItems = [
+  { href: "/dashboard", label: "Главная", icon: Home },
+  { href: "/knowledge/course-map", label: "Обучение", icon: Map },
+  { href: "/challenges", label: "Задачи", icon: Target },
+  { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
+  { href: "/achievements", label: "Ачивки", icon: Award },
+  { href: "/about", label: "О проекте", icon: Info },
+];
+
+/**
+ * Admin-only navigation items — shown at the bottom of the list.
+ * These are special management tabs only accessible to ADMIN role.
+ */
+const adminNavItems = [
+  { href: "/knowledge", label: "База знаний", icon: BookOpen },
+  { href: "/knowledge/materials", label: "Материалы", icon: Archive },
+  { href: "/admin", label: "Управление", icon: Settings },
 ];
 
 interface AppSidebarProps {
@@ -48,7 +64,9 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
   const isAdmin = session?.user?.role === "admin";
-  const navItems = allNavItems.filter(item => !item.adminOnly || isAdmin);
+
+  // Merge nav items: user items first, admin items appended if admin
+  const navItems = isAdmin ? [...userNavItems, ...adminNavItems] : userNavItems;
 
   return (
     <div className={cn("flex h-full flex-col items-center", className)}>
@@ -64,6 +82,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
         {navItems.map((item) => {
           const isExactMatch = pathname === item.href;
           const isPrefixMatch = pathname.startsWith(item.href + "/");
+          // Special case: "/knowledge" should only highlight on exact match (not sub-routes)
           const isActive = item.href === "/knowledge" ? isExactMatch : (isExactMatch || isPrefixMatch);
 
           const iconButton = (

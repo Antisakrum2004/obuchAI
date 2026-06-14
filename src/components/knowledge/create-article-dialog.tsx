@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Plus, Loader2, FileText, Sparkles, Video, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -24,6 +25,13 @@ interface CreateArticleDialogProps {
 }
 
 type TabType = "manual" | "video";
+type DifficultyType = "easy" | "medium" | "hard";
+
+const DIFFICULTY_OPTIONS: { value: DifficultyType; label: string; color: string; activeColor: string }[] = [
+  { value: "easy", label: "Легкая", color: "border-white/10 text-muted-foreground", activeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+  { value: "medium", label: "Средняя", color: "border-white/10 text-muted-foreground", activeColor: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+  { value: "hard", label: "Сложная", color: "border-white/10 text-muted-foreground", activeColor: "bg-red-500/20 text-red-400 border-red-500/30" },
+];
 
 // ── Slug generator (Cyrillic → Latin) ─────────────────────────
 
@@ -60,11 +68,13 @@ export function CreateArticleDialog({
   const [tags, setTags] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
+  const [difficulty, setDifficulty] = useState<DifficultyType>("medium");
   const [creating, setCreating] = useState(false);
 
   // Video tab state
   const [videoTabUrl, setVideoTabUrl] = useState("");
   const [videoTabTitle, setVideoTabTitle] = useState("");
+  const [videoTabDifficulty, setVideoTabDifficulty] = useState<DifficultyType>("medium");
   const [videoCreating, setVideoCreating] = useState(false);
   const [videoProgress, setVideoProgress] = useState("");
 
@@ -77,8 +87,10 @@ export function CreateArticleDialog({
       setTags("");
       setVideoUrl("");
       setPdfUrl("");
+      setDifficulty("medium");
       setVideoTabUrl("");
       setVideoTabTitle("");
+      setVideoTabDifficulty("medium");
       setVideoProgress("");
       setTab("manual");
     }
@@ -123,6 +135,7 @@ export function CreateArticleDialog({
         sourceType: isVideo ? "video" : undefined,
         isPublished: isVideo ? true : undefined,
         status: isVideo ? "done" : undefined,
+        difficulty, // User-selected difficulty
       };
 
       const res = await fetch("/api/knowledge/articles", {
@@ -207,6 +220,7 @@ export function CreateArticleDialog({
         body: JSON.stringify({
           url: videoTabUrl.trim(),
           title: videoTabTitle.trim() || undefined,
+          difficulty: videoTabDifficulty,
         }),
       });
 
@@ -284,10 +298,32 @@ export function CreateArticleDialog({
               />
             </div>
 
+            {/* Difficulty selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">
+                Сложность <span className="text-red-400">*</span>
+              </label>
+              <div className="flex gap-2">
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDifficulty(opt.value)}
+                    className={cn(
+                      "flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-all",
+                      difficulty === opt.value ? opt.activeColor : opt.color
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* AI auto-categorize badge */}
             <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
               <Sparkles className="h-3 w-3" />
-              AI автоматически определит раздел и сложность
+              AI автоматически определит раздел; сложность можно уточнить вручную выше
             </div>
 
             {/* Summary */}
@@ -417,6 +453,28 @@ export function CreateArticleDialog({
               />
             </div>
 
+            {/* Difficulty selector for video tab */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">
+                Сложность <span className="text-red-400">*</span>
+              </label>
+              <div className="flex gap-2">
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setVideoTabDifficulty(opt.value)}
+                    className={cn(
+                      "flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-all",
+                      videoTabDifficulty === opt.value ? opt.activeColor : opt.color
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* How it works */}
             <div className="rounded-lg bg-white/[0.02] border border-white/5 p-4 space-y-3">
               <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -427,7 +485,7 @@ export function CreateArticleDialog({
                 <li>AI извлекает содержание видео (субтитры/описание)</li>
                 <li>Генерирует полноценную статью с заголовками и примерами</li>
                 <li>Создаёт квиз из 5+ вопросов и практическое задание</li>
-                <li>Автоматически определяет раздел и сложность</li>
+                <li>Автоматически определяет раздел</li>
                 <li>Статья публикуется сразу с встроенным видео</li>
               </ol>
             </div>

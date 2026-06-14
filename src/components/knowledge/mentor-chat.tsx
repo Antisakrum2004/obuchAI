@@ -110,8 +110,8 @@ export function MentorChat() {
 
   return (
     <>
-      {/* Floating trigger button */}
-      <div className="fixed bottom-20 md:bottom-6 right-4 z-40 flex flex-col items-center gap-1">
+      {/* Floating trigger button — bottom-right corner */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-center gap-1">
         <button
           onClick={() => setOpen(true)}
           className="flex h-10 w-10 items-center justify-center rounded-full glass glass-hover shadow-lg transition-all duration-200 hover:scale-110 active:scale-95 group"

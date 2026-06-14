@@ -50,6 +50,8 @@ export function PremiumAchievementCard({
   earnedAt,
   className,
 }: PremiumAchievementCardProps) {
+  const isCompact = className?.includes("compact");
+
   return (
     <div
       className={cn(
@@ -58,73 +60,118 @@ export function PremiumAchievementCard({
           ? [rarityBorder[rarity], "bg-gradient-to-b from-white/[0.04] to-white/[0.01]"]
           : ["border-white/[0.06] bg-white/[0.02] opacity-30 grayscale"],
         earned && "hover:-translate-y-1 hover:shadow-lg",
+        isCompact ? "p-1.5" : "",
         className
       )}
     >
-      {/* Floating icon — overlaps top edge */}
-      <div className="flex justify-center -mt-5 relative z-10">
-        <div
-          className={cn(
-            "flex items-center justify-center",
-            earned ? rarityTextColor[rarity] : "text-muted-foreground/40"
-          )}
-          style={{ width: 44, height: 44 }}
-        >
-          {iconName ? (
-            <AchievementIcon
-              name={iconName}
-              className="w-full h-full"
-              color={earned ? undefined : "currentColor"}
-            />
-          ) : (
-            <span className="text-2xl leading-none">{icon}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Card body */}
-      <div className="px-3 pb-3 pt-1 text-center">
-        {/* Rarity label */}
-        <div className="flex justify-center mb-1">
-          <span
+      {isCompact ? (
+        /* ── Compact layout: icon + text inline ── */
+        <div className="flex items-center gap-1.5">
+          <div
             className={cn(
-              "text-[9px] font-bold tracking-wider uppercase",
-              `ach-rarity--${rarity}`
+              "flex items-center justify-center shrink-0",
+              earned ? rarityTextColor[rarity] : "text-muted-foreground/40"
             )}
+            style={{ width: 28, height: 28 }}
           >
-            {rarityLabel[rarity]}
-          </span>
+            {iconName ? (
+              <AchievementIcon
+                name={iconName}
+                className="w-full h-full"
+                color={earned ? undefined : "currentColor"}
+              />
+            ) : (
+              <span className="text-base leading-none">{icon}</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h4
+              className={cn(
+                "text-[10px] font-bold truncate leading-tight",
+                earned ? "text-foreground" : "text-muted-foreground/40"
+              )}
+            >
+              {name}
+            </h4>
+            <span
+              className={cn(
+                "text-[8px] font-semibold",
+                earned ? "text-emerald-400" : "text-muted-foreground/30"
+              )}
+            >
+              +{xpReward} XP
+            </span>
+          </div>
         </div>
+      ) : (
+        /* ── Default layout: centered icon over text ── */
+        <>
+          {/* Floating icon — overlaps top edge */}
+          <div className="flex justify-center -mt-5 relative z-10">
+            <div
+              className={cn(
+                "flex items-center justify-center",
+                earned ? rarityTextColor[rarity] : "text-muted-foreground/40"
+              )}
+              style={{ width: 44, height: 44 }}
+            >
+              {iconName ? (
+                <AchievementIcon
+                  name={iconName}
+                  className="w-full h-full"
+                  color={earned ? undefined : "currentColor"}
+                />
+              ) : (
+                <span className="text-2xl leading-none">{icon}</span>
+              )}
+            </div>
+          </div>
 
-        {/* Achievement name */}
-        <h4
-          className={cn(
-            "text-xs font-bold text-center line-clamp-1 mb-1",
-            earned ? "text-foreground" : "text-muted-foreground/40"
-          )}
-        >
-          {name}
-        </h4>
+          {/* Card body */}
+          <div className="px-3 pb-3 pt-1 text-center">
+            {/* Rarity label */}
+            <div className="flex justify-center mb-1">
+              <span
+                className={cn(
+                  "text-[9px] font-bold tracking-wider uppercase",
+                  `ach-rarity--${rarity}`
+                )}
+              >
+                {rarityLabel[rarity]}
+              </span>
+            </div>
 
-        {/* XP reward */}
-        <span
-          className={cn(
-            "inline-block text-[10px] font-semibold",
-            earned
-              ? "text-emerald-400"
-              : "text-muted-foreground/30"
-          )}
-        >
-          +{xpReward} XP
-        </span>
+            {/* Achievement name */}
+            <h4
+              className={cn(
+                "text-xs font-bold text-center line-clamp-1 mb-1",
+                earned ? "text-foreground" : "text-muted-foreground/40"
+              )}
+            >
+              {name}
+            </h4>
 
-        {/* Earned date */}
-        {earned && earnedAt && (
-          <p className="text-[8px] text-muted-foreground/30 mt-1">
-            {new Date(earnedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
-          </p>
-        )}
-      </div>
+            {/* XP reward */}
+            <span
+              className={cn(
+                "inline-block text-[10px] font-semibold",
+                earned
+                  ? "text-emerald-400"
+                  : "text-muted-foreground/30"
+              )}
+            >
+              +{xpReward} XP
+            </span>
+
+            {/* Earned date */}
+            {earned && earnedAt && (
+              <p className="text-[8px] text-muted-foreground/30 mt-1">
+                {new Date(earnedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+              </p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
