@@ -67,7 +67,8 @@ export async function GET(request: Request) {
     );
 
     // ── Glossary ──
-    const glossFields = ["term", "definition", "aliases::text"];
+    // Search by term name, shortDefinition, category, aliases only (NOT full definition — per BUG 15)
+    const glossFields = ["term", "\"shortDefinition\"", "category", "aliases::text"];
     const glossWhere = buildILikeOR(glossFields, searchTerms);
     const glossaryResult = await pool.query(
       `SELECT id, term, definition, "shortDefinition", category, aliases, "relatedTerms"

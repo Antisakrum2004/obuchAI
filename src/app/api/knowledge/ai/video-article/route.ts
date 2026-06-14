@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
@@ -245,7 +246,77 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Step 4: Create article in database ──
+    // ── Step 4: Determine spaceId (spaceId is NOT NULL) ──
+    let spaceIdValue: string | null = null;
+    try {
+      // Get list of existing spaces for AI categorization
+      const { rows: spaces } = await pool.query(
+        `SELECT id, name, slug, description FROM knowledge_spaces ORDER BY name LIMIT 20`
+      );
+
+      if (spaces.length > 0) {
+        // Ask AI to pick the best space
+        const spaceList = spaces.map((s: { id: string; name: string; description?: string }) =>
+          `- ${s.name} (id: ${s.id})${s.description ? `: ${s.description}` : ""}`
+        ).join("\n");
+
+        const categorizeResult = await createChatCompletion([
+          {
+            role: "system",
+            content: `Ты — AI-классификатор. Выбери наиболее подходящий раздел для статьи. Ответь ТОЛЬКО id раздела, без объяснений.`
+          },
+          {
+            role: "user",
+            content: `Статья: "${articleData.title || customTitle || videoTitle}"
+Описание: ${articleData.summary || ""}
+Темы: ${Array.isArray(articleData.keyTopics) ? articleData.keyTopics.join(", ") : ""}
+
+Доступные разделы:\n${spaceList}\n\nКакой id раздела подходит?`
+          }
+        ], { temperature: 0.1 });
+
+        const rawAnswer = categorizeResult.choices?.[0]?.message?.content?.trim() || "";
+        // Extract id from answer (might be wrapped in markdown or extra text)
+        const idMatch = rawAnswer.match(/[a-zA-Z0-9_-]{8,}/);
+        if (idMatch) {
+          const matchedSpace = spaces.find((s: { id: string }) => s.id === idMatch[0]);
+          if (matchedSpace) spaceIdValue = matchedSpace.id;
+        }
+      }
+
+      // Fallback: if AI couldn't determine, use the first space
+      if (!spaceIdValue && spaces.length > 0) {
+        spaceIdValue = spaces[0].id;
+      }
+
+      // Last resort: create a default space
+      if (!spaceIdValue) {
+        const defaultSpaceId = 'sp_default_' + Date.now().toString(36);
+        await pool.query(
+          `INSERT INTO knowledge_spaces (id, name, slug, "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, NOW(), NOW())
+           ON CONFLICT (id) DO NOTHING`,
+          [defaultSpaceId, "Общие материалы", "general"]
+        );
+        spaceIdValue = defaultSpaceId;
+      }
+    } catch (err) {
+      console.error("[VideoArticle] Space determination failed:", err);
+      // Try to find any space as absolute fallback
+      const { rows: anySpace } = await pool.query(
+        `SELECT id FROM knowledge_spaces LIMIT 1`
+      );
+      if (anySpace[0]) {
+        spaceIdValue = anySpace[0].id;
+      } else {
+        return NextResponse.json(
+          { error: "Нет доступных разделов. Создайте хотя бы один раздел перед публикацией." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // ── Step 5: Create article in database ──
     const articleId = 'art_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
     const authorId = session.user.id;
     const slug = (articleData.title as string || customTitle || "video-lesson")
@@ -258,9 +329,9 @@ export async function POST(request: NextRequest) {
          "isPublished", "viewCount", "videoUrl", "sourceType", difficulty, "estimatedTime", 
          status, "aiGenerated", quiz, "practical_task",
          "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, 
-         true, 0, $9, $10, $11, $12, 
-         'done', true, $13, $14,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
+         true, 0, $10, $11, $12, $13, 
+         'done', true, $14, $15,
          NOW(), NOW())
        RETURNING *`,
       [
@@ -271,6 +342,7 @@ export async function POST(request: NextRequest) {
         articleData.summary || null,
         articleData.tags ? JSON.stringify(articleData.tags) : null,
         articleData.keyTopics ? JSON.stringify(articleData.keyTopics) : null,
+        spaceIdValue,
         authorId,
         url,
         sourceType,
@@ -281,11 +353,11 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    // ── Step 5: Fire-and-forget — AI categorizes and builds glossary/graph ──
+    // ── Step 6: Fire-and-forget — AI categorizes and builds glossary/graph ──
     const articleCreated = result.rows[0];
     const articleIdForChain = articleCreated.id;
 
-    (async () => {
+    waitUntil((async () => {
       try {
         await fetch(new URL("/api/knowledge/ai", request.url).toString(), {
           method: "POST",
@@ -305,7 +377,7 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.error("[VideoArticle] Background AI chain failed:", err);
       }
-    })();
+    })());
 
     return NextResponse.json({
       message: "Видео-статья создана и опубликована",

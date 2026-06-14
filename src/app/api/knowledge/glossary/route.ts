@@ -20,7 +20,8 @@ export async function GET() {
     const result = await pool.query(
       `SELECT id, term, definition, "shortDefinition", category, aliases, "relatedTerms"
        FROM glossary_terms
-       ORDER BY category ASC, term ASC`
+       ORDER BY category ASC, term ASC
+       LIMIT 50`
     );
 
     return NextResponse.json(result.rows);

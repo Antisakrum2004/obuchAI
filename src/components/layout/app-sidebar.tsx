@@ -14,6 +14,7 @@ import {
   Award,
   BookOpen,
   Archive,
+  Map,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -30,6 +31,7 @@ const allNavItems = [
   { href: "/marathon", label: "Марафон", icon: Flame, adminOnly: false },
   { href: "/knowledge/materials", label: "Материалы", icon: Archive, adminOnly: true },
   { href: "/knowledge", label: "База знаний", icon: BookOpen, adminOnly: false },
+  { href: "/knowledge/course-map", label: "Карта курса", icon: Map, adminOnly: false },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy, adminOnly: false },
   { href: "/achievements", label: "Ачивки", icon: Award, adminOnly: false },
   { href: "/about", label: "О проекте", icon: Info, adminOnly: false },

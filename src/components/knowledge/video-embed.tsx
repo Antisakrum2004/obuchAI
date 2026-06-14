@@ -99,22 +99,22 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player with nocookie-first + IFrame API error detection ───
+// ─── YouTube Player with direct-first + IFrame API error detection ───
 
-type YTStrategy = "nocookie" | "direct" | "link";
+type YTStrategy = "direct" | "nocookie" | "link";
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YTStrategy>("nocookie");
+  const [strategy, setStrategy] = useState<YTStrategy>("direct");
   const [playerError, setPlayerError] = useState<number | null>(null);
   const [showFallback, setShowFallback] = useState(false);
   const playerRef = useRef<YTPlayer | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const embedUrl =
-    strategy === "nocookie"
-      ? `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
-      : strategy === "direct"
-        ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
+    strategy === "direct"
+      ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
+      : strategy === "nocookie"
+        ? `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
         : null;
 
   // Load YouTube IFrame API
@@ -150,9 +150,9 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
                 setPlayerError(event.data);
                 // Error 101, 150 = embedding disabled; 153 = player setup error
                 if ([101, 150, 153].includes(event.data)) {
-                  if (strategy === "nocookie") {
-                    setStrategy("direct");
-                  } else if (strategy === "direct") {
+                  if (strategy === "direct") {
+                    setStrategy("nocookie");
+                  } else if (strategy === "nocookie") {
                     setStrategy("link");
                   }
                 }
@@ -187,20 +187,20 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
     return () => clearTimeout(timer);
   }, [strategy]);
 
-  // Auto-fallback: if nocookie doesn't load after 5s, try direct
+  // Auto-fallback: if direct doesn't load after 6s, try nocookie
   useEffect(() => {
-    if (strategy === "nocookie" && !playerError) {
+    if (strategy === "direct" && !playerError) {
       const timer = setTimeout(() => {
-        // Only switch if no error was detected — the API might still be loading
-      }, 5000);
+        setStrategy("nocookie");
+      }, 6000);
       return () => clearTimeout(timer);
     }
   }, [strategy, playerError]);
 
   const handleIframeError = useCallback(() => {
-    if (strategy === "nocookie") {
-      setStrategy("direct");
-    } else if (strategy === "direct") {
+    if (strategy === "direct") {
+      setStrategy("nocookie");
+    } else if (strategy === "nocookie") {
       setStrategy("link");
     }
   }, [strategy]);
@@ -256,9 +256,11 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
         />
       </div>
       {showFallback && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <p className="text-[10px] text-muted-foreground/60">
-            {playerError ? "Видео не загрузилось из-за ограничений встраивания." : "Если видео не загружается — возможны региональные ограничения."}
+            {playerError
+              ? "Видео не загрузилось из-за ограничений встраивания."
+              : "Если видео не загружается — попробуйте VPN или откройте на YouTube. Edge: Настройки → Конфиденциальность → Предотвращение отслеживания."}
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}

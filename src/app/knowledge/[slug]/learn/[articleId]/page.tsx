@@ -429,7 +429,7 @@ export default function LearnLessonPage({
             return (
               <button
                 key={block.id}
-                onClick={() => setActiveBlock(block.id)}
+                onClick={() => { setActiveBlock(block.id); setLessonCompleted(false); }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                   isActive
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -462,19 +462,34 @@ export default function LearnLessonPage({
             <p className="text-muted-foreground text-sm">
               Вы прошли все разделы урока «{article.title}»
             </p>
-            <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
+            <div className="flex flex-wrap gap-2 justify-center pt-2">
               {nextLesson && (
                 <a
                   href={`/knowledge/${encodeURIComponent(space?.slug || '')}/learn/${nextLesson.id}`}
-                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium transition-colors"
                 >
-                  Следующий урок
+                  Дальше
                   <ArrowRight className="h-4 w-4" />
                 </a>
               )}
+              <button
+                onClick={() => {
+                  setLessonCompleted(false);
+                  setActiveBlock("summary");
+                  setCompletedBlocks(new Set());
+                  setQuizAnswers(new Map());
+                  setQuizChecked(false);
+                  setShowHint(false);
+                  setShowSolution(false);
+                  setPracticeAttempted(false);
+                }}
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
+              >
+                Пройти заново
+              </button>
               <a
                 href={space ? `/knowledge/${encodeURIComponent(space.slug)}` : '/knowledge'}
-                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
+                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" />
                 К курсу
