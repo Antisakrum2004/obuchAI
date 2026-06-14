@@ -6,7 +6,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ParticlesBackground } from "@/components/effects/particles-background";
 import { AppSettingsProvider } from "@/hooks/use-app-settings";
 import { GlossaryCommand } from "@/components/knowledge/glossary-command";
-import { MentorChat } from "@/components/knowledge/mentor-chat";
 import { Providers } from "@/components/providers";
 
 const geistSans = Geist({
@@ -43,7 +42,6 @@ export default function RootLayout({
             <Providers>
               <ParticlesBackground />
               <GlossaryCommand />
-              <MentorChat />
               <div className="relative z-[1]">{children}</div>
             </Providers>
           </AppSettingsProvider>

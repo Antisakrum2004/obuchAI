@@ -4,6 +4,7 @@ import { AppSidebar } from "./app-sidebar";
 import { Header } from "./header";
 import { MobileTabBar } from "./mobile-tab-bar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { MentorChat } from "@/components/knowledge/mentor-chat";
 import { useState } from "react";
 import { useUserStats } from "@/hooks/use-user-stats";
 
@@ -42,6 +43,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Mobile Bottom Tab Bar */}
       <MobileTabBar />
+
+      {/* Mentor Chat — only inside dashboard, not on landing */}
+      <MentorChat />
     </div>
   );
 }
