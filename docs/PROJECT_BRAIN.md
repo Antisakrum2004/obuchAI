@@ -658,3 +658,42 @@ src/
 > - После ответа — показ пояснения и кнопка «Следующий вопрос»
 > - В конце — экран результатов с обзором всех ответов
 > - Прогресс-дотс показывают статус каждого вопроса (зелёный/красный/жёлтый/серый)
+
+---
+
+## СЕССИЯ 2026-06-15 — Аудит и точка перед редизайном
+
+### Результаты аудита багов
+
+| Баг | Статус | Примечание |
+|-----|--------|------------|
+| БАГ-01 correctAnswer challenges | ✅ Исправлен | SECURITY фильтр |
+| БАГ-02 correctAnswer marathon | ✅ Исправлен | Серверная валидация |
+| БАГ-03 admin/admin123 | ✅ Исправлен | env vars |
+| БАГ-04 seed key хардкод | ✅ Исправлен | env vars |
+| БАГ-05 SQL injection | ✅ Исправлен | Zod + buildSetClause |
+| БАГ-06 YouTube nocookie | ✅ Не баг | youtube.com/embed — правильно |
+| БАГ-07 dangerouslySetInnerHTML | 🔴 Есть | строки 1519, 1612 в learn-странице |
+| БАГ-08 Прокрутка табов | ✅ Исправлен | useEffect + scrollTop=0 |
+| БАГ-09 Cursor pointer | ✅ Есть | globals.css строки 161-164 |
+| БАГ-10 Навигация внизу урока | ✅ Убрана | |
+| БАГ-11 StreakCounter в хедере | 🔴 Есть | header.tsx строка 66 |
+| БАГ-12 Heatmap рандом | 🔴 Есть | Math.random() fallback |
+| БАГ-13 Захардкоженные задачи | 🔴 Есть | MODULE_NAMES строка 70 |
+| БАГ-14 Промт видео-статьи | ⚠️ Частично | улучшен но не финальный вариант |
+| БАГ-15 Ветки перед редизайном | 🔴 Нет | не задокументировано в brain |
+| БАГ-16 Rate limiting | ✅ Нет бага | rate-limit.ts существует, подключён к challenges/submit, marathon/validate, knowledge/ai |
+| БАГ-17 Error boundaries | ✅ Нет бага | error.tsx есть во всех секциях: challenges, knowledge, leaderboard, achievements, marathon, dashboard |
+| БАГ-18 Мёртвые зависимости | ✅ Нет бага | next-intl, @mdxeditor/editor, sharp, playwright отсутствуют в package.json |
+| БАГ-19 ALTER TABLE | ⚠️ Частично | db-migrate.ts существует, но admin/migrate/route.ts содержит прямые ALTER TABLE для FK (стр.284-287, 339-346) — дублирует Phase 9 db-migrate.ts |
+| БАГ-20 Реферальная логика | ⚠️ Частично | referral.ts существует, auth.ts и referral/route.ts используют импорты. user/stats/route.ts вызывает ensureReferralCode корректно. Дублирования SQL-логики нет. |
+| БАГ-25 Glow свечения | ✅ Нет бага | .glow-emerald, .glow-amber, .glow-purple активны в globals.css, используются в 9 компонентах |
+
+### Правило редизайна (добавить в brain навсегда)
+
+ПЕРЕД ЛЮБЫМ РЕДИЗАЙНОМ:
+1. Создать ветку: `git checkout -b redesign/[название]`
+2. Работать только в ней
+3. НЕ делать `git reset --hard` в main
+4. Мерж в main только после подтверждения владельца
+5. При откате: `git checkout main` (ветка остаётся нетронутой)
