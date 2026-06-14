@@ -444,7 +444,7 @@ export default function ProfilePage() {
                 className="w-full gap-2 border-white/10 bg-white/5 hover:bg-white/10"
               >
                 <Info className="h-4 w-4" />
-                О проекте
+                Академия
               </Button>
             </Link>
             <Button

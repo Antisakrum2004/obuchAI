@@ -9,15 +9,11 @@ import {
   Trophy,
   Settings,
   Zap,
-  Info,
-  Flame,
+  GraduationCap,
   Award,
   BookOpen,
   Archive,
   Map,
-  Database,
-  Users,
-  LayoutList,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -26,11 +22,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.32.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.33.0";
 
 /**
  * Navigation items for all users.
- * Order: Главная → Обучение → Задачи → Рейтинг → Ачивки → О проекте
+ * Order: Главная → Обучение → Задачи → Рейтинг → Ачивки → Академия
  *
  * "База знаний" (knowledge) is adminOnly — regular users access
  * learning content through "Обучение" (course-map) instead.
@@ -41,7 +37,7 @@ const userNavItems = [
   { href: "/challenges", label: "Задачи", icon: Target },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
   { href: "/achievements", label: "Ачивки", icon: Award },
-  { href: "/about", label: "О проекте", icon: Info },
+  { href: "/about", label: "Академия", icon: GraduationCap },
 ];
 
 /**

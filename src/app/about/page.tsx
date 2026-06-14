@@ -2,145 +2,77 @@
 
 import { motion } from "framer-motion";
 import {
-  Heart,
-  Zap,
+  GraduationCap,
+  BookOpen,
+  CheckCircle2,
+  ClipboardList,
+  Code2,
+  Target,
+  Map,
+  MessageCircle,
+  ChevronRight,
   Trophy,
   Flame,
-  Clock,
   Shield,
-  Target,
-  Sparkles,
-  ChevronRight,
-  ChevronLeft,
-  AlertTriangle,
   Star,
+  Award,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
-const sections = [
+// ── Grade data ──────────────────────────────────────────────────
+
+const grades = [
+  { range: "1–4",  name: "Начинающий", color: "emerald", bgClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", barClass: "bg-emerald-500" },
+  { range: "5–9",  name: "Специалист", color: "blue",    bgClass: "bg-blue-500/15 text-blue-400 border-blue-500/25",       barClass: "bg-blue-500" },
+  { range: "10–14", name: "Мастер",    color: "purple",  bgClass: "bg-purple-500/15 text-purple-400 border-purple-500/25",  barClass: "bg-purple-500" },
+  { range: "15–19", name: "Про",       color: "amber",   bgClass: "bg-amber-500/15 text-amber-400 border-amber-500/25",    barClass: "bg-amber-500" },
+  { range: "20–24", name: "Звезда",    color: "yellow",  bgClass: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",  barClass: "bg-yellow-500" },
+  { range: "25+",   name: "Легенда",   color: "rose",    bgClass: "bg-rose-500/15 text-rose-400 border-rose-500/25",        barClass: "bg-rose-500" },
+];
+
+// ── Mastery path steps ──────────────────────────────────────────
+
+const masterySteps = [
   {
-    icon: Sparkles,
-    title: "Что это",
-    color: "emerald",
-    content: [
-      "AI Тренажёр — это Duolingo для 1С-разработчика, который хочет перестать гуглить «как написать промпт» и начать реально использовать ИИ в работе. Промптинг, агенты, RAG, Cursor, Claude Code, MCP — всё это уже не модные слова, а инструменты, которые нужно осваивать. И мы делаем это через короткие задачи с подковырками, а не через многочасовые курсы, которые никто не досматривает.",
-      "Каждая задача — это конкретный навык. Не «изучите RAG», а «какой промпт вернёт нужный документ из базы?». Вы не читаете теорию — вы решаете. И если ошибаетесь — это не конец, а часть процесса. Главное — не сдаваться.",
-    ],
+    icon: BookOpen,
+    title: "Конспект",
+    description: "Изучите теорию — каждый урок содержит структурированный материал по теме. Читайте, смотрите видео, отмечайте ключевые концепции. Конспект — это фундамент: без него квиз покажется набором случайных вопросов, а практика — непонятной задачей.",
+    color: "text-blue-400",
+    iconBg: "bg-blue-500/15",
   },
   {
-    icon: Target,
-    title: "Что внутри",
-    color: "blue",
-    items: [
-      { emoji: "✍️", label: "Промптинг", desc: "Формулируй запросы так, чтобы ИИ понимал с полуслова" },
-      { emoji: "🤖", label: "AI Агенты", desc: "Автономные помощники: когда нужен агент, а когда — просто промпт" },
-      { emoji: "🛠️", label: "Инструменты", desc: "Cursor, Claude Code, MCP, OpenAI API — разбор полётов" },
-      { emoji: "⚡", label: "Автоматизация", desc: "RAG, пайплайны, интеграции — делегируй рутину машине" },
-      { emoji: "🖥️", label: "1С", desc: "Специфика 1С + ИИ: от отладки до генерации кода" },
-      { emoji: "🔍", label: "Дебаггинг", desc: "Найди ошибку в промпте, агенте или workflow" },
-      { emoji: "🔄", label: "Workflow", desc: "Собери правильную последовательность действий" },
-      { emoji: "👀", label: "Ревью", desc: "Оцени чужой промпт — найди ловушки и слабые места" },
-    ],
+    icon: ClipboardList,
+    title: "Квиз",
+    description: "Проверьте понимание — после конспекта вас ждут вопросы с подвохом. Квиз не проверяет память, он проверяет, поняли ли вы суть. Ошиблись — это нормально, но каждое сердце на счету. Отвечайте осознанно, а не наугад.",
+    color: "text-amber-400",
+    iconBg: "bg-amber-500/15",
   },
   {
-    icon: Heart,
-    title: "Жизни (они же сердца)",
-    color: "red",
-    content: [
-      "У тебя 3 жизни. Каждая ошибка — минус сердце. Жизни не сгорают от времени — они тратятся только на неверные ответы. Когда все 3 сердца потеряны, ты не выбываешь из игры: можно продолжать решать задачи, но XP начисляется в два раза меньше. Обидно, но справедливо.",
-      "Жизни восстанавливаются автоматически — одно сердце каждые 30 минут. Не нужно ничего нажимать, просто подожди. Таймер покажет, когда придёт следующее сердце. Так что даже если ты промахнулся трижды подряд — это не фиаско, а тайм-аут на чашку кофе.",
-    ],
-  },
-  {
-    icon: Clock,
-    title: "Кулдаун (остывание)",
-    color: "amber",
-    content: [
-      "Ошибся на конкретной задаче — получаешь 4 часа кулдауна на неё. В это время задача недоступна. Это не наказание, а защита от спама: не пытайся угадать ответ перебором, лучше подумай и вернись позже с свежей головой.",
-      "Кулдаун привязан к конкретной задаче. Все остальные задачи остаются доступны — можно переключиться и продолжать зарабатывать XP. Таймер виден в списке задач: заблокированные показываются с обратным отсчётом.",
-    ],
-  },
-  {
-    icon: Zap,
-    title: "XP и уровни",
-    color: "yellow",
-    content: [
-      "Каждый правильный ответ приносит XP. Сколько — зависит от сложности: лёгкая задача даёт 25 XP, средняя — 50, сложная — 100. Но это ещё не всё. Если решил быстро (до 30 секунд) — получаешь 100% XP. Каждый лишний 30-секундный интервал снимает 10%. Минимум — 10% от базового XP. Так что скорость имеет значение, но и через 5 минут размышлений ты всё равно получишь хоть что-то.",
-      "Без жизней XP режется пополам. Так что береги сердца — они напрямую влияют на твой прогресс. Уровни растут по формуле 100 × уровень^1.5 — первые уровни быстрые, дальше придётся попотеть.",
-    ],
-  },
-  {
-    icon: Flame,
-    title: "Стрик (серия дней)",
-    color: "orange",
-    content: [
-      "Решаешь каждый день — копишь стрик. Это не просто цифра для гордости: на 7-й день подряд получаешь бонус 200 XP, на 30-й — 1000 XP. Сгорает стрик, если не заходишь 48 часов. Не дней, а часов — то есть даже через день-два без активности серия обнулится. Лучше решать хотя бы одну задачу в день, чем потерять месячный стрик.",
-    ],
-  },
-  {
-    icon: Star,
-    title: "Достижения",
-    color: "cyan",
-    content: [
-      "16 достижений за разные подвиги: стрики, количество задач, уровень навыков, особые условия. Некоторые открываются сами — просто играй. Другие потребуют целенаправленных усилий. Собери все, если хватит упорства.",
-    ],
-  },
-  {
-    icon: AlertTriangle,
-    title: "Задачи с подковырками",
-    color: "rose",
-    content: [
-      "Задачи не очевидные. Ответ не угадается по длине или размеру варианта. Ловушки спрятаны в формулировках, вариантах ответа и порядке действий. Односложные очевидные ответы исключены — правильный вариант всегда требует думать. Если кажется слишком простым — скорее всего, это ловушка.",
-    ],
+    icon: Code2,
+    title: "Практика",
+    description: "Закрепите навык — практическое задание требует применить знания в реальном сценарии. Здесь нет вариантов ответа: вы формулируете решение сами. Именно практика превращает знание в навык, который вы используете в работе.",
+    color: "text-emerald-400",
+    iconBg: "bg-emerald-500/15",
   },
 ];
 
-const colorMap: Record<string, { bg: string; text: string; border: string; glow: string; iconBg: string }> = {
-  emerald: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/20", glow: "shadow-emerald-500/10", iconBg: "bg-emerald-500/20" },
-  blue: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/20", glow: "shadow-blue-500/10", iconBg: "bg-blue-500/20" },
-  red: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/20", glow: "shadow-red-500/10", iconBg: "bg-red-500/20" },
-  amber: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/20", glow: "shadow-amber-500/10", iconBg: "bg-amber-500/20" },
-  yellow: { bg: "bg-yellow-500/10", text: "text-yellow-400", border: "border-yellow-500/20", glow: "shadow-yellow-500/10", iconBg: "bg-yellow-500/20" },
-  orange: { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/20", glow: "shadow-orange-500/10", iconBg: "bg-orange-500/20" },
-  purple: { bg: "bg-purple-500/10", text: "text-purple-400", border: "border-purple-500/20", glow: "shadow-purple-500/10", iconBg: "bg-purple-500/20" },
-  cyan: { bg: "bg-cyan-500/10", text: "text-cyan-400", border: "border-cyan-500/20", glow: "shadow-cyan-500/10", iconBg: "bg-cyan-500/20" },
-  teal: { bg: "bg-teal-500/10", text: "text-teal-400", border: "border-teal-500/20", glow: "shadow-teal-500/10", iconBg: "bg-teal-500/20" },
-  rose: { bg: "bg-rose-500/10", text: "text-rose-400", border: "border-rose-500/20", glow: "shadow-rose-500/10", iconBg: "bg-rose-500/20" },
-};
+// ── Interface tips ──────────────────────────────────────────────
 
-export default function AboutPage() {
-  const router = useRouter();
+const interfaceTips = [
+  { icon: Target, label: "Задачи", href: "/challenges", description: "Ежедневные задачи по промптингу, агентам и инструментам. Каждая — конкретный навык, а не абстрактная теория. Начните с них, если хотите практиковаться каждый день." },
+  { icon: Map, label: "Обучение", href: "/knowledge/course-map", description: "Карта курса с модулями от простого к сложному. Выбирайте тему, проходите уроки последовательно. Система запоминает ваш прогресс и подскажет, где остановились." },
+  { icon: MessageCircle, label: "Помощь", href: null, description: "Кнопка чата с ментором в правом нижнем углу экрана. Задайте вопрос по материалу — ментор поможет разобраться. Доступно на любой странице." },
+];
 
-  const handleBack = () => {
-    // If there's no navigation history (direct link), default to /dashboard
-    if (typeof window !== "undefined" && window.history.length <= 1) {
-      router.push("/dashboard");
-    } else {
-      router.back();
-    }
-  };
+// ── Component ───────────────────────────────────────────────────
 
+export default function AcademyPage() {
   return (
-    <div className="max-w-2xl mx-auto pb-8">
-      {/* Back button */}
-      <motion.div
-        initial={{ opacity: 0, x: -10 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.3 }}
-        className="mb-4"
-      >
-        <Button
-          variant="ghost"
-          onClick={handleBack}
-          className="text-muted-foreground hover:text-foreground gap-1.5 -ml-2 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 text-sm sm:text-xs"
-        >
-          <ChevronLeft className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          Назад
-        </Button>
-      </motion.div>
-
+    <div className="max-w-3xl mx-auto pb-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -149,129 +81,241 @@ export default function AboutPage() {
         className="mb-8"
       >
         <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 glow-emerald">
-            <Sparkles className="h-5 w-5 text-emerald-400" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 glow-emerald">
+            <GraduationCap className="h-6 w-6 text-emerald-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold gradient-text">О проекте</h1>
-            <p className="text-sm text-muted-foreground">Мини-инструкция для тех, кто хочет разобраться</p>
+            <h1 className="text-2xl font-bold gradient-text">Академия</h1>
+            <p className="text-sm text-muted-foreground">Как устроена платформа и как прокачаться быстрее всего</p>
           </div>
         </div>
       </motion.div>
 
-      {/* Sections */}
-      <div className="space-y-5">
-        {sections.map((section, idx) => {
-          const colors = colorMap[section.color];
-          const Icon = section.icon;
-
-          return (
-            <motion.div
-              key={section.title}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: idx * 0.06 }}
-              className={`rounded-xl border ${colors.border} ${colors.bg} p-5`}
-            >
-              {/* Section header */}
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${colors.iconBg}`}>
-                  <Icon className={`h-4 w-4 ${colors.text}`} />
-                </div>
-                <h2 className={`text-lg font-bold ${colors.text}`}>{section.title}</h2>
-              </div>
-
-              {/* Text content */}
-              {section.content && (
-                <div className="space-y-3">
-                  {section.content.map((paragraph, i) => (
-                    <p key={i} className="text-sm text-muted-foreground leading-relaxed">
-                      {paragraph}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              {/* Item list content */}
-              {section.items && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
-                  {section.items.map((item) => (
-                    <div
-                      key={item.label}
-                      className={`flex items-start gap-2.5 rounded-lg border ${colors.border} bg-white/[0.02] px-3 py-2.5`}
-                    >
-                      <span className="text-lg shrink-0 mt-0.5">{item.emoji}</span>
-                      <div>
-                        <p className={`text-sm font-semibold ${colors.text}`}>{item.label}</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Quick reference card */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* БЛОК 1: Путь к мастерству */}
+      {/* ═══════════════════════════════════════════════════════════ */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: sections.length * 0.06 }}
-        className="mt-6 rounded-xl border border-white/10 bg-white/[0.02] p-5"
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="mb-6"
       >
-        <h3 className="text-base font-bold text-foreground mb-3 flex items-center gap-2">
-          <Shield className="h-4 w-4 text-emerald-400" />
-          Шпаргалка
-        </h3>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Жизни</p>
-            <p className="font-semibold text-foreground">3 сердца</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Восстановление</p>
-            <p className="font-semibold text-foreground">1 сердце / 30 мин</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Кулдаун за ошибку</p>
-            <p className="font-semibold text-foreground">4 часа на задачу</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Без жизней</p>
-            <p className="font-semibold text-red-400">XP × 0.5</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Стрик горит через</p>
-            <p className="font-semibold text-foreground">48 часов</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Бонус за 7 / 30 дней</p>
-            <p className="font-semibold text-amber-400">+200 / +1000 XP</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Лёгкая / Средняя / Сложная</p>
-            <p className="font-semibold text-foreground">25 / 50 / 100 XP</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Скорость = бонус</p>
-            <p className="font-semibold text-foreground">100% до 30 сек</p>
-          </div>
-        </div>
+        <Card className="glass border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Zap className="h-5 w-5 text-emerald-400" />
+              Путь к мастерству
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+              Каждый урок на платформе построен по трёхшаговой модели. Пропускать шаги можно, но мы не рекомендуем — каждый этап усиливает предыдущий. Конспект закладывает основу, квиз проверяет понимание, а практика закрепляет навык навсегда.
+            </p>
+
+            <div className="space-y-4">
+              {masterySteps.map((step, idx) => {
+                const Icon = step.icon;
+                return (
+                  <div key={step.title} className="flex gap-4 items-start">
+                    {/* Step number + icon */}
+                    <div className="flex flex-col items-center gap-1 shrink-0">
+                      <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", step.iconBg)}>
+                        <Icon className={cn("h-5 w-5", step.color)} />
+                      </div>
+                      {idx < masterySteps.length - 1 && (
+                        <div className="w-px h-6 bg-white/10" />
+                      )}
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 pb-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-bold text-muted-foreground/60">ШАГ {idx + 1}</span>
+                        <h3 className={cn("text-sm font-bold", step.color)}>{step.title}</h3>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {step.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* БЛОК 2: Система грейдов */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.2 }}
+        className="mb-6"
+      >
+        <Card className="glass border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Trophy className="h-5 w-5 text-amber-400" />
+              Система грейдов
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+              Ваш уровень определяется суммой накопленного XP. Каждый грейд открывает новый цвет прогресс-бара и статус в профиле. Формула расчёта XP для уровня: 100 × уровень<sup>1.5</sup>. Первые уровни даются быстро, но потом придётся постараться.
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {grades.map((grade) => (
+                <div
+                  key={grade.range}
+                  className={cn(
+                    "rounded-xl border px-3 py-3 text-center transition-all hover:scale-[1.02]",
+                    grade.bgClass
+                  )}
+                >
+                  <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                    <span className="text-lg font-black tabular-nums">{grade.range}</span>
+                  </div>
+                  {/* Mini progress bar */}
+                  <div className="w-full h-1.5 rounded-full bg-white/5 mb-2 overflow-hidden">
+                    <div className={cn("h-full rounded-full", grade.barClass)} style={{ width: "60%" }} />
+                  </div>
+                  <p className="text-xs font-bold">{grade.name}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* XP breakdown */}
+            <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+              <h4 className="text-xs font-bold text-muted-foreground mb-2">Сколько XP дают задачи</h4>
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-md bg-emerald-500/10 py-1.5">
+                  <p className="font-bold text-emerald-400">Лёгкая</p>
+                  <p className="text-muted-foreground">25 XP</p>
+                </div>
+                <div className="rounded-md bg-amber-500/10 py-1.5">
+                  <p className="font-bold text-amber-400">Средняя</p>
+                  <p className="text-muted-foreground">50 XP</p>
+                </div>
+                <div className="rounded-md bg-red-500/10 py-1.5">
+                  <p className="font-bold text-red-400">Сложная</p>
+                  <p className="text-muted-foreground">100 XP</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground/60 mt-2 text-center">
+                Скорость решения влияет: до 30 сек = 100% XP, далее -10% за каждые 30 сек (мин. 10%)
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* БЛОК 3: Интерфейс — где что искать */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+        className="mb-6"
+      >
+        <Card className="glass border-white/10 bg-white/[0.02]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Shield className="h-5 w-5 text-blue-400" />
+              Интерфейс
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+              Все основные разделы доступны через боковую панель слева. Наведите на иконку, чтобы увидеть название раздела. Вот три ключевых места, с которых стоит начать:
+            </p>
+
+            <div className="space-y-3">
+              {interfaceTips.map((tip) => {
+                const Icon = tip.icon;
+                const content = (
+                  <div
+                    key={tip.label}
+                    className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3 transition-colors hover:bg-white/[0.04]"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15">
+                      <Icon className="h-4 w-4 text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h4 className="text-sm font-bold text-foreground">{tip.label}</h4>
+                        {tip.href && (
+                          <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {tip.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+
+                if (tip.href) {
+                  return (
+                    <Link key={tip.label} href={tip.href} className="block">
+                      {content}
+                    </Link>
+                  );
+                }
+                return <div key={tip.label}>{content}</div>;
+              })}
+            </div>
+
+            {/* Quick reference */}
+            <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+              <h4 className="text-xs font-bold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Flame className="h-3 w-3 text-orange-400" />
+                Быстрая шпаргалка
+              </h4>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Жизни</span>
+                  <span className="font-semibold">3 сердца</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Восст.</span>
+                  <span className="font-semibold">1 / 30 мин</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Кулдаун</span>
+                  <span className="font-semibold">4 ч / задача</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Без жизней</span>
+                  <span className="font-semibold text-red-400">XP × 0.5</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Стрик горит</span>
+                  <span className="font-semibold">через 48 ч</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Бонус стрик</span>
+                  <span className="font-semibold text-amber-400">+200/+1000</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* CTA */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: sections.length * 0.06 + 0.2 }}
-        className="mt-6 flex justify-center"
+        transition={{ duration: 0.4, delay: 0.5 }}
+        className="flex justify-center"
       >
-        <Link href="/challenges">
+        <Link href="/knowledge/course-map">
           <Button className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2">
-            <Target className="h-4 w-4" />
-            К задачам
+            <GraduationCap className="h-4 w-4" />
+            Начать обучение
             <ChevronRight className="h-4 w-4" />
           </Button>
         </Link>
