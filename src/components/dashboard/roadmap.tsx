@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -12,6 +13,8 @@ export interface RoadmapModule {
   number: number;
   title: string;
   status: "completed" | "current" | "locked";
+  /** Optional URL — if present, node is clickable */
+  href?: string | null;
 }
 
 interface RoadmapProps {
@@ -27,9 +30,6 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
   const total = modules.length;
   const overflow = total > MAX_VISIBLE;
 
-  // Determine which nodes to show:
-  // - If current module index is within first MAX_VISIBLE-1 slots, show first (MAX_VISIBLE-1) + "…"
-  // - Otherwise, show some completed + current + few locked + "…"
   let visibleModules: RoadmapModule[];
   let hiddenCount = 0;
 
@@ -39,13 +39,10 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
     const currentIndex = modules.findIndex((m) => m.status === "current");
     const currentIdx = currentIndex === -1 ? completedCount : currentIndex;
 
-    // If current is near the start, just show first MAX_VISIBLE-1 + ellipsis
     if (currentIdx < MAX_VISIBLE - 1) {
       visibleModules = modules.slice(0, MAX_VISIBLE - 1);
       hiddenCount = total - (MAX_VISIBLE - 1);
     } else {
-      // Show: first completed, "...", current ± 1, "..." for the rest
-      // Simplified: show 2 before current + current + 2 after = 5 + ellipsis on both sides
       const beforeStart = Math.max(0, currentIdx - 1);
       const afterEnd = Math.min(total, currentIdx + 3);
       const slice = modules.slice(beforeStart, afterEnd);
@@ -56,6 +53,39 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
 
   const showLeadingEllipsis = overflow && visibleModules[0]?.number !== 1;
   const showTrailingEllipsis = overflow && hiddenCount > 0;
+
+  /** Render a single roadmap node — as Link if href exists, as div otherwise */
+  const renderNode = (mod: RoadmapModule, extraClass?: string) => {
+    const nodeClass = cn(
+      "roadmap-node shrink-0",
+      mod.status === "locked"
+        ? "bg-white/5 text-muted-foreground border-2 border-white/10 cursor-not-allowed"
+        : "cursor-pointer",
+      mod.status === "completed" &&
+        "bg-emerald-500/20 text-emerald-400 border-2 border-emerald-500/30",
+      mod.status === "current" &&
+        "bg-emerald-500/30 text-emerald-300 border-2 border-emerald-400 pulse-ring",
+      extraClass
+    );
+
+    const nodeStyle = mod.status === "current" ? { zIndex: 1 } : undefined;
+
+    const inner = (
+      <div className={nodeClass} style={nodeStyle}>
+        {mod.number}
+      </div>
+    );
+
+    // Clickable if href exists and not locked
+    if (mod.href && mod.status !== "locked") {
+      return (
+        <Link href={mod.href} className="block">
+          {inner}
+        </Link>
+      );
+    }
+    return inner;
+  };
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -68,7 +98,7 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
 
       <div className="flex-1 flex items-center">
         <div className="flex items-center gap-0 w-full px-2">
-          {/* Leading ellipsis: there are modules before the visible range */}
+          {/* Leading ellipsis */}
           {showLeadingEllipsis && (
             <>
               <div className="flex items-center" style={{ flex: 1 }}>
@@ -92,20 +122,7 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
               {/* Node with tooltip */}
               <Tooltip delayDuration={200}>
                 <TooltipTrigger asChild>
-                  <div
-                    className={cn(
-                      "roadmap-node shrink-0 cursor-pointer",
-                      mod.status === "completed" &&
-                        "bg-emerald-500/20 text-emerald-400 border-2 border-emerald-500/30",
-                      mod.status === "current" &&
-                        "bg-emerald-500/30 text-emerald-300 border-2 border-emerald-400 pulse-ring",
-                      mod.status === "locked" &&
-                        "bg-white/5 text-muted-foreground border-2 border-white/10"
-                    )}
-                    style={mod.status === "current" ? { zIndex: 1 } : undefined}
-                  >
-                    {mod.number}
-                  </div>
+                  {renderNode(mod)}
                 </TooltipTrigger>
                 <TooltipContent side="top" className="bg-card border-border text-foreground text-xs max-w-[200px]">
                   <span className="font-medium">{mod.title}</span>
@@ -135,7 +152,7 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
             </div>
           ))}
 
-          {/* Trailing ellipsis: there are more modules after the visible range */}
+          {/* Trailing ellipsis */}
           {showTrailingEllipsis && (
             <>
               <div className="roadmap-connector bg-white/10" />

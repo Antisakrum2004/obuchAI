@@ -67,26 +67,25 @@ interface ChallengeItem {
   cooldownUntil: string | null;
 }
 
-/** Default roadmap modules (placeholder until we have a real learning path API) */
-const MODULE_NAMES = [
-  "Введение в AI", "Промпт-инжиниринг", "Запросы в 1С", "Подзапросы и объединения",
-  "AI-агенты", "Дебаггинг с AI", "Автоматизация", "MCP-протокол",
-  "Временные таблицы", "Обработка данных", "Продвинутые промпты", "Интеграция API",
-  "Оптимизация кода", "Тестирование", "CI/CD с AI", "Архитектура решений",
-  "Командная работа", "Финальный проект",
-];
-
-function getDefaultModules(count: number, completedCount: number, currentIndex: number): RoadmapModule[] {
-  return Array.from({ length: count }, (_, i) => {
-    const num = i + 1;
-    const status = num <= completedCount ? "completed" : num === currentIndex ? "current" : "locked";
-    return {
-      id: `mod-${num}`,
-      number: num,
-      title: MODULE_NAMES[i] || `Модуль ${num}`,
-      status,
-    };
-  });
+/** Learning path data from API */
+interface LearningModule {
+  id: string;
+  number: number;
+  title: string;
+  slug: string;
+  status: "completed" | "current" | "locked";
+  href: string | null;
+  article: {
+    id: string;
+    title: string;
+    difficulty: string | null;
+    estimatedTime: string | null;
+  } | null;
+  progress: {
+    completed: number;
+    total: number;
+    percentage: number;
+  };
 }
 
 /** Format ISO timestamp to relative time like "5 мин назад" */
@@ -104,6 +103,16 @@ function formatTime(iso: string): string {
   }
 }
 
+/** Map difficulty to Russian label */
+function difficultyLabel(diff: string | null): string {
+  switch (diff) {
+    case "easy": return "Лёгкий";
+    case "medium": return "Средний";
+    case "hard": return "Сложный";
+    default: return "Лёгкий";
+  }
+}
+
 export default function DashboardPage() {
   const { xp, level, streak, name, image, role, completedChallenges, rank } = useUserStore();
   const { data: dailyData, isLoading: dailyLoading } = useDailyChallenge();
@@ -116,7 +125,12 @@ export default function DashboardPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [activeChallenges, setActiveChallenges] = useState<ChallengeItem[]>([]);
   const [heatmapData, setHeatmapData] = useState<number[][] | undefined>(undefined);
-  const [nextLessonUrl, setNextLessonUrl] = useState<string>("/knowledge/course-map");
+
+  // Learning path state
+  const [learningModules, setLearningModules] = useState<LearningModule[]>([]);
+  const [currentModuleData, setCurrentModuleData] = useState<LearningModule | null>(null);
+  const [currentLessonXp, setCurrentLessonXp] = useState(50);
+  const [completedModuleCount, setCompletedModuleCount] = useState(0);
 
   // Achievement unlock modal state
   const [showAchievementModal, setShowAchievementModal] = useState(false);
@@ -190,7 +204,6 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((data) => {
         const arr = Array.isArray(data) ? data : (data.challenges && Array.isArray(data.challenges) ? data.challenges : []);
-        // Filter to active (unsolved + no cooldown), take top 3
         const active = arr
           .filter((c: ChallengeItem) => !c.isSolved && !c.cooldownUntil)
           .slice(0, 3);
@@ -198,11 +211,16 @@ export default function DashboardPage() {
       })
       .catch(() => {});
 
-    // Fetch next lesson URL for AI recommendations
-    fetch("/api/knowledge/next-lesson")
+    // Fetch learning path — replaces hardcoded MODULE_NAMES
+    fetch("/api/knowledge/learning-path")
       .then((r) => r.json())
       .then((data) => {
-        if (data.pathUrl) setNextLessonUrl(data.pathUrl);
+        if (data.modules && Array.isArray(data.modules)) {
+          setLearningModules(data.modules);
+          setCurrentModuleData(data.currentModule || null);
+          setCurrentLessonXp(data.currentModule?.lessonXp || 50);
+          setCompletedModuleCount(data.completedModules || 0);
+        }
       })
       .catch(() => {});
   }, []);
@@ -213,11 +231,29 @@ export default function DashboardPage() {
   const calculatedLevel = calculateLevel(xp);
   const { current: currentXpInLevel, required: requiredXpInLevel, percentage } = xpProgressInLevel(xp);
 
-  // Roadmap data — derive from user level
-  const totalModules = 18;
-  const completedModules = Math.min(Math.floor(level * 0.5), totalModules - 1);
-  const currentModule = completedModules + 1;
-  const roadmapModules = getDefaultModules(totalModules, completedModules, currentModule);
+  // Convert learning modules to RoadmapModule format
+  const roadmapModules: RoadmapModule[] = learningModules.map((m) => ({
+    id: m.id,
+    number: m.number,
+    title: m.title,
+    status: m.status,
+    href: m.href,
+  }));
+
+  // Current lesson data (from API, not hardcoded)
+  const currentArticle = currentModuleData?.article;
+  const currentLessonHref = currentModuleData?.href || "/knowledge/course-map";
+  const currentLessonDifficulty = difficultyLabel(currentArticle?.difficulty || null);
+  const currentLessonTime = currentArticle?.estimatedTime || "15 мин";
+  const currentLessonTitle = currentArticle?.title || "Начните обучение";
+  const currentModuleProgress = currentModuleData?.progress?.percentage || 0;
+
+  // Difficulty badge color
+  const difficultyColor: Record<string, string> = {
+    "Лёгкий": "bg-emerald-500/15 text-emerald-400",
+    "Средний": "bg-amber-500/15 text-amber-400",
+    "Сложный": "bg-rose-500/15 text-rose-400",
+  };
 
   return (
     <AppLayout>
@@ -236,7 +272,7 @@ export default function DashboardPage() {
           {/* ═══ LEFT COLUMN — 9 COLS ═══ */}
           <div className="lg:col-span-9 flex flex-col gap-5">
 
-            {/* LESSON HERO */}
+            {/* LESSON HERO — Dynamic from API */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -252,17 +288,17 @@ export default function DashboardPage() {
                   <div>
                     <h3 className="font-semibold text-base">Текущий урок</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {roadmapModules[currentModule - 1]?.title || `Модуль ${currentModule}`} · Запросы в 1С
+                      {currentModuleData?.title || "Загрузка..."}
                     </p>
                   </div>
                 </div>
-                <Link href="/knowledge/course-map">
+                <Link href={currentLessonHref}>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-500/10 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20"
                   >
-                    {completedChallenges > 0 ? "Продолжить" : "Начать"}
+                    {completedModuleCount > 0 ? "Продолжить" : "Начать"}
                     <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
                 </Link>
@@ -273,28 +309,28 @@ export default function DashboardPage() {
                 {/* Lesson content card */}
                 <div className="flex-1 glass rounded-xl p-4 flex flex-col">
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">
-                      Средний
+                    <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium", difficultyColor[currentLessonDifficulty] || "bg-emerald-500/15 text-emerald-400")}>
+                      {currentLessonDifficulty}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">· 25 мин</span>
-                    <span className="text-[11px] text-muted-foreground">· +120 XP</span>
+                    <span className="text-[11px] text-muted-foreground">· {currentLessonTime}</span>
+                    <span className="text-[11px] text-muted-foreground">· +{currentLessonXp} XP</span>
                   </div>
                   <h4 className="font-semibold text-lg mb-2">
-                    Сложные запросы: объединения и подзапросы
+                    {currentLessonTitle}
                   </h4>
                   <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                    Изучите продвинутые техники работы с запросами в 1С: объединение нескольких
-                    таблиц, использование подзапросов для фильтрации, временные таблицы и пакетные
-                    запросы. На практическом задании закрепите навыки построения эффективных запросов.
+                    {currentModuleData
+                      ? `Модуль ${currentModuleData.number}: ${currentModuleData.title}. Пройдите урок, чтобы продвинуться по курсу и получить опыт.`
+                      : "Загрузка данных курса..."}
                   </p>
 
                   <div className="mt-auto flex items-center gap-4">
-                    {/* Progress bar */}
+                    {/* Progress bar — real module progress */}
                     <div className="flex items-center gap-2">
                       <div className="w-32 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: "65%" }} />
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${currentModuleProgress}%` }} />
                       </div>
-                      <span className="text-[11px] text-muted-foreground">65%</span>
+                      <span className="text-[11px] text-muted-foreground">{currentModuleProgress}%</span>
                     </div>
 
                     {/* Avatars (shared progress) */}
@@ -325,7 +361,7 @@ export default function DashboardPage() {
               </div>
             </motion.div>
 
-            {/* ROADMAP */}
+            {/* ROADMAP — clickable, from API */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -333,13 +369,13 @@ export default function DashboardPage() {
               className="glass rounded-2xl p-4"
               style={{ minHeight: "155px" }}
             >
-              <Roadmap modules={roadmapModules} completedCount={completedModules} />
+              <Roadmap modules={roadmapModules} completedCount={completedModuleCount} />
             </motion.div>
 
             {/* TWO-COLUMN: AI Recommendations + Today Timeline */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
-              {/* AI RECOMMENDATIONS */}
+              {/* AI RECOMMENDATIONS — only current (unlocked) module, direct link */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -355,25 +391,20 @@ export default function DashboardPage() {
 
                 <div className="space-y-2.5">
                   {(() => {
-                    // Only recommend modules the user can actually access (current = unlocked)
-                    const currentMod = roadmapModules.find(m => m.status === "current");
+                    const currentMod = currentModuleData;
                     const recommendations: { text: string; href: string; urgent: boolean }[] = [];
                     if (currentMod) {
                       recommendations.push({
                         text: `Пройдите «${currentMod.title}» — это следующий шаг`,
-                        href: nextLessonUrl,
+                        href: currentMod.href || "/knowledge/course-map",
                         urgent: true,
                       });
-                    }
-                    // Suggest practice for current module
-                    if (currentMod) {
                       recommendations.push({
                         text: `Закрепите «${currentMod.title}» практическими задачами`,
                         href: "/challenges",
                         urgent: false,
                       });
                     }
-                    // Course map fallback
                     recommendations.push({
                       text: "Откройте карту курса, чтобы увидеть весь путь обучения",
                       href: "/knowledge/course-map",
@@ -400,7 +431,7 @@ export default function DashboardPage() {
                     ));
                   })()}
 
-                  {roadmapModules.filter(m => m.status !== "completed").length === 0 && (
+                  {completedModuleCount === learningModules.length && learningModules.length > 0 && (
                     <div className="text-center py-3">
                       <p className="text-xs text-emerald-400 font-medium">Все модули пройдены! 🎉</p>
                       <Link href="/knowledge/course-map" className="text-[10px] text-muted-foreground hover:text-foreground mt-1 inline-block">

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 import {
   Collapsible,
   CollapsibleContent,
@@ -256,10 +257,14 @@ export default function LearnLessonPage({
           });
           if (res.ok) {
             const data = await res.json();
-            setLessonXp(data.xpEarned || 0);
-            setLessonNewLevel(data.newLevel || 1);
-            setLessonXpToNext(data.xpToNextLevel || 0);
-            setLessonProgressInLevel(data.progressInLevel?.percentage || 0);
+            if (data.alreadyCompleted) {
+              toast.info("Урок уже пройден сегодня", { description: "Повторное начисление XP невозможно" });
+            } else {
+              setLessonXp(data.xpEarned || 0);
+              setLessonNewLevel(data.newLevel || 1);
+              setLessonXpToNext(data.xpToNextLevel || 0);
+              setLessonProgressInLevel(data.progressInLevel?.percentage || 0);
+            }
           }
         } catch (err) {
           console.error('Failed to award lesson XP:', err);

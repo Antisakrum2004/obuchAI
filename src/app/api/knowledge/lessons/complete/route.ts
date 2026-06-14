@@ -54,6 +54,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Статья не найдена" }, { status: 404 });
     }
 
+    // XP exploit protection: check if this lesson was already completed today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const alreadyCompletedResult = await pool.query(
+      `SELECT id FROM xp_logs
+       WHERE "userId" = $1
+         AND "referenceId" = $2
+         AND reason = 'lesson_complete'
+         AND "createdAt" >= $3
+       LIMIT 1`,
+      [userId, articleId, todayStart.toISOString()]
+    );
+    if (alreadyCompletedResult.rows.length > 0) {
+      return NextResponse.json({
+        alreadyCompleted: true,
+        message: "Урок уже пройден сегодня",
+      });
+    }
+
     // Calculate XP for lesson completion
     const baseXp = 30;
     const allBlocksBonus = blocksCompleted >= totalBlocks && totalBlocks > 0 ? 20 : 0;
