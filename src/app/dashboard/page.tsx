@@ -116,6 +116,7 @@ export default function DashboardPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [activeChallenges, setActiveChallenges] = useState<ChallengeItem[]>([]);
   const [heatmapData, setHeatmapData] = useState<number[][] | undefined>(undefined);
+  const [nextLessonUrl, setNextLessonUrl] = useState<string>("/knowledge/course-map");
 
   // Achievement unlock modal state
   const [showAchievementModal, setShowAchievementModal] = useState(false);
@@ -194,6 +195,14 @@ export default function DashboardPage() {
           .filter((c: ChallengeItem) => !c.isSolved && !c.cooldownUntil)
           .slice(0, 3);
         setActiveChallenges(active);
+      })
+      .catch(() => {});
+
+    // Fetch next lesson URL for AI recommendations
+    fetch("/api/knowledge/next-lesson")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.pathUrl) setNextLessonUrl(data.pathUrl);
       })
       .catch(() => {});
   }, []);
@@ -345,16 +354,33 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="space-y-2.5">
-                  {roadmapModules.filter(m => m.status === "current" || m.status === "locked").slice(0, 3).map((mod, i) => {
-                    // Generate contextual recommendation
-                    const recommendations = [
-                      { text: `Пройдите «${mod.title}» — это основа для следующих модулей`, href: "/knowledge", urgent: mod.status === "current" },
-                      { text: `Закрепите «${mod.title}» практическими задачами`, href: "/challenges", urgent: false },
-                      { text: `Повторите предыдущий модуль перед «${mod.title}»`, href: "/knowledge/course-map", urgent: false },
-                    ];
-                    const rec = recommendations[i] || recommendations[0];
-                    return (
-                      <Link key={mod.id} href={rec.href} className="block group">
+                  {(() => {
+                    // Only recommend modules the user can actually access (current = unlocked)
+                    const currentMod = roadmapModules.find(m => m.status === "current");
+                    const recommendations: { text: string; href: string; urgent: boolean }[] = [];
+                    if (currentMod) {
+                      recommendations.push({
+                        text: `Пройдите «${currentMod.title}» — это следующий шаг`,
+                        href: nextLessonUrl,
+                        urgent: true,
+                      });
+                    }
+                    // Suggest practice for current module
+                    if (currentMod) {
+                      recommendations.push({
+                        text: `Закрепите «${currentMod.title}» практическими задачами`,
+                        href: "/challenges",
+                        urgent: false,
+                      });
+                    }
+                    // Course map fallback
+                    recommendations.push({
+                      text: "Откройте карту курса, чтобы увидеть весь путь обучения",
+                      href: "/knowledge/course-map",
+                      urgent: false,
+                    });
+                    return recommendations.slice(0, 3).map((rec, i) => (
+                      <Link key={i} href={rec.href} className="block group">
                         <div className={cn(
                           "flex items-start gap-2.5 p-2.5 rounded-xl transition-all",
                           rec.urgent ? "bg-purple-500/10 border border-purple-500/20" : "bg-white/3 hover:bg-white/5"
@@ -371,8 +397,8 @@ export default function DashboardPage() {
                           </p>
                         </div>
                       </Link>
-                    );
-                  })}
+                    ));
+                  })()}
 
                   {roadmapModules.filter(m => m.status !== "completed").length === 0 && (
                     <div className="text-center py-3">

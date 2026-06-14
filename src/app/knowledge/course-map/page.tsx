@@ -72,7 +72,13 @@ export default function CourseMapPage() {
     if (article.status === 'error') return "error";
     if (article.status === 'processing') return "processing";
     if (article.status === 'pending' && !article.isPublished) return "processing";
-    // User progress-based status
+    // Articles with no difficulty or easy difficulty are always unlocked
+    if (!article.difficulty || article.difficulty === 'easy') {
+      const userLevel = Math.floor((completedChallenges || 0) / Math.max(1, total));
+      if (index < userLevel) return "completed";
+      return "current"; // always accessible
+    }
+    // User progress-based status for medium/hard articles
     const userLevel = Math.floor((completedChallenges || 0) / Math.max(1, total));
     if (index < userLevel) return "completed";
     if (index === userLevel) return "current";
