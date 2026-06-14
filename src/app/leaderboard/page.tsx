@@ -135,7 +135,7 @@ export default function LeaderboardPage() {
                     </div>
                     <p className="text-sm font-bold text-amber-400 group-hover:text-amber-300 transition-colors">{top3[0].name}</p>
                     <p className="text-xs text-muted-foreground">{top3[0].xp.toLocaleString()} XP</p>
-                    <div className="mt-2 h-24 w-20 rounded-t-lg bg-amber-500/10 border border-amber-500/20 border-b-0 flex items-center justify-center glow-amber">
+                    <div className="mt-2 h-24 w-20 rounded-t-lg bg-amber-500/10 border border-amber-500/20 border-b-0 flex items-center justify-center">
                       <span className="text-3xl font-bold text-amber-400">1</span>
                     </div>
                   </Link>
