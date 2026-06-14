@@ -322,7 +322,7 @@ export default function DashboardPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
               className="glass rounded-2xl p-4"
-              style={{ minHeight: "140px" }}
+              style={{ minHeight: "155px" }}
             >
               <Roadmap modules={roadmapModules} completedCount={completedModules} />
             </motion.div>

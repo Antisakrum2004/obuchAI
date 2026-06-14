@@ -20,20 +20,75 @@ interface RoadmapProps {
   className?: string;
 }
 
+/** Max visible nodes so they fit without horizontal scroll in ~1200px container */
+const MAX_VISIBLE = 7;
+
 export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
+  const total = modules.length;
+  const overflow = total > MAX_VISIBLE;
+
+  // Determine which nodes to show:
+  // - If current module index is within first MAX_VISIBLE-1 slots, show first (MAX_VISIBLE-1) + "…"
+  // - Otherwise, show some completed + current + few locked + "…"
+  let visibleModules: RoadmapModule[];
+  let hiddenCount = 0;
+
+  if (!overflow) {
+    visibleModules = modules;
+  } else {
+    const currentIndex = modules.findIndex((m) => m.status === "current");
+    const currentIdx = currentIndex === -1 ? completedCount : currentIndex;
+
+    // If current is near the start, just show first MAX_VISIBLE-1 + ellipsis
+    if (currentIdx < MAX_VISIBLE - 1) {
+      visibleModules = modules.slice(0, MAX_VISIBLE - 1);
+      hiddenCount = total - (MAX_VISIBLE - 1);
+    } else {
+      // Show: first completed, "...", current ± 1, "..." for the rest
+      // Simplified: show 2 before current + current + 2 after = 5 + ellipsis on both sides
+      const beforeStart = Math.max(0, currentIdx - 1);
+      const afterEnd = Math.min(total, currentIdx + 3);
+      const slice = modules.slice(beforeStart, afterEnd);
+      visibleModules = slice;
+      hiddenCount = total - slice.length;
+    }
+  }
+
+  const showLeadingEllipsis = overflow && visibleModules[0]?.number !== 1;
+  const showTrailingEllipsis = overflow && hiddenCount > 0;
+
   return (
     <div className={cn("flex flex-col", className)}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-medium text-sm">Дорожная карта</h3>
         <span className="text-[11px] text-muted-foreground">
-          {completedCount} из {modules.length} модулей
+          {completedCount} из {total} модулей
         </span>
       </div>
 
       <div className="flex-1 flex items-center">
-        <div className="flex items-center gap-0 w-full px-2 overflow-x-auto">
-          {modules.map((mod, idx) => (
-            <div key={mod.id} className="flex items-center" style={{ flex: idx < modules.length - 1 ? 1 : "none" }}>
+        <div className="flex items-center gap-0 w-full px-2">
+          {/* Leading ellipsis: there are modules before the visible range */}
+          {showLeadingEllipsis && (
+            <>
+              <div className="flex items-center" style={{ flex: 1 }}>
+                <Tooltip delayDuration={200}>
+                  <TooltipTrigger asChild>
+                    <div className="roadmap-node shrink-0 bg-white/5 text-muted-foreground border-2 border-white/10 cursor-default">
+                      <span className="text-[10px]">···</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-card border-border text-foreground text-xs">
+                    <span>Ещё {visibleModules[0]?.number ? visibleModules[0].number - 1 : 0} модулей</span>
+                  </TooltipContent>
+                </Tooltip>
+                <div className="roadmap-connector bg-white/10" />
+              </div>
+            </>
+          )}
+
+          {visibleModules.map((mod, idx) => (
+            <div key={mod.id} className="flex items-center" style={{ flex: idx < visibleModules.length - 1 || showTrailingEllipsis ? 1 : "none" }}>
               {/* Node with tooltip */}
               <Tooltip delayDuration={200}>
                 <TooltipTrigger asChild>
@@ -49,11 +104,7 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
                     )}
                     style={mod.status === "current" ? { zIndex: 1 } : undefined}
                   >
-                    {mod.status === "locked" && mod.number > 9 ? (
-                      <span className="text-[10px]">···</span>
-                    ) : (
-                      mod.number
-                    )}
+                    {mod.number}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="bg-card border-border text-foreground text-xs max-w-[200px]">
@@ -71,7 +122,7 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
               </Tooltip>
 
               {/* Connector */}
-              {idx < modules.length - 1 && (
+              {idx < visibleModules.length - 1 && (
                 <div
                   className={cn(
                     "roadmap-connector",
@@ -83,6 +134,25 @@ export function Roadmap({ modules, completedCount, className }: RoadmapProps) {
               )}
             </div>
           ))}
+
+          {/* Trailing ellipsis: there are more modules after the visible range */}
+          {showTrailingEllipsis && (
+            <>
+              <div className="roadmap-connector bg-white/10" />
+              <div className="flex items-center" style={{ flex: "none" }}>
+                <Tooltip delayDuration={200}>
+                  <TooltipTrigger asChild>
+                    <div className="roadmap-node shrink-0 bg-white/5 text-muted-foreground border-2 border-white/10 cursor-default">
+                      <span className="text-[10px]">···</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-card border-border text-foreground text-xs">
+                    <span>Ещё {hiddenCount} модулей</span>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
