@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1600">
+<title>Dashboard Variant A — Hero Lesson 8+4</title>
+<style>
+  /* ─── Reset & Base ─── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    background: #0a0a0f;
+    color: #e2e8f0;
+    width: 1600px;
+    height: 920px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ─── Animations ─── */
+  @keyframes pulse-ring {
+    0%   { transform: scale(1); opacity: 1; }
+    50%  { transform: scale(1.12); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes bar-grow {
+    from { height: 0; }
+    to   { height: var(--h); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ─── Layout ─── */
+  .sidebar {
+    width: 70px;
+    min-width: 70px;
+    height: 100%;
+    background: rgba(255,255,255,0.02);
+    border-right: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    z-index: 10;
+  }
+  .main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+  .header {
+    height: 60px;
+    min-height: 60px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+    background: rgba(10,10,15,0.8);
+    backdrop-filter: blur(12px);
+  }
+  .content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 20px;
+    padding: 20px;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+  }
+  .col-left  { grid-column: span 8; display: flex; flex-direction: column; gap: 16px; }
+  .col-right { grid-column: span 4; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ─── Glass Card ─── */
+  .glass {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    transition: transform 0.2s, filter 0.2s;
+  }
+  .glass:hover {
+    transform: translateY(-1px);
+  }
+
+  /* ─── Sidebar ─── */
+  .sidebar-logo {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    background: rgba(16,185,129,0.15);
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 16px;
+    cursor: pointer;
+    font-size: 20px;
+  }
+  .sidebar-nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 16px 0;
+    width: 100%;
+  }
+  .sidebar-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: rgba(255,255,255,0.4);
+    transition: background 0.2s, color 0.2s;
+    position: relative;
+  }
+  .sidebar-icon:hover { background: rgba(16,185,129,0.1); color: rgba(255,255,255,0.7); }
+  .sidebar-icon.active { background: rgba(16,185,129,0.15); color: #10b981; }
+  .sidebar-icon svg { width: 20px; height: 20px; }
+
+  /* Tooltip */
+  .sidebar-icon .tooltip {
+    display: none;
+    position: absolute;
+    left: 52px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(0,0,0,0.85);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 100;
+    pointer-events: none;
+  }
+  .sidebar-icon:hover .tooltip { display: block; }
+
+  .sidebar-footer {
+    padding: 16px 0;
+  }
+  .sidebar-footer .sidebar-icon { color: rgba(255,255,255,0.3); }
+  .sidebar-footer .sidebar-icon:hover { color: rgba(255,255,255,0.6); }
+
+  /* ─── Header ─── */
+  .header-left {
+    font-size: 13px;
+    color: rgba(255,255,255,0.4);
+  }
+  .header-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .header-grade {
+    font-size: 13px;
+    font-weight: 600;
+    color: #3b82f6;
+  }
+  .header-xpbar {
+    width: 200px;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.1);
+    overflow: hidden;
+  }
+  .header-xpbar-fill {
+    height: 100%;
+    width: 78%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  }
+  .header-xp-text {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .header-streak {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f59e0b;
+  }
+  .header-hearts {
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+  .header-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #10b981;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 600; color: #fff;
+    cursor: pointer;
+  }
+
+  /* ─── Hero Card ─── */
+  .hero-card {
+    flex: 1;
+    min-height: 300px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s;
+  }
+  .hero-card:hover { transform: translateY(-1px); }
+  .hero-badges {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .badge-amber  { background: rgba(245,158,11,0.2); color: #f59e0b; }
+  .badge-muted  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.5); }
+  .badge-emerald { background: rgba(16,185,129,0.2); color: #10b981; }
+  .hero-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 6px;
+  }
+  .hero-subtitle {
+    font-size: 13px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 16px;
+  }
+  .hero-body {
+    flex: 1;
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  .hero-desc {
+    flex: 1;
+    font-size: 14px;
+    color: rgba(255,255,255,0.7);
+    line-height: 1.6;
+  }
+
+  /* Progress Ring */
+  .progress-ring {
+    width: 100px; height: 100px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .progress-ring svg { width: 100px; height: 100px; transform: rotate(-90deg); }
+  .progress-ring-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 8; }
+  .progress-ring-fill { fill: none; stroke: #10b981; stroke-width: 8; stroke-linecap: round; stroke-dasharray: 251.2; stroke-dashoffset: 87.9; transition: stroke-dashoffset 0.6s; }
+  .progress-ring-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  /* Step dots */
+  .step-dots {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+  }
+  .step-dot {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+    color: rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.1);
+  }
+  .step-dot.done {
+    background: #10b981;
+    color: #fff;
+  }
+  .step-dot.current {
+    background: transparent;
+    border: 2px solid #10b981;
+    color: #10b981;
+    animation: pulse-ring 2s ease-in-out infinite;
+  }
+
+  /* CTA Button */
+  .btn-primary {
+    width: 100%;
+    height: 44px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 500;
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn-emerald { background: #10b981; }
+  .btn-emerald:hover { filter: brightness(1.1); }
+  .btn-amber { background: #f59e0b; }
+  .btn-amber:hover { filter: brightness(1.1); }
+
+  /* ─── Bottom Panel ─── */
+  .bottom-panel {
+    height: 140px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Activity */
+  .activity-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .activity-card:hover { transform: translateY(-1px); }
+  .activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .activity-title { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+  .activity-subtitle { font-size: 11px; color: rgba(255,255,255,0.4); }
+  .activity-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 70px;
+    padding-top: 4px;
+  }
+  .bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .bar-fill {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    animation: bar-grow 0.6s ease-out forwards;
+  }
+  .bar-label { font-size: 10px; color: rgba(255,255,255,0.35); }
+
+  /* Streak */
+  .streak-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(245,158,11,0.15);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .streak-card:hover { transform: translateY(-1px); }
+  .streak-title { font-size: 14px; font-weight: 600; color: #f59e0b; margin-bottom: 12px; }
+  .streak-days { display: flex; gap: 8px; align-items: center; justify-content: center; }
+  .streak-day {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 600;
+  }
+  .streak-day.done { background: #f59e0b; color: #0a0a0f; }
+  .streak-day.today { background: transparent; border: 2px solid #f59e0b; color: #f59e0b; animation: pulse-ring 2s ease-in-out infinite; }
+  .streak-day.future { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.25); }
+  .streak-labels { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+  .streak-label { font-size: 10px; color: rgba(255,255,255,0.35); width: 24px; text-align: center; }
+
+  /* ─── Right Column ─── */
+
+  /* Daily Challenge */
+  .daily-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 0 20px rgba(245,158,11,0.05);
+    transition: transform 0.2s;
+  }
+  .daily-card:hover { transform: translateY(-1px); }
+  .daily-label { font-size: 13px; color: rgba(255,255,255,0.5); margin-bottom: 10px; }
+  .daily-badges { display: flex; gap: 8px; margin-bottom: 10px; }
+  .daily-name { font-size: 15px; font-weight: 500; color: #e2e8f0; line-height: 1.45; margin-bottom: 14px; }
+
+  /* CTA Blocks */
+  .cta-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .cta-block {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .cta-block:hover { transform: translateY(-1px); }
+  .cta-block-tasks:hover { border-color: rgba(16,185,129,0.3); }
+  .cta-block-marathon:hover { border-color: rgba(249,115,22,0.3); }
+  .cta-title { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+  .cta-sub { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+  /* Stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 12px;
+    transition: transform 0.2s;
+  }
+  .stat-card:hover { transform: translateY(-1px); }
+  .stat-value { font-size: 20px; font-weight: 700; color: #e2e8f0; }
+  .stat-label { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+  /* Mini Leaderboard */
+  .leaderboard-card {
+    flex: 1;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 16px;
+    transition: transform 0.2s;
+  }
+  .leaderboard-card:hover { transform: translateY(-1px); }
+  .leaderboard-title { font-size: 14px; font-weight: 600; color: #e2e8f0; margin-bottom: 12px; }
+  .leaderboard-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+  }
+  .leaderboard-row.me {
+    background: rgba(16,185,129,0.05);
+    border-left: 2px solid #10b981;
+    padding-left: 8px;
+    border-radius: 0 8px 8px 0;
+    margin: 4px -8px 0;
+    padding-right: 8px;
+  }
+  .lb-place { font-size: 16px; width: 24px; text-align: center; }
+  .lb-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .lb-name { flex: 1; font-size: 14px; color: #e2e8f0; }
+  .lb-xp { font-size: 13px; color: rgba(255,255,255,0.4); }
+
+  /* Achievements + Referral */
+  .bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .achieve-block {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.2s;
+  }
+  .achieve-block:hover { transform: translateY(-1px); }
+  .achieve-icons { display: flex; gap: 6px; }
+  .achieve-icon {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .achieve-more { font-size: 12px; color: rgba(255,255,255,0.4); }
+  .referral-btn {
+    background: transparent;
+    border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 10px;
+    padding: 8px 14px;
+    color: #10b981;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    text-align: center;
+    transition: background 0.2s;
+  }
+  .referral-btn:hover { background: rgba(16,185,129,0.08); }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══ -->
+<div class="sidebar">
+  <div class="sidebar-logo">⚡</div>
+
+  <div class="sidebar-nav">
+    <div class="sidebar-icon active" onclick="activateIcon(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span class="tooltip">Главная</span>
+    </div>
+    <div class="sidebar-icon" onclick="activateIcon(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+      <span class="tooltip">База знаний</span>
+    </div>
+    <div class="sidebar-icon" onclick="activateIcon(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span class="tooltip">Задачи</span>
+    </div>
+    <div class="sidebar-icon" onclick="activateIcon(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5C7 4 7 7 7 7"/><path d="M18 9h1.5a2.5 2.5 0 000-5C17 4 17 7 17 7"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2Z"/></svg>
+      <span class="tooltip">Рейтинг</span>
+    </div>
+    <div class="sidebar-icon" onclick="activateIcon(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+      <span class="tooltip">Ачивки</span>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <span class="tooltip">Настройки</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-area">
+
+  <!-- ─── HEADER ─── -->
+  <div class="header">
+    <div class="header-left">Главная / Панель обучения</div>
+    <div class="header-center">
+      <div class="header-grade">Уровень 7 · Специалист</div>
+      <div class="header-xpbar"><div class="header-xpbar-fill"></div></div>
+      <div class="header-xp-text">780 / 1000 XP</div>
+    </div>
+    <div class="header-right">
+      <span class="header-streak">🔥 14</span>
+      <span class="header-hearts">❤️❤️❤️</span>
+      <div class="header-avatar">А</div>
+    </div>
+  </div>
+
+  <!-- ─── CONTENT GRID ─── -->
+  <div class="content">
+
+    <!-- ═══ LEFT COLUMN (8 cols) ═══ -->
+    <div class="col-left">
+
+      <!-- HERO CARD -->
+      <div class="hero-card">
+        <div class="hero-badges">
+          <span class="badge badge-amber">Средний</span>
+          <span class="badge badge-muted">25 мин</span>
+          <span class="badge badge-emerald">+120 XP</span>
+        </div>
+        <div class="hero-title">Сложные запросы: объединения и подзапросы</div>
+        <div class="hero-subtitle">Введение в AI · Запросы в 1С</div>
+
+        <div class="hero-body">
+          <div class="hero-desc">
+            Научитесь писать сложные запросы в 1С, используя объединения и подзапросы для эффективной работы с базой данных. Разберём реальные примеры из практики и типичные ошибки при построении сложных выборок.
+          </div>
+          <div class="progress-ring">
+            <svg viewBox="0 0 100 100">
+              <circle class="progress-ring-bg" cx="50" cy="50" r="40"/>
+              <circle class="progress-ring-fill" cx="50" cy="50" r="40"/>
+            </svg>
+            <div class="progress-ring-text">65%</div>
+          </div>
+        </div>
+
+        <div class="step-dots">
+          <div class="step-dot done">✓</div>
+          <div class="step-dot done">✓</div>
+          <div class="step-dot done">✓</div>
+          <div class="step-dot done">✓</div>
+          <div class="step-dot done">✓</div>
+          <div class="step-dot current">6</div>
+          <div class="step-dot">7</div>
+          <div class="step-dot">8</div>
+        </div>
+
+        <button class="btn-primary btn-emerald" onclick="alert('Переход к уроку')">
+          Продолжить обучение →
+        </button>
+      </div>
+
+      <!-- BOTTOM PANEL -->
+      <div class="bottom-panel">
+        <!-- Activity -->
+        <div class="activity-card">
+          <div class="activity-header">
+            <span class="activity-title">Активность</span>
+            <span class="activity-subtitle">50 XP за неделю</span>
+          </div>
+          <div class="activity-bars">
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:20px; height:20px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Пн</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:35px; height:35px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Вт</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:15px; height:15px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Ср</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:45px; height:45px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Чт</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:50px; height:50px; background:#10b981"></div>
+              <span class="bar-label">Пт</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:10px; height:10px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Сб</span>
+            </div>
+            <div class="bar-col">
+              <div class="bar-fill" style="--h:5px; height:5px; background:rgba(255,255,255,0.15)"></div>
+              <span class="bar-label">Вс</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Streak -->
+        <div class="streak-card">
+          <div class="streak-title">🔥 14 дней подряд!</div>
+          <div class="streak-days">
+            <div class="streak-day done">Пн</div>
+            <div class="streak-day done">Вт</div>
+            <div class="streak-day done">Ср</div>
+            <div class="streak-day done">Чт</div>
+            <div class="streak-day today">Пт</div>
+            <div class="streak-day future">Сб</div>
+            <div class="streak-day future">Вс</div>
+          </div>
+          <div class="streak-labels">
+            <span class="streak-label">Пн</span>
+            <span class="streak-label">Вт</span>
+            <span class="streak-label">Ср</span>
+            <span class="streak-label">Чт</span>
+            <span class="streak-label">Пт</span>
+            <span class="streak-label">Сб</span>
+            <span class="streak-label">Вс</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ RIGHT COLUMN (4 cols) ═══ -->
+    <div class="col-right">
+
+      <!-- Daily Challenge -->
+      <div class="daily-card">
+        <div class="daily-label">📅 Ежедневная задача</div>
+        <div class="daily-badges">
+          <span class="badge badge-amber">Средний</span>
+          <span class="badge badge-emerald">+60 XP</span>
+        </div>
+        <div class="daily-name">Оптимизация запроса: найдите N+1 проблему в коде 1С</div>
+        <button class="btn-primary btn-amber" onclick="alert('Начало задачи')">Начать →</button>
+      </div>
+
+      <!-- CTA Blocks -->
+      <div class="cta-row">
+        <div class="cta-block cta-block-tasks">
+          <div class="cta-title">📚 Задачи</div>
+          <div class="cta-sub">100 задач по AI</div>
+        </div>
+        <div class="cta-block cta-block-marathon">
+          <div class="cta-title">🏃 Марафон</div>
+          <div class="cta-sub">Серия = множитель</div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">4 834</div>
+          <div class="stat-label">Всего XP</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">#1</div>
+          <div class="stat-label">В рейтинге</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">7</div>
+          <div class="stat-label">Уровень</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">0</div>
+          <div class="stat-label">Решено задач</div>
+        </div>
+      </div>
+
+      <!-- Mini Leaderboard -->
+      <div class="leaderboard-card">
+        <div class="leaderboard-title">Топ игроков</div>
+        <div class="leaderboard-row">
+          <span class="lb-place">🥇</span>
+          <div class="lb-avatar" style="background:#f59e0b; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#0a0a0f; border-radius:50%; width:28px; height:28px;">М</div>
+          <span class="lb-name">Максим К.</span>
+          <span class="lb-xp">12 450 XP</span>
+        </div>
+        <div class="leaderboard-row">
+          <span class="lb-place">🥈</span>
+          <div class="lb-avatar" style="background:#8b5cf6; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; border-radius:50%; width:28px; height:28px;">А</div>
+          <span class="lb-name">Анна С.</span>
+          <span class="lb-xp">9 870 XP</span>
+        </div>
+        <div class="leaderboard-row">
+          <span class="lb-place">🥉</span>
+          <div class="lb-avatar" style="background:#3b82f6; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; border-radius:50%; width:28px; height:28px;">Д</div>
+          <span class="lb-name">Дмитрий Л.</span>
+          <span class="lb-xp">7 230 XP</span>
+        </div>
+        <div class="leaderboard-row me">
+          <span class="lb-place" style="font-size:12px; color:rgba(255,255,255,0.4);">14</span>
+          <div class="lb-avatar" style="background:#10b981; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; border-radius:50%; width:28px; height:28px;">А</div>
+          <span class="lb-name">Вы</span>
+          <span class="lb-xp">4 834 XP</span>
+        </div>
+      </div>
+
+      <!-- Achievements + Referral -->
+      <div class="bottom-row">
+        <div class="achieve-block">
+          <div class="achieve-icons">
+            <div class="achieve-icon">🎯</div>
+            <div class="achieve-icon">🔥</div>
+            <div class="achieve-icon">⚡</div>
+          </div>
+          <span class="achieve-more">ещё 13</span>
+        </div>
+        <div class="achieve-block" style="justify-content:center;">
+          <button class="referral-btn">👥 Друг → +200 XP</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function activateIcon(el) {
+  document.querySelectorAll('.sidebar-icon').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+</script>
+
+</body>
+</html>
