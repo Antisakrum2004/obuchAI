@@ -158,6 +158,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Cursor pointer on all clickable elements */
+  button, a, [role="button"], select, summary, [type="button"], [type="submit"] {
+    cursor: pointer;
+  }
 }
 
 /* Custom scrollbar */

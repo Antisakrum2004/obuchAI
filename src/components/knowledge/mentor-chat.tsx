@@ -120,9 +120,6 @@ export function MentorChat() {
         >
           <MessageCircle className="h-5 w-5 text-muted-foreground group-hover:text-emerald-400 transition-colors" />
         </button>
-        <span className="text-[8px] text-muted-foreground/40 font-mono leading-none">
-          Ментор
-        </span>
       </div>
 
       {/* Chat Modal */}
@@ -130,7 +127,7 @@ export function MentorChat() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/30"
             onClick={() => setOpen(false)}
           />
 

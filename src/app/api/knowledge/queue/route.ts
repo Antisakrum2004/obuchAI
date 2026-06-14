@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       const article = articleRows[0];
       const hasPdf = article?.pdfUrl;
       const sourceType = article?.sourceType || "";
-      const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk"].includes(sourceType) ||
+      const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(sourceType) ||
         (article?.videoUrl && !hasPdf);
       // Also check media table for PDF
       let hasMediaPdf = false;

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch the article
     const { rows: articleRows } = await pool.query(
-      `SELECT id, title, content, summary, tags, "keyTopics", "spaceId", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType" FROM articles WHERE id = $1`,
+      `SELECT id, title, content, summary, tags, "keyTopics", "spaceId", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType", "videoUrl", status FROM articles WHERE id = $1`,
       [articleId]
     );
 
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
       if (type === "content") {
         // Skip content extraction for video articles — they don't have PDF content
         const sourceType = (article.sourceType as string) || "";
-        const videoUrl = (article as { videoUrl?: string }).videoUrl || "";
+        const videoUrl = (article.videoUrl as string) || "";
         const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(sourceType) ||
           (videoUrl && !article.pdfUrl);
         if (isVideoArticle) {

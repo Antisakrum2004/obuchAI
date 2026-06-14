@@ -165,6 +165,7 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
             title={title || "YouTube видео"}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
+            referrerPolicy="no-referrer"
             className="absolute inset-0 h-full w-full"
             onError={handleIframeError}
             onLoad={handleIframeLoad}

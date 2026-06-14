@@ -283,6 +283,16 @@ export default function LearnLessonPage({
     }
   }, [article?.keyConcepts]);
 
+  // Scroll to top when switching blocks
+  useEffect(() => {
+    const container = document.querySelector('main.flex-1.overflow-y-auto');
+    if (container) {
+      requestAnimationFrame(() => {
+        container.scrollTop = 0;
+      });
+    }
+  }, [activeBlock]);
+
   if (loading) {
     return (
       <AppLayout>
@@ -359,15 +369,12 @@ export default function LearnLessonPage({
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="glass rounded-xl p-5 border-white/5"
+          className="glass rounded-xl p-3 border-white/5"
         >
           <div className="flex items-start justify-between gap-3">
-            <div className="space-y-2 flex-1">
-              <h1 className="text-xl font-bold md:text-2xl">{article.title}</h1>
-              {article.summary && (
-                <p className="text-sm text-muted-foreground">{article.summary}</p>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex-1">
+              <h1 className="text-lg font-bold md:text-xl">{article.title}</h1>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 {article.difficulty && (
                   <Badge
                     variant="outline"
@@ -404,15 +411,6 @@ export default function LearnLessonPage({
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Progress */}
-          <div className="mt-4 pt-4 border-t border-white/5 space-y-2">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Прогресс урока</span>
-              <span>{progressPercent}%</span>
-            </div>
-            <Progress value={progressPercent} className="h-2" />
           </div>
         </motion.div>
 
@@ -459,14 +457,12 @@ export default function LearnLessonPage({
               <SummaryBlock
                 article={article}
                 keyConcepts={keyConcepts}
-                timecodes={timecodes}
                 onComplete={() => completeBlock("summary")}
               />
             )}
             {activeBlock === "materials" && (
               <MaterialsBlock
                 article={article}
-                timecodes={timecodes}
                 onComplete={() => completeBlock("materials")}
               />
             )}
@@ -501,48 +497,7 @@ export default function LearnLessonPage({
           </motion.div>
         </AnimatePresence>
 
-        {/* Navigation Footer */}
-        <div className="flex items-center justify-between pt-4">
-          {prevLesson ? (
-            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK prev lesson")}>
-              <Button variant="outline" size="sm" className="gap-1">
-                <ArrowLeft className="h-4 w-4" />
-                {prevLesson.title}
-              </Button>
-            </a>
-          ) : (
-            <div />
-          )}
-
-          <div className="flex items-center gap-2">
-            {activeBlock !== availableBlocks[availableBlocks.length - 1] ? (
-              <Button
-                onClick={goToNextBlock}
-                size="sm"
-                className="gap-1 bg-emerald-600 hover:bg-emerald-500"
-              >
-                Далее
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : (
-              <span className="text-sm text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" />
-                Урок пройден!
-              </span>
-            )}
-          </div>
-
-          {nextLesson ? (
-            <a href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`} onClick={() => console.log("[ETAP-6] CLICK next lesson")}>
-              <Button variant="outline" size="sm" className="gap-1">
-                {nextLesson.title}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </a>
-          ) : (
-            <div />
-          )}
-        </div>
+        {/* No navigation footer — removed unnecessary prev/next buttons with article titles */}
       </div>
     </AppLayout>
   );
@@ -555,12 +510,10 @@ export default function LearnLessonPage({
 function SummaryBlock({
   article,
   keyConcepts,
-  timecodes,
   onComplete,
 }: {
   article: ArticleData;
   keyConcepts: string[];
-  timecodes: TimecodeEntry[];
   onComplete: () => void;
 }) {
   return (
@@ -571,27 +524,27 @@ function SummaryBlock({
           Обзор урока
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Summary */}
+      <CardContent className="space-y-3">
+        {/* Summary — тезисное описание урока */}
         {article.summary && (
-          <div className="p-4 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
             <p className="text-sm leading-relaxed">{article.summary}</p>
           </div>
         )}
 
         {/* Key Concepts */}
         {keyConcepts.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <h4 className="text-sm font-medium flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-yellow-400" />
               Ключевые концепции
             </h4>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {keyConcepts.map((concept) => (
                 <Badge
                   key={concept}
                   variant="outline"
-                  className="border-emerald-500/20 text-emerald-400"
+                  className="border-emerald-500/20 text-emerald-400 text-xs"
                 >
                   {concept}
                 </Badge>
@@ -600,61 +553,32 @@ function SummaryBlock({
           </div>
         )}
 
-        {/* Lesson Structure (timecodes preview) */}
-        {timecodes.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium flex items-center gap-1.5">
-              <List className="h-4 w-4 text-blue-400" />
-              Структура урока
-            </h4>
-            <div className="space-y-1">
-              {timecodes.map((tc, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 text-sm py-1"
-                >
-                  <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5 w-14">
-                    {tc.time}
-                  </span>
-                  <div>
-                    <span className="font-medium">{tc.title}</span>
-                    {tc.summary && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {tc.summary}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* What you'll learn */}
-        <div className="flex items-center gap-3 pt-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {article.videoUrl && (
-              <Badge variant="outline" className="border-blue-500/20 text-blue-400 text-xs">
-                <Video className="h-3 w-3 mr-1" /> Видео
-              </Badge>
-            )}
-            {article.quiz && (
-              <Badge variant="outline" className="border-purple-500/20 text-purple-400 text-xs">
-                <HelpCircle className="h-3 w-3 mr-1" /> Квиз
-              </Badge>
-            )}
-            {article.practical_task && (
-              <Badge variant="outline" className="border-orange-500/20 text-orange-400 text-xs">
-                <Code className="h-3 w-3 mr-1" /> Практика
-              </Badge>
-            )}
-          </div>
+        {/* What you'll learn — тезисно что будет в уроке */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {article.videoUrl && (
+            <Badge variant="outline" className="border-blue-500/20 text-blue-400 text-xs">
+              <Video className="h-3 w-3 mr-1" /> Видео
+            </Badge>
+          )}
+          {article.quiz && (
+            <Badge variant="outline" className="border-purple-500/20 text-purple-400 text-xs">
+              <HelpCircle className="h-3 w-3 mr-1" /> Квиз
+            </Badge>
+          )}
+          {article.practical_task && (
+            <Badge variant="outline" className="border-orange-500/20 text-orange-400 text-xs">
+              <Code className="h-3 w-3 mr-1" /> Практика
+            </Badge>
+          )}
+          <Badge variant="outline" className="border-white/10 text-muted-foreground text-xs">
+            <FileText className="h-3 w-3 mr-1" /> Конспект
+          </Badge>
         </div>
 
         <Button
           onClick={onComplete}
           size="sm"
-          className="w-full bg-emerald-600 hover:bg-emerald-500 mt-2"
+          className="w-full bg-emerald-600 hover:bg-emerald-500 mt-1"
         >
           Начать изучение
           <ChevronRight className="h-4 w-4 ml-1" />
@@ -670,11 +594,9 @@ function SummaryBlock({
 
 function MaterialsBlock({
   article,
-  timecodes,
   onComplete,
 }: {
   article: ArticleData;
-  timecodes: TimecodeEntry[];
   onComplete: () => void;
 }) {
   return (
@@ -685,7 +607,7 @@ function MaterialsBlock({
           Видеоматериалы
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {/* Video Player */}
         {article.videoUrl && (
           <div className="rounded-lg overflow-hidden border border-white/5">
@@ -693,39 +615,9 @@ function MaterialsBlock({
           </div>
         )}
 
-        {/* Timecodes Navigation */}
-        {timecodes.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium flex items-center gap-1.5">
-              <List className="h-4 w-4 text-blue-400" />
-              Таймкоды
-            </h4>
-            <div className="glass rounded-lg p-3 space-y-1 max-h-[300px] overflow-y-auto">
-              {timecodes.map((tc, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 text-sm py-1.5 px-2 rounded hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <span className="text-xs font-mono text-emerald-400 shrink-0 mt-0.5 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                    {tc.time}
-                  </span>
-                  <div>
-                    <span className="font-medium">{tc.title}</span>
-                    {tc.summary && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {tc.summary}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Source Link */}
         {article.sourceUrl && (
-          <div className="pt-2">
+          <div className="pt-1">
             <a
               href={article.sourceUrl}
               target="_blank"
