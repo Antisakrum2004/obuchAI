@@ -4,10 +4,59 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
-import ZAI from "z-ai-web-dev-sdk";
+import { createZAI, isZAIConfigured } from "@/lib/zai";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+// ── Piped API instances for extracting YouTube audio ──
+const PIPED_API_INSTANCES = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.adminforge.de",
+  "https://piped-api.privacy.com.de",
+  "https://pipedapi.in.projectsegfau.lt",
+];
+
+interface PipedStream {
+  url: string;
+  format: string;
+  quality: string;
+  mimeType: string;
+  codec: string;
+  videoOnly: boolean;
+  bitrate: number;
+  contentLength: number;
+}
+
+interface PipedResponse {
+  title: string;
+  duration: number;
+  thumbnailUrl: string;
+  uploader: string;
+  uploaderUrl: string;
+  description: string;
+  videoStreams: PipedStream[];
+  audioStreams: PipedStream[];
+}
+
+// ── Fetch video metadata from Piped API ──
+async function getPipedData(videoId: string): Promise<PipedResponse | null> {
+  for (const instance of PIPED_API_INSTANCES) {
+    try {
+      const res = await fetch(`${instance}/streams/${videoId}`, {
+        signal: AbortSignal.timeout(8000),
+        headers: { "User-Agent": "obuchAI/1.0", "Accept": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audioStreams || data.videoStreams) return data as PipedResponse;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 // ── YouTube oEmbed — free, no API key needed ──
 async function getYouTubeMeta(videoId: string): Promise<{ title: string; author?: string }> {
@@ -42,7 +91,7 @@ async function getRutubeMeta(videoId: string): Promise<{ title: string; author?:
 // ── Web search for video context ──
 async function searchVideoContext(query: string): Promise<string> {
   try {
-    const zai = await ZAI.create();
+    const zai = createZAI();
     const results = await zai.functions.invoke("web_search", { query, num: 5 });
     if (!Array.isArray(results) || results.length === 0) return "";
     return results
@@ -54,10 +103,76 @@ async function searchVideoContext(query: string): Promise<string> {
   }
 }
 
+// ── REAL TRANSCRIPTION: Download audio from Piped → ASR via Z-AI ──
+async function transcribeYouTubeAudio(videoId: string): Promise<string> {
+  if (!isZAIConfigured()) {
+    console.log("[VideoArticle] Z-AI not configured, skipping ASR transcription");
+    return "";
+  }
+
+  try {
+    // Step 1: Get audio stream URL from Piped
+    const pipedData = await getPipedData(videoId);
+    if (!pipedData?.audioStreams?.length) {
+      console.log("[VideoArticle] No audio streams available for video", videoId);
+      return "";
+    }
+
+    // Find best audio stream (prefer m4a/mp4, fallback to webm/opus)
+    const audioStreams = pipedData.audioStreams
+      .filter((s: PipedStream) =>
+        s.mimeType?.startsWith("audio/mp4") ||
+        s.mimeType?.startsWith("audio/webm") ||
+        s.mimeType?.startsWith("audio/ogg")
+      )
+      .sort((a: PipedStream, b: PipedStream) => (b.bitrate || 0) - (a.bitrate || 0));
+
+    if (audioStreams.length === 0) {
+      console.log("[VideoArticle] No suitable audio streams found");
+      return "";
+    }
+
+    const audioUrl = audioStreams[0].url;
+    const audioSize = audioStreams[0].contentLength || 0;
+
+    // Safety check: skip if audio is too large (>50MB for ASR)
+    if (audioSize > 50 * 1024 * 1024) {
+      console.log(`[VideoArticle] Audio too large (${Math.round(audioSize / 1024 / 1024)}MB), skipping ASR`);
+      return "";
+    }
+
+    // Step 2: Download audio
+    console.log(`[VideoArticle] Downloading audio from Piped (${Math.round(audioSize / 1024)}KB)...`);
+    const audioRes = await fetch(audioUrl, {
+      signal: AbortSignal.timeout(60000), // 60s to download
+    });
+    if (!audioRes.ok) {
+      console.log(`[VideoArticle] Failed to download audio: ${audioRes.status}`);
+      return "";
+    }
+
+    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+    console.log(`[VideoArticle] Downloaded audio: ${Math.round(audioBuffer.length / 1024)}KB`);
+
+    // Step 3: Convert to base64 and send to ASR
+    const base64Audio = audioBuffer.toString("base64");
+
+    console.log("[VideoArticle] Sending audio to ASR for transcription...");
+    const zai = createZAI();
+    const asrResult = await zai.audio.asr.create({ file_base64: base64Audio });
+
+    const transcript = asrResult.text || "";
+    console.log(`[VideoArticle] ASR transcription received: ${transcript.length} chars`);
+
+    return transcript;
+  } catch (err) {
+    console.error("[VideoArticle] ASR transcription failed:", err);
+    return "";
+  }
+}
+
 // POST /api/knowledge/ai/video-article — YouTube→AI article pipeline
-// 1. Gather video metadata (oEmbed + web search)
-// 2. AI generates article content, summary, tags, glossary, quiz, practical_task
-// 3. Creates and publishes the article
+// Pipeline: Real ASR transcription → AI formats into article
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -102,6 +217,7 @@ export async function POST(request: NextRequest) {
     // ── Step 1: Gather context from multiple sources ──
     let videoTitle = customTitle || "";
     let videoAuthor = "";
+    let videoDescription = "";
     let searchContext = "";
 
     // 1a. oEmbed metadata (fast, free)
@@ -115,7 +231,17 @@ export async function POST(request: NextRequest) {
       if (meta.author) videoAuthor = meta.author;
     }
 
-    // 1b. Web search for additional context
+    // 1b. Piped API — get description and audio streams (for YouTube)
+    if (videoId && sourceType === "youtube") {
+      const pipedData = await getPipedData(videoId);
+      if (pipedData) {
+        if (!videoTitle && pipedData.title) videoTitle = pipedData.title;
+        if (!videoAuthor && pipedData.uploader) videoAuthor = pipedData.uploader;
+        if (pipedData.description) videoDescription = pipedData.description;
+      }
+    }
+
+    // 1c. Web search for additional context
     const searchQuery = videoTitle
       ? `"${videoTitle}" видео урок обучение`
       : videoId
@@ -123,28 +249,47 @@ export async function POST(request: NextRequest) {
         : url;
     searchContext = await searchVideoContext(searchQuery);
 
-    // 1c. Build context string for AI
-    const contextParts: string[] = [];
-    if (videoTitle) contextParts.push(`Название видео: ${videoTitle}`);
-    if (videoAuthor) contextParts.push(`Автор/канал: ${videoAuthor}`);
-    if (searchContext) contextParts.push(`Результаты поиска:\n${searchContext}`);
-    contextParts.push(`URL: ${url}`);
-    contextParts.push(`Тип источника: ${sourceType}`);
-
-    const contextForAI = contextParts.join("\n\n");
-
-    // ── Step 2: AI generates transcript/description from gathered context ──
+    // ── Step 2: REAL TRANSCRIPTION via ASR ──
+    // This is the key fix: instead of hallucinating content from title,
+    // we actually transcribe the audio from the video.
     let transcript = "";
-    try {
-      const zai = await ZAI.create();
-      const completion = await zai.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: `Ты — эксперт по созданию учебного контента из видео. На основе доступной информации о видео (название, автор, результаты поиска) создай максимально подробное описание того, о чём это видео.
+
+    // Try ASR first (real speech-to-text transcription)
+    if (videoId && sourceType === "youtube") {
+      transcript = await transcribeYouTubeAudio(videoId);
+    }
+
+    // If ASR didn't work or not YouTube, try YouTube description as fallback
+    if (!transcript && videoDescription) {
+      console.log("[VideoArticle] ASR failed, using YouTube description as basis");
+      transcript = videoDescription;
+    }
+
+    // If still nothing, ask AI to describe based on available context (LAST RESORT)
+    if (!transcript || transcript.length < 100) {
+      console.log("[VideoArticle] No transcript available, AI will generate description from context");
+      try {
+        const contextParts: string[] = [];
+        if (videoTitle) contextParts.push(`Название видео: ${videoTitle}`);
+        if (videoAuthor) contextParts.push(`Автор/канал: ${videoAuthor}`);
+        if (videoDescription) contextParts.push(`Описание видео с YouTube:\n${videoDescription}`);
+        if (searchContext) contextParts.push(`Результаты поиска:\n${searchContext}`);
+        contextParts.push(`URL: ${url}`);
+        contextParts.push(`Тип источника: ${sourceType}`);
+        const contextForAI = contextParts.join("\n\n");
+
+        const zai = createZAI();
+        const completion = await zai.chat.completions.create({
+          messages: [
+            {
+              role: "system",
+              content: `Ты — эксперт по созданию учебного контента из видео. На основе доступной информации о видео (название, автор, описание с YouTube, результаты поиска) создай максимально подробное описание того, о чём это видео.
+
+ВАЖНО: Строго придерживайся фактической информации. НЕ придумывай содержание, которого нет в описании и результатах поиска. Если информации мало — так и скажи.
+
 Структура:
 ## Описание
-[Подробное описание — 3-5 абзацев, предположи содержание на основе названия и контекста]
+[Подробное описание — 3-5 абзацев, основанное ТОЛЬКО на фактических данных]
 ## Ключевые темы
 - Тема 1: описание
 - Тема 2: описание
@@ -153,30 +298,39 @@ export async function POST(request: NextRequest) {
 2. [Пункт 2 — 2-3 предложения]
 ## Практические выводы
 - [Вывод 1]
+
 Ответ на русском, минимум 1500 символов.`
-          },
-          {
-            role: "user",
-            content: `Вот информация о видео:\n\n${contextForAI}\n\nСоздай подробное описание контента этого видео.`
-          }
-        ],
-      });
-      transcript = completion.choices[0]?.message?.content || "";
-    } catch (err) {
-      console.error("[VideoArticle] Z-AI description generation failed:", err);
+            },
+            {
+              role: "user",
+              content: `Вот информация о видео:\n\n${contextForAI}\n\nСоздай подробное описание контента этого видео, основанное ТОЛЬКО на представленных данных.`
+            }
+          ],
+        });
+        transcript = completion.choices[0]?.message?.content || "";
+      } catch (err) {
+        console.error("[VideoArticle] Z-AI description generation failed:", err);
+      }
     }
 
-    // If transcript is too short, try OpenRouter/OpenAI as fallback
+    // Fallback to OpenRouter/OpenAI
     if (!transcript || transcript.length < 100) {
       try {
+        const contextParts: string[] = [];
+        if (videoTitle) contextParts.push(`Название: ${videoTitle}`);
+        if (videoAuthor) contextParts.push(`Автор: ${videoAuthor}`);
+        if (videoDescription) contextParts.push(`Описание YouTube:\n${videoDescription}`);
+        if (searchContext) contextParts.push(`Поиск:\n${searchContext}`);
+        const contextForAI = contextParts.join("\n\n");
+
         const fallbackResult = await createChatCompletion([
           {
             role: "system",
-            content: `Ты — эксперт по созданию учебного контента. На основе информации о видео создай подробное описание его содержания на русском языке. Минимум 1000 символов.`
+            content: `Ты — эксперт по созданию учебного контента. На основе информации о видео создай подробное описание его содержания на русском языке. Строго придерживайся фактической информации — НЕ придумывай то, чего нет в данных. Минимум 1000 символов.`
           },
           {
             role: "user",
-            content: `Информация о видео:\n${contextForAI}\n\nСоздай подробное описание.`
+            content: `Информация о видео:\n${contextForAI}\n\nСоздай подробное описание, основанное ТОЛЬКО на фактах.`
           }
         ], { temperature: 0.7 });
         transcript = fallbackResult.choices?.[0]?.message?.content || "";
@@ -188,7 +342,6 @@ export async function POST(request: NextRequest) {
     // If still too short but we have at least a title, create a minimal article
     if (!transcript || transcript.length < 50) {
       if (videoTitle || customTitle) {
-        // Create a minimal article with just the video link and title
         transcript = `## ${videoTitle || customTitle}\n\nВидеоматериал урока. Основной контент — видеоурок.\n\nСмотрите видео для получения полного материала.`;
       } else {
         return NextResponse.json(
@@ -198,38 +351,63 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Step 3: AI generates article from transcript ──
+    // ── Step 3: AI generates article from TRANSCRIPT (not hallucination) ──
+    // The key difference: we now pass the REAL transcript, not AI-hallucinated content
+    const transcriptType = transcript === videoDescription
+      ? "описание с YouTube"
+      : transcript.length > 200
+        ? "транскрипция (ASR)"
+        : "контекст из поиска";
+
     const aiResult = await createChatCompletion([
       {
         role: "system",
-        content: `Ты — AI-ассистент для создания образовательных статей. На основе описания видео-урока создай полноценную статью.
+        content: `Ты — AI-ассистент для создания образовательных статей. На основе ${transcriptType} видео создай полноценную статью.
+
+КРИТИЧЕСКИ ВАЖНО:
+1. Строго придерживайся ФАКТИЧЕСКОГО содержания транскрипта/описания
+2. НЕ придумывай темы, которых нет в исходном материале
+3. НЕ искажай смысл — если видео о программировании, пиши о программировании, а не о гонках
+4. Сохраняй техническую точность — правильные названия инструментов, языков, платформ
+5. Если транскрипт содержит таймкоды — используй их для структуры статьи
+
 Формат ответа — СТРОГО JSON (без markdown-обёрток):
 {
-  "title": "Название статьи",
-  "summary": "Краткое описание 2-3 предложения",
-  "content": "Полный Markdown-контент статьи (минимум 2000 символов, с заголовками ##, списками, примерами кода если уместно)",
+  "title": "Название статьи (на основе реального содержания видео)",
+  "summary": "Краткое описание 2-3 предложения (на основе фактов из видео)",
+  "content": "Полный Markdown-контент статьи (минимум 2000 символов, с заголовками ##, списками, примерами кода если есть в видео)",
   "tags": ["тег1", "тег2", "тег3"],
   "keyTopics": ["тема1", "тема2"],
   "difficulty": "easy|medium|hard",
   "estimatedTime": "25 мин",
   "quiz": [
-    {"question": "Вопрос?", "options": ["A", "B", "C", "D"], "correct": 0, "explanation": "Объяснение"},
+    {"question": "Вопрос по реальному содержанию видео?", "options": ["A", "B", "C", "D"], "correct": 0, "explanation": "Объяснение на основе транскрипта"},
     {"question": "Вопрос 2?", "options": ["A", "B", "C", "D"], "correct": 1, "explanation": "Объяснение"}
   ],
   "practicalTask": {
     "title": "Практическое задание",
-    "description": "Описание задания",
+    "description": "Описание задания на основе реального содержания",
     "hint": "Подсказка",
     "solution": "Решение"
   }
 }
-Минимум 5 quiz вопросов. Статья должна быть на русском, технически точная, с примерами.`
+Минимум 5 quiz вопросов. Статья должна быть на русском, технически точная, с примерами из транскрипта.`
       },
       {
         role: "user",
-        content: `Создай статью на основе этого описания видео:\n\n${transcript}${customTitle ? `\n\nЖелаемое название: ${customTitle}` : ""}`
+        content: `Создай статью на основе ${transcriptType} видео:
+
+---НАЧАЛО ТРАНСКРИПТА/ОПИСАНИЯ---
+${transcript}
+---КОНЕЦ ТРАНСКРИПТА/ОПИСАНИЯ---
+
+Дополнительная информация:
+- Название видео: ${videoTitle || "не указано"}
+- Автор: ${videoAuthor || "не указан"}${customTitle ? `\n- Желаемое название: ${customTitle}` : ""}
+
+ВАЖНО: Создай статью строго по содержанию транскрипта. НЕ придумывай содержание, которого нет в видео.`
       }
-    ], { temperature: 0.7 });
+    ], { temperature: 0.3 }); // Lower temperature for more factual output
 
     // Parse AI response
     let articleData: Record<string, unknown>;
@@ -249,13 +427,11 @@ export async function POST(request: NextRequest) {
     // ── Step 4: Determine spaceId (spaceId is NOT NULL) ──
     let spaceIdValue: string | null = null;
     try {
-      // Get list of existing spaces for AI categorization
       const { rows: spaces } = await pool.query(
         `SELECT id, name, slug, description FROM knowledge_spaces ORDER BY name LIMIT 20`
       );
 
       if (spaces.length > 0) {
-        // Ask AI to pick the best space
         const spaceList = spaces.map((s: { id: string; name: string; description?: string }) =>
           `- ${s.name} (id: ${s.id})${s.description ? `: ${s.description}` : ""}`
         ).join("\n");
@@ -276,7 +452,6 @@ export async function POST(request: NextRequest) {
         ], { temperature: 0.1 });
 
         const rawAnswer = categorizeResult.choices?.[0]?.message?.content?.trim() || "";
-        // Extract id from answer (might be wrapped in markdown or extra text)
         const idMatch = rawAnswer.match(/[a-zA-Z0-9_-]{8,}/);
         if (idMatch) {
           const matchedSpace = spaces.find((s: { id: string }) => s.id === idMatch[0]);
@@ -284,12 +459,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fallback: if AI couldn't determine, use the first space
       if (!spaceIdValue && spaces.length > 0) {
         spaceIdValue = spaces[0].id;
       }
 
-      // Last resort: create a default space
       if (!spaceIdValue) {
         const defaultSpaceId = 'sp_default_' + Date.now().toString(36);
         await pool.query(
@@ -302,7 +475,6 @@ export async function POST(request: NextRequest) {
       }
     } catch (err) {
       console.error("[VideoArticle] Space determination failed:", err);
-      // Try to find any space as absolute fallback
       const { rows: anySpace } = await pool.query(
         `SELECT id FROM knowledge_spaces LIMIT 1`
       );
@@ -325,12 +497,12 @@ export async function POST(request: NextRequest) {
       .replace(/^-|-$/g, "") || `article-${Date.now()}`;
 
     const result = await pool.query(
-      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "spaceId", "authorId", 
-         "isPublished", "viewCount", "videoUrl", "sourceType", difficulty, "estimatedTime", 
+      `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "spaceId", "authorId",
+         "isPublished", "viewCount", "videoUrl", "sourceType", difficulty, "estimatedTime",
          status, "aiGenerated", quiz, "practical_task",
          "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 
-         true, 0, $10, $11, $12, $13, 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+         true, 0, $10, $11, $12, $13,
          'done', true, $14, $15,
          NOW(), NOW())
        RETURNING *`,
@@ -383,8 +555,11 @@ export async function POST(request: NextRequest) {
       message: "Видео-статья создана и опубликована",
       article: articleCreated,
       transcriptLength: transcript.length,
+      transcriptSource: transcriptType,
       sources: {
         oembed: !!videoTitle,
+        pipedDescription: !!videoDescription,
+        asr: transcriptType === "транскрипция (ASR)",
         webSearch: !!searchContext,
       },
     }, { status: 201 });
