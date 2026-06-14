@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.30.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.31.0";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
@@ -53,14 +53,14 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
   return (
     <div className={cn("flex h-full flex-col items-center", className)}>
       {/* Logo */}
-      <div className="flex items-center justify-center py-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 cursor-pointer">
-          <Zap className="h-5 w-5 text-emerald-400" />
+      <div className="flex items-center justify-center py-5">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/20 cursor-pointer">
+          <Zap className="h-6 w-6 text-emerald-400" />
         </div>
       </div>
 
       {/* Navigation — icon-only with tooltips */}
-      <nav className="flex-1 flex flex-col items-center gap-2 py-4 w-full px-3">
+      <nav className="flex-1 flex flex-col items-center gap-6 py-4 w-full px-3">
         {navItems.map((item) => {
           const isExactMatch = pathname === item.href;
           const isPrefixMatch = pathname.startsWith(item.href + "/");
@@ -78,7 +78,7 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
                   : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
               )}
             >
-              <item.icon className={cn("h-5 w-5", isActive && "text-emerald-400")} />
+              <item.icon className={cn("h-6 w-6", isActive && "text-emerald-400")} />
             </Link>
           );
 

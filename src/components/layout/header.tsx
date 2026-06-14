@@ -50,16 +50,18 @@ export function Header({ onMenuToggle }: HeaderProps) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      {/* Grade badge + XP Bar */}
-      <div className="flex items-center gap-3 flex-1">
-        <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap", gradeBadgeClass)}>
-          {gradeName}
-        </span>
-        <XPBar currentXp={xp} level={level} className="hidden sm:flex max-w-xs" compact />
-        <span className="text-xs text-muted-foreground whitespace-nowrap hidden md:inline">
-          Уровень {level}
-        </span>
+      {/* Left: Grade badge (mobile) */}
+      <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap sm:hidden", gradeBadgeClass)}>
+        Ур. {level} · {gradeName}
+      </span>
+
+      {/* Center: XPBar — detailed mode */}
+      <div className="hidden sm:flex flex-1 max-w-md mx-auto items-center">
+        <XPBar currentXp={xp} level={level} detailed />
       </div>
+
+      {/* Mobile: compact XPBar */}
+      <XPBar currentXp={xp} level={level} className="sm:hidden flex-1" compact />
 
       {/* Right side */}
       <div className="flex items-center gap-3">
