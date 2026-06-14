@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -56,7 +56,7 @@ interface TimecodeEntry {
 interface QuizQuestion {
   question: string;
   options: string[];
-  correctIndex: number;
+  correctIndex: number; // normalized: supports both "correct" and "correctIndex" from API
   explanation: string;
 }
 
@@ -242,15 +242,27 @@ export default function LearnLessonPage({
       ? pathArticles[currentPathIndex + 1]
       : null;
 
-  // Parse quiz from JSON if needed
+  // Parse quiz from JSON if needed — normalize correct/correctIndex field
   const quiz: QuizQuestion[] = useMemo(() => {
     if (!article?.quiz) return [];
-    if (Array.isArray(article.quiz)) return article.quiz;
-    try {
-      return JSON.parse(article.quiz as unknown as string);
-    } catch {
-      return [];
+    let raw: unknown[];
+    if (Array.isArray(article.quiz)) {
+      raw = article.quiz;
+    } else {
+      try {
+        raw = JSON.parse(article.quiz as unknown as string);
+      } catch {
+        return [];
+      }
     }
+    // Normalize: AI can return "correct" or "correctIndex" — map both to correctIndex
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return raw.map((q: any) => ({
+      question: String(q.question || ""),
+      options: Array.isArray(q.options) ? q.options.map(String) : [],
+      correctIndex: typeof q.correctIndex === "number" ? q.correctIndex : typeof q.correct === "number" ? q.correct : 0,
+      explanation: String(q.explanation || ""),
+    }));
   }, [article?.quiz]);
 
   const practicalTask: PracticalTask | null = useMemo(() => {
@@ -757,149 +769,324 @@ function QuizBlock({
   setChecked: React.Dispatch<React.SetStateAction<boolean>>;
   onComplete: () => void;
 }) {
-  const allAnswered = answers.size === quiz.length;
-  const correctCount = quiz.filter(
-    (q, i) => answers.get(i) === q.correctIndex
-  ).length;
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [timedOut, setTimedOut] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const QUESTION_TIME = 30; // seconds per question
 
+  // Current question data
+  const q = quiz[currentQuestion];
+  const selectedAnswer = answers.get(currentQuestion);
+  const isAnswered = selectedAnswer !== undefined;
+  const isCorrect = isAnswered && selectedAnswer === q.correctIndex;
+
+  // Timer: countdown 30 seconds per question
+  useEffect(() => {
+    if (checked || isAnswered || timedOut) return;
+
+    setTimeLeft(QUESTION_TIME);
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          // Time's up — auto-mark as timed out (wrong answer)
+          if (timerRef.current) clearInterval(timerRef.current);
+          setTimedOut(true);
+          // Record as unanswered (use -1 as sentinel)
+          setAnswers((prev) => {
+            const next = new Map(prev);
+            next.set(currentQuestion, -1);
+            return next;
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [currentQuestion, checked, isAnswered, timedOut, setAnswers]);
+
+  // Reset timer when moving to next question
+  useEffect(() => {
+    setTimeLeft(QUESTION_TIME);
+    setTimedOut(false);
+    setShowExplanation(false);
+  }, [currentQuestion]);
+
+  // Calculate final results
+  const correctCount = quiz.filter(
+    (qItem, i) => answers.get(i) === qItem.correctIndex
+  ).length;
+  const timedOutCount = quiz.filter((_, i) => answers.get(i) === -1).length;
+
+  // Handle answer selection
+  const handleAnswer = (oIdx: number) => {
+    if (isAnswered || timedOut) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setAnswers((prev) => {
+      const next = new Map(prev);
+      next.set(currentQuestion, oIdx);
+      return next;
+    });
+    setShowExplanation(true);
+  };
+
+  // Move to next question or finish
+  const handleNext = () => {
+    if (currentQuestion < quiz.length - 1) {
+      setCurrentQuestion((prev) => prev + 1);
+    } else {
+      setChecked(true);
+    }
+  };
+
+  // Timer color based on time remaining
+  const timerColor = timeLeft > 15 ? "text-emerald-400" : timeLeft > 5 ? "text-yellow-400" : "text-red-400";
+  const timerBg = timeLeft > 15 ? "bg-emerald-500/10 border-emerald-500/20" : timeLeft > 5 ? "bg-yellow-500/10 border-yellow-500/20" : "bg-red-500/10 border-red-500/20";
+
+  // Results screen
+  if (checked) {
+    return (
+      <Card className="glass border-white/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <HelpCircle className="h-5 w-5 text-violet-300" />
+            Результаты квиза
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className={`p-6 rounded-lg text-center ${
+              correctCount === quiz.length
+                ? "bg-green-500/10 border border-green-500/20"
+                : correctCount >= quiz.length / 2
+                ? "bg-yellow-500/10 border border-yellow-500/20"
+                : "bg-red-500/10 border border-red-500/20"
+            }`}
+          >
+            <p className="text-3xl font-bold">
+              {correctCount} из {quiz.length}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {correctCount === quiz.length
+                ? "Отлично! Все ответы верные!"
+                : correctCount >= quiz.length / 2
+                ? "Хороший результат, но есть что улучшить"
+                : "Рекомендуем перечитать материал"}
+            </p>
+            {timedOutCount > 0 && (
+              <p className="text-xs text-yellow-400/70 mt-2">
+                {timedOutCount} {timedOutCount === 1 ? "вопрос" : "вопроса"} пропущено по таймеру
+              </p>
+            )}
+          </motion.div>
+
+          {/* Review all answers */}
+          <div className="space-y-3">
+            {quiz.map((qItem, qIdx) => {
+              const ans = answers.get(qIdx);
+              const wasTimedOut = ans === -1;
+              const wasCorrect = ans === qItem.correctIndex;
+              return (
+                <div
+                  key={qIdx}
+                  className={`p-3 rounded-lg border text-sm ${
+                    wasTimedOut
+                      ? "border-yellow-500/30 bg-yellow-500/5"
+                      : wasCorrect
+                      ? "border-green-500/30 bg-green-500/5"
+                      : "border-red-500/30 bg-red-500/5"
+                  }`}
+                >
+                  <p className="font-medium mb-1">{qIdx + 1}. {qItem.question}</p>
+                  {wasTimedOut ? (
+                    <p className="text-yellow-400 text-xs">Время вышло</p>
+                  ) : (
+                    <p className={wasCorrect ? "text-green-400 text-xs" : "text-red-400 text-xs"}>
+                      Ваш ответ: {String.fromCharCode(65 + (ans ?? 0))} — {wasCorrect ? "верно" : "неверно"}
+                    </p>
+                  )}
+                  {qItem.explanation && (
+                    <p className="text-muted-foreground text-xs mt-1">{qItem.explanation}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <Button
+            onClick={onComplete}
+            size="sm"
+            className="w-full bg-emerald-600 hover:bg-emerald-500"
+          >
+            Перейти к практике
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Active quiz — one question at a time with timer
   return (
     <Card className="glass border-white/5">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <HelpCircle className="h-5 w-5 text-purple-400" />
+          <HelpCircle className="h-5 w-5 text-violet-300" />
           Проверка знаний
           <Badge variant="outline" className="text-xs border-white/10 ml-auto">
-            {quiz.length} вопросов
+            {currentQuestion + 1}/{quiz.length}
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {quiz.map((q, qIdx) => {
-          const selectedAnswer = answers.get(qIdx);
-          const isCorrect = selectedAnswer === q.correctIndex;
-          const isWrong = checked && selectedAnswer !== undefined && !isCorrect;
+      <CardContent className="space-y-4">
+        {/* Progress dots */}
+        <div className="flex items-center gap-1.5 justify-center">
+          {quiz.map((_, i) => {
+            const ans = answers.get(i);
+            const isCurrent = i === currentQuestion;
+            const done = ans !== undefined;
+            return (
+              <div
+                key={i}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  isCurrent
+                    ? "bg-violet-300/70 w-4"
+                    : done && ans === quiz[i].correctIndex
+                    ? "bg-green-400"
+                    : done
+                    ? "bg-red-400"
+                    : "bg-white/20"
+                }`}
+              />
+            );
+          })}
+        </div>
 
-          return (
-            <div
-              key={qIdx}
-              className={`p-4 rounded-lg border transition-colors ${
-                checked
-                  ? isCorrect
-                    ? "border-green-500/30 bg-green-500/5"
-                    : isWrong
-                    ? "border-red-500/30 bg-red-500/5"
-                    : "border-white/5 bg-white/[0.02]"
-                  : "border-white/5 bg-white/[0.02]"
-              }`}
-            >
-              <h4 className="text-sm font-medium mb-3">
-                {qIdx + 1}. {q.question}
-              </h4>
-
-              <div className="space-y-2">
-                {q.options.map((option, oIdx) => {
-                  const isSelected = selectedAnswer === oIdx;
-                  const isCorrectOption = checked && oIdx === q.correctIndex;
-
-                  return (
-                    <button
-                      key={oIdx}
-                      onClick={() => {
-                        if (checked) return;
-                        setAnswers((prev) => {
-                          const next = new Map(prev);
-                          next.set(qIdx, oIdx);
-                          return next;
-                        });
-                      }}
-                      disabled={checked}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
-                        checked
-                          ? isCorrectOption
-                            ? "bg-green-500/10 border border-green-500/30 text-green-400"
-                            : isSelected && !isCorrectOption
-                            ? "bg-red-500/10 border border-red-500/30 text-red-400"
-                            : "bg-white/[0.02] border border-white/5 text-muted-foreground"
-                          : isSelected
-                          ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-                          : "bg-white/[0.02] border border-white/5 text-foreground hover:bg-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      <span className="w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0">
-                        {checked && isCorrectOption ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-400" />
-                        ) : checked && isSelected && !isCorrectOption ? (
-                          <XCircle className="h-4 w-4 text-red-400" />
-                        ) : (
-                          String.fromCharCode(65 + oIdx)
-                        )}
-                      </span>
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Explanation */}
-              {checked && q.explanation && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="mt-3 p-3 rounded-lg bg-white/[0.03] border border-white/5"
-                >
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Пояснение:</span>{" "}
-                    {q.explanation}
-                  </p>
-                </motion.div>
-              )}
+        {/* Timer */}
+        {!isAnswered && !timedOut && (
+          <div className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border ${timerBg}`}>
+            <Clock className={`h-4 w-4 ${timerColor}`} />
+            <span className={`text-sm font-mono font-bold ${timerColor}`}>
+              0:{timeLeft.toString().padStart(2, "0")}
+            </span>
+            <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden ml-2">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ${
+                  timeLeft > 15 ? "bg-emerald-400" : timeLeft > 5 ? "bg-yellow-400" : "bg-red-400"
+                }`}
+                style={{ width: `${(timeLeft / QUESTION_TIME) * 100}%` }}
+              />
             </div>
-          );
-        })}
+          </div>
+        )}
 
-        {/* Check Answers / Results */}
-        {!checked ? (
-          <Button
-            onClick={() => setChecked(true)}
-            disabled={!allAnswered}
-            size="sm"
-            className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50"
+        {/* Timed out message */}
+        {timedOut && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm text-center"
           >
-            Проверить ответы
-          </Button>
-        ) : (
+            <Clock className="h-4 w-4 inline mr-1" />
+            Время вышло! Опыт за этот вопрос не начисляется.
+          </motion.div>
+        )}
+
+        {/* Question */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentQuestion}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-3"
+          >
+            <h4 className="text-sm font-medium">
+              {currentQuestion + 1}. {q.question}
+            </h4>
+
+            <div className="space-y-2">
+              {q.options.map((option, oIdx) => {
+                const isSelected = selectedAnswer === oIdx;
+                const isCorrectOption = (isAnswered || timedOut) && oIdx === q.correctIndex;
+                const isWrongOption = (isAnswered || timedOut) && isSelected && !isCorrectOption;
+
+                return (
+                  <button
+                    key={oIdx}
+                    onClick={() => handleAnswer(oIdx)}
+                    disabled={isAnswered || timedOut}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all flex items-center gap-2 ${
+                      (isAnswered || timedOut)
+                        ? isCorrectOption
+                          ? "bg-green-500/10 border border-green-500/30 text-green-400"
+                          : isWrongOption
+                          ? "bg-red-500/10 border border-red-500/30 text-red-400"
+                          : "bg-white/[0.02] border border-white/5 text-muted-foreground"
+                        : isSelected
+                        ? "bg-violet-400/10 border border-violet-400/30 text-violet-300"
+                        : "bg-white/[0.02] border border-white/5 text-foreground hover:bg-white/5 hover:border-white/10"
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0">
+                      {(isAnswered || timedOut) && isCorrectOption ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-400" />
+                      ) : (isAnswered || timedOut) && isWrongOption ? (
+                        <XCircle className="h-4 w-4 text-red-400" />
+                      ) : (
+                        String.fromCharCode(65 + oIdx)
+                      )}
+                    </span>
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Explanation after answering */}
+        {showExplanation && q.explanation && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="p-3 rounded-lg bg-white/[0.03] border border-white/5"
+          >
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Пояснение:</span>{" "}
+              {q.explanation}
+            </p>
+          </motion.div>
+        )}
+
+        {/* Next / Finish button */}
+        {(isAnswered || timedOut) && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-3"
           >
-            <div
-              className={`p-4 rounded-lg text-center ${
-                correctCount === quiz.length
-                  ? "bg-green-500/10 border border-green-500/20"
-                  : correctCount >= quiz.length / 2
-                  ? "bg-yellow-500/10 border border-yellow-500/20"
-                  : "bg-red-500/10 border border-red-500/20"
-              }`}
-            >
-              <p className="text-lg font-bold">
-                {correctCount} из {quiz.length}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {correctCount === quiz.length
-                  ? "Отлично! Все ответы верные!"
-                  : correctCount >= quiz.length / 2
-                  ? "Хороший результат, но есть что улучшить"
-                  : "Рекомендуем перечитать материал"}
-              </p>
-            </div>
             <Button
-              onClick={onComplete}
+              onClick={handleNext}
               size="sm"
-              className="w-full bg-emerald-600 hover:bg-emerald-500"
+              className="w-full bg-violet-400/50 hover:bg-violet-400/70 text-violet-100 border border-violet-400/30"
             >
-              Перейти к практике
-              <ChevronRight className="h-4 w-4 ml-1" />
+              {currentQuestion < quiz.length - 1 ? (
+                <>
+                  Следующий вопрос
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </>
+              ) : (
+                "Показать результаты"
+              )}
             </Button>
           </motion.div>
         )}

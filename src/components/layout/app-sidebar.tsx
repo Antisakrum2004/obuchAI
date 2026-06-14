@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.26.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.27.0";
 
 const allNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home, adminOnly: false },
