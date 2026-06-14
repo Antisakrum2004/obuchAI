@@ -41,6 +41,8 @@ import {
   BarChart3,
   Sparkles,
   List,
+  Trophy,
+  Zap,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -141,6 +143,13 @@ export default function LearnLessonPage({
   const [completedBlocks, setCompletedBlocks] = useState<Set<LessonBlock>>(new Set());
   const [lessonCompleted, setLessonCompleted] = useState(false);
 
+  // Lesson completion reward state
+  const [lessonXp, setLessonXp] = useState<number>(0);
+  const [lessonNewLevel, setLessonNewLevel] = useState<number>(0);
+  const [lessonXpToNext, setLessonXpToNext] = useState<number>(0);
+  const [lessonProgressInLevel, setLessonProgressInLevel] = useState<number>(0);
+  const [showCompletionAnimation, setShowCompletionAnimation] = useState(false);
+
   // Quiz state
   const [quizAnswers, setQuizAnswers] = useState<Map<number, number>>(new Map());
   const [quizChecked, setQuizChecked] = useState(false);
@@ -231,8 +240,33 @@ export default function LearnLessonPage({
     } else {
       completeBlock(activeBlock);
       setLessonCompleted(true);
+      // Trigger completion animation & XP award
+      setShowCompletionAnimation(true);
+      // Call API to award XP for lesson completion
+      (async () => {
+        try {
+          const res = await fetch('/api/knowledge/lessons/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              articleId,
+              blocksCompleted: [...completedBlocks, activeBlock].length,
+              totalBlocks: availableBlocks.length,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setLessonXp(data.xpEarned || 0);
+            setLessonNewLevel(data.newLevel || 1);
+            setLessonXpToNext(data.xpToNextLevel || 0);
+            setLessonProgressInLevel(data.progressInLevel?.percentage || 0);
+          }
+        } catch (err) {
+          console.error('Failed to award lesson XP:', err);
+        }
+      })();
     }
-  }, [activeBlock, availableBlocks, completeBlock]);
+  }, [activeBlock, availableBlocks, completeBlock, articleId, completedBlocks]);
 
   // Navigation between lessons in the path
   const currentPathIndex = pathArticles.findIndex((a) => a.id === articleId);
@@ -458,56 +492,34 @@ export default function LearnLessonPage({
           })}
         </div>
 
-        {/* Lesson Completed */}
+        {/* Lesson Completed — Celebration Screen */}
         {lessonCompleted && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-xl p-6 border border-emerald-500/20 text-center space-y-4"
-          >
-            <div className="flex justify-center">
-              <div className="h-16 w-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold">Урок завершён!</h3>
-            <p className="text-muted-foreground text-sm">
-              Вы прошли все разделы урока «{article.title}»
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center pt-2">
-              {nextLesson && (
-                <a
-                  href={`/knowledge/${encodeURIComponent(space?.slug || '')}/learn/${nextLesson.id}`}
-                  className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium transition-colors"
-                >
-                  Дальше
-                  <ArrowRight className="h-4 w-4" />
-                </a>
-              )}
-              <button
-                onClick={() => {
-                  setLessonCompleted(false);
-                  setActiveBlock("summary");
-                  setCompletedBlocks(new Set());
-                  setQuizAnswers(new Map());
-                  setQuizChecked(false);
-                  setShowHint(false);
-                  setShowSolution(false);
-                  setPracticeAttempted(false);
-                }}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
-              >
-                Пройти заново
-              </button>
-              <a
-                href={space ? `/knowledge/${encodeURIComponent(space.slug)}` : '/knowledge'}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                К курсу
-              </a>
-            </div>
-          </motion.div>
+          <LessonCompleteScreen
+            articleTitle={article.title}
+            xpEarned={lessonXp}
+            newLevel={lessonNewLevel}
+            xpToNextLevel={lessonXpToNext}
+            progressInLevel={lessonProgressInLevel}
+            showAnimation={showCompletionAnimation}
+            onAnimationEnd={() => setShowCompletionAnimation(false)}
+            nextLesson={nextLesson}
+            spaceSlug={space?.slug || ''}
+            onRetry={() => {
+              setLessonCompleted(false);
+              setActiveBlock("summary");
+              setCompletedBlocks(new Set());
+              setQuizAnswers(new Map());
+              setQuizChecked(false);
+              setShowHint(false);
+              setShowSolution(false);
+              setPracticeAttempted(false);
+              setLessonXp(0);
+              setLessonNewLevel(0);
+              setLessonXpToNext(0);
+              setLessonProgressInLevel(0);
+              setShowCompletionAnimation(false);
+            }}
+          />
         )}
 
         {/* Active Block Content */}
@@ -568,6 +580,216 @@ export default function LearnLessonPage({
         {/* No navigation footer — removed unnecessary prev/next buttons with article titles */}
       </div>
     </AppLayout>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Lesson Complete Celebration Screen
+// ═══════════════════════════════════════════════════════════════════
+
+function LessonCompleteScreen({
+  articleTitle,
+  xpEarned,
+  newLevel,
+  xpToNextLevel,
+  progressInLevel,
+  showAnimation,
+  onAnimationEnd,
+  nextLesson,
+  spaceSlug,
+  onRetry,
+}: {
+  articleTitle: string;
+  xpEarned: number;
+  newLevel: number;
+  xpToNextLevel: number;
+  progressInLevel: number;
+  showAnimation: boolean;
+  onAnimationEnd: () => void;
+  nextLesson: PathArticle | null;
+  spaceSlug: string;
+  onRetry: () => void;
+}) {
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [xpDisplay, setXpDisplay] = useState(0);
+
+  // Trigger confetti on mount
+  useEffect(() => {
+    setShowConfetti(true);
+    const timer = setTimeout(() => setShowConfetti(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Animate XP counting up
+  useEffect(() => {
+    if (xpEarned <= 0) return;
+    const duration = 1500; // ms
+    const steps = 30;
+    const increment = xpEarned / steps;
+    let current = 0;
+    const interval = setInterval(() => {
+      current += increment;
+      if (current >= xpEarned) {
+        setXpDisplay(xpEarned);
+        clearInterval(interval);
+      } else {
+        setXpDisplay(Math.floor(current));
+      }
+    }, duration / steps);
+    return () => clearInterval(interval);
+  }, [xpEarned]);
+
+  const confettiColors = ["#10b981", "#8b5cf6", "#f59e0b", "#3b82f6", "#ef4444", "#ec4899", "#22d3ee"];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.5, type: "spring", stiffness: 150 }}
+      className="glass rounded-xl p-8 border border-emerald-500/20 text-center space-y-6 relative overflow-hidden"
+    >
+      {/* Confetti particles */}
+      {showConfetti && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {Array.from({ length: 50 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                backgroundColor: confettiColors[i % confettiColors.length],
+                width: 4 + Math.random() * 8,
+                height: 4 + Math.random() * 8,
+                left: `${Math.random() * 100}%`,
+                top: "-5%",
+              }}
+              initial={{ y: 0, x: 0, rotate: 0, opacity: 1 }}
+              animate={{
+                y: window?.innerHeight ? window.innerHeight + 100 : 800,
+                x: (Math.random() - 0.5) * 200,
+                rotate: Math.random() * 720,
+                opacity: [1, 1, 0.5, 0],
+              }}
+              transition={{
+                duration: 2 + Math.random() * 2,
+                delay: Math.random() * 1,
+                ease: "easeOut",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Trophy icon with glow */}
+      <motion.div
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: "spring", delay: 0.2, stiffness: 150, damping: 12 }}
+        className="relative mx-auto"
+      >
+        <div className="h-24 w-24 rounded-full bg-gradient-to-br from-emerald-500/30 to-violet-500/30 flex items-center justify-center mx-auto shadow-[0_0_60px_rgba(16,185,129,0.3)] border-2 border-emerald-500/30">
+          <Trophy className="h-12 w-12 text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.6)]" />
+        </div>
+        {/* Sparkles around trophy */}
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          className="absolute inset-0"
+        >
+          {[0, 90, 180, 270].map((angle) => (
+            <Sparkles
+              key={angle}
+              className="absolute h-4 w-4 text-yellow-400/60"
+              style={{
+                top: `${50 - 60 * Math.cos((angle * Math.PI) / 180)}%`,
+                left: `${50 + 60 * Math.sin((angle * Math.PI) / 180)}%`,
+              }}
+            />
+          ))}
+        </motion.div>
+      </motion.div>
+
+      {/* Title */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+      >
+        <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-violet-400 bg-clip-text text-transparent">
+          Урок завершён!
+        </h3>
+        <p className="text-muted-foreground text-sm mt-1">
+          Вы прошли все разделы урока «{articleTitle}»
+        </p>
+      </motion.div>
+
+      {/* XP earned card */}
+      {xpEarned > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.6, type: "spring" }}
+          className="mx-auto max-w-xs"
+        >
+          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-violet-500/10 border border-emerald-500/20 space-y-3">
+            <div className="flex items-center justify-center gap-2">
+              <Zap className="h-5 w-5 text-emerald-400" />
+              <span className="text-3xl font-black text-emerald-400">
+                +{xpDisplay} XP
+              </span>
+            </div>
+
+            {/* Progress to next level */}
+            {newLevel > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Уровень {newLevel}</span>
+                  <span>До следующего: {xpToNextLevel} XP</span>
+                </div>
+                <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-violet-500 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressInLevel}%` }}
+                    transition={{ delay: 0.8, duration: 1, ease: "easeOut" }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Action buttons */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.9 }}
+        className="flex flex-wrap gap-2 justify-center pt-2"
+      >
+        {nextLesson && (
+          <a
+            href={`/knowledge/${encodeURIComponent(spaceSlug)}/learn/${nextLesson.id}`}
+            className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium transition-colors shadow-lg shadow-emerald-500/20"
+          >
+            Дальше
+            <ArrowRight className="h-4 w-4" />
+          </a>
+        )}
+        <button
+          onClick={onRetry}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
+        >
+          Пройти заново
+        </button>
+        <a
+          href={spaceSlug ? `/knowledge/${encodeURIComponent(spaceSlug)}` : '/knowledge'}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          К курсу
+        </a>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -773,6 +995,7 @@ function QuizBlock({
   const [timeLeft, setTimeLeft] = useState(30);
   const [timedOut, setTimedOut] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [timerActive, setTimerActive] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const QUESTION_TIME = 30; // seconds per question
 
@@ -783,16 +1006,23 @@ function QuizBlock({
   const isCorrect = isAnswered && selectedAnswer === q.correctIndex;
 
   // Timer: countdown 30 seconds per question
+  // Use CSS transition for smooth progress bar + setInterval for text countdown
   useEffect(() => {
     if (checked || isAnswered || timedOut) return;
 
     setTimeLeft(QUESTION_TIME);
+    // Activate CSS transition for smooth progress bar
+    // Short delay to let React render the initial 100% width first
+    requestAnimationFrame(() => {
+      setTimerActive(true);
+    });
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           // Time's up — auto-mark as timed out (wrong answer)
           if (timerRef.current) clearInterval(timerRef.current);
+          setTimerActive(false);
           setTimedOut(true);
           // Record as unanswered (use -1 as sentinel)
           setAnswers((prev) => {
@@ -808,12 +1038,14 @@ function QuizBlock({
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      setTimerActive(false);
     };
   }, [currentQuestion, checked, isAnswered, timedOut, setAnswers]);
 
   // Reset timer when moving to next question
   useEffect(() => {
     setTimeLeft(QUESTION_TIME);
+    setTimerActive(false);
     setTimedOut(false);
     setShowExplanation(false);
   }, [currentQuestion]);
@@ -828,6 +1060,7 @@ function QuizBlock({
   const handleAnswer = (oIdx: number) => {
     if (isAnswered || timedOut) return;
     if (timerRef.current) clearInterval(timerRef.current);
+    setTimerActive(false);
     setAnswers((prev) => {
       const next = new Map(prev);
       next.set(currentQuestion, oIdx);
@@ -979,10 +1212,13 @@ function QuizBlock({
             </span>
             <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden ml-2">
               <div
-                className={`h-full rounded-full transition-all duration-1000 ${
+                className={`h-full rounded-full ${
                   timeLeft > 15 ? "bg-emerald-400" : timeLeft > 5 ? "bg-yellow-400" : "bg-red-400"
                 }`}
-                style={{ width: `${(timeLeft / QUESTION_TIME) * 100}%` }}
+                style={{
+                  width: timerActive ? '0%' : '100%',
+                  transition: timerActive ? `width ${QUESTION_TIME}s linear` : 'none',
+                }}
               />
             </div>
           </div>
