@@ -139,6 +139,7 @@ export default function LearnLessonPage({
   // Lesson flow state
   const [activeBlock, setActiveBlock] = useState<LessonBlock>("summary");
   const [completedBlocks, setCompletedBlocks] = useState<Set<LessonBlock>>(new Set());
+  const [lessonCompleted, setLessonCompleted] = useState(false);
 
   // Quiz state
   const [quizAnswers, setQuizAnswers] = useState<Map<number, number>>(new Map());
@@ -229,6 +230,7 @@ export default function LearnLessonPage({
       setActiveBlock(nextBlock);
     } else {
       completeBlock(activeBlock);
+      setLessonCompleted(true);
     }
   }, [activeBlock, availableBlocks, completeBlock]);
 
@@ -369,7 +371,7 @@ export default function LearnLessonPage({
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="glass rounded-xl p-3 border-white/5"
+          className="glass rounded-xl p-2 border-white/5"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1">
@@ -444,7 +446,45 @@ export default function LearnLessonPage({
           })}
         </div>
 
+        {/* Lesson Completed */}
+        {lessonCompleted && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass rounded-xl p-6 border border-emerald-500/20 text-center space-y-4"
+          >
+            <div className="flex justify-center">
+              <div className="h-16 w-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold">Урок завершён!</h3>
+            <p className="text-muted-foreground text-sm">
+              Вы прошли все разделы урока «{article.title}»
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
+              {nextLesson && (
+                <a
+                  href={`/knowledge/${encodeURIComponent(space?.slug || '')}/learn/${nextLesson.id}`}
+                  className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-sm font-medium transition-colors"
+                >
+                  Следующий урок
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+              )}
+              <a
+                href={space ? `/knowledge/${encodeURIComponent(space.slug)}` : '/knowledge'}
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                К курсу
+              </a>
+            </div>
+          </motion.div>
+        )}
+
         {/* Active Block Content */}
+        {!lessonCompleted && (
         <AnimatePresence mode="wait">
           <motion.div
             key={activeBlock}
@@ -457,19 +497,19 @@ export default function LearnLessonPage({
               <SummaryBlock
                 article={article}
                 keyConcepts={keyConcepts}
-                onComplete={() => completeBlock("summary")}
+                onComplete={goToNextBlock}
               />
             )}
             {activeBlock === "materials" && (
               <MaterialsBlock
                 article={article}
-                onComplete={() => completeBlock("materials")}
+                onComplete={goToNextBlock}
               />
             )}
             {activeBlock === "article" && (
               <ArticleBlock
                 article={article}
-                onComplete={() => completeBlock("article")}
+                onComplete={goToNextBlock}
               />
             )}
             {activeBlock === "quiz" && (
@@ -479,7 +519,7 @@ export default function LearnLessonPage({
                 setAnswers={setQuizAnswers}
                 checked={quizChecked}
                 setChecked={setQuizChecked}
-                onComplete={() => completeBlock("quiz")}
+                onComplete={goToNextBlock}
               />
             )}
             {activeBlock === "practice" && (
@@ -491,11 +531,12 @@ export default function LearnLessonPage({
                 setShowSolution={setShowSolution}
                 attempted={practiceAttempted}
                 setAttempted={setPracticeAttempted}
-                onComplete={() => completeBlock("practice")}
+                onComplete={goToNextBlock}
               />
             )}
           </motion.div>
         </AnimatePresence>
+        )}
 
         {/* No navigation footer — removed unnecessary prev/next buttons with article titles */}
       </div>

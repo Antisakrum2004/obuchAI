@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -99,54 +99,126 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player with nocookie + direct fallback ───
+// ─── YouTube Player with nocookie-first + IFrame API error detection ───
+
+type YTStrategy = "nocookie" | "direct" | "link";
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<"direct" | "nocookie" | "link">("direct");
-  const [iframeError, setIframeError] = useState(false);
+  const [strategy, setStrategy] = useState<YTStrategy>("nocookie");
+  const [playerError, setPlayerError] = useState<number | null>(null);
+  const [showFallback, setShowFallback] = useState(false);
+  const playerRef = useRef<YTPlayer | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const embedUrl =
-    strategy === "direct"
-      ? `https://www.youtube.com/embed/${videoId}`
-      : strategy === "nocookie"
-        ? `https://www.youtube-nocookie.com/embed/${videoId}`
+    strategy === "nocookie"
+      ? `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
+      : strategy === "direct"
+        ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
         : null;
 
-  // Auto-fallback: if direct iframe doesn't signal load within 8s, try nocookie
+  // Load YouTube IFrame API
   useEffect(() => {
-    if (strategy === "direct" && !iframeError) {
+    if (strategy === "link") return;
+
+    // YT API callback
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    w.onYouTubeIframeAPIReady = w.onYouTubeIframeAPIReady || function() {};
+
+    if (!w.YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+  }, [strategy]);
+
+  // Initialize YT player when API is ready
+  useEffect(() => {
+    if (strategy === "link" || !iframeRef.current) return;
+
+    let retries = 0;
+    const tryInit = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const YT = (window as any).YT as { Player?: new (...args: unknown[]) => YTPlayer } | undefined;
+      if (YT?.Player && iframeRef.current) {
+        try {
+          playerRef.current = new YT.Player(iframeRef.current, {
+            events: {
+              onError: (event: { data: number }) => {
+                console.warn("[YouTubePlayer] Error code:", event.data);
+                setPlayerError(event.data);
+                // Error 101, 150 = embedding disabled; 153 = player setup error
+                if ([101, 150, 153].includes(event.data)) {
+                  if (strategy === "nocookie") {
+                    setStrategy("direct");
+                  } else if (strategy === "direct") {
+                    setStrategy("link");
+                  }
+                }
+              },
+              onReady: () => {
+                setPlayerError(null);
+              },
+            },
+          } as Record<string, unknown>);
+        } catch {
+          // Player init failed silently
+        }
+      } else if (retries < 20) {
+        retries++;
+        setTimeout(tryInit, 500);
+      }
+    };
+
+    tryInit();
+    return () => {
+      try { playerRef.current?.destroy?.(); } catch {}
+      playerRef.current = null;
+    };
+  }, [strategy, videoId]);
+
+  // Show fallback link after 5 seconds if still loading
+  useEffect(() => {
+    if (strategy === "link") return;
+    const timer = setTimeout(() => {
+      setShowFallback(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [strategy]);
+
+  // Auto-fallback: if nocookie doesn't load after 5s, try direct
+  useEffect(() => {
+    if (strategy === "nocookie" && !playerError) {
       const timer = setTimeout(() => {
-        setStrategy("nocookie");
-      }, 8000);
+        // Only switch if no error was detected — the API might still be loading
+      }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [strategy, iframeError]);
+  }, [strategy, playerError]);
 
   const handleIframeError = useCallback(() => {
-    if (strategy === "direct") {
-      setStrategy("nocookie");
-    } else if (strategy === "nocookie") {
+    if (strategy === "nocookie") {
+      setStrategy("direct");
+    } else if (strategy === "direct") {
       setStrategy("link");
     }
   }, [strategy]);
 
-  const handleIframeLoad = useCallback(() => {
-    // iframe loaded successfully — stop timeout
-  }, []);
-
-  return (
-    <div className={cn("space-y-2", className)}>
-      <div className="flex items-center gap-2 mb-2">
-        <Play className="h-4 w-4 text-emerald-400" />
-        <span className="text-sm font-medium">Видео</span>
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
-          {sourceTypeLabels.youtube}
-        </Badge>
-      </div>
-      {strategy === "link" || iframeError ? (
+  // Link-only mode
+  if (strategy === "link") {
+    return (
+      <div className={cn("space-y-2", className)}>
+        <div className="flex items-center gap-2 mb-2">
+          <Play className="h-4 w-4 text-emerald-400" />
+          <span className="text-sm font-medium">Видео</span>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+            {sourceTypeLabels.youtube}
+          </Badge>
+        </div>
         <div className="glass rounded-xl p-5 border-white/5">
           <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить встроенный плеер. Некоторые браузеры (Edge, Safari) блокируют YouTube-iframe. Попробуйте VPN или откройте видео напрямую.
+            Не удалось загрузить встроенный плеер. Владелец видео ограничил встраивание, или браузер блокирует YouTube-iframe. Откройте видео напрямую на YouTube.
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
@@ -158,32 +230,46 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
             Открыть на YouTube
           </a>
         </div>
-      ) : (
-        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            src={embedUrl!}
-            title={title || "YouTube видео"}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            referrerPolicy="no-referrer"
-            className="absolute inset-0 h-full w-full"
-            onError={handleIframeError}
-            onLoad={handleIframeLoad}
-          />
-        </div>
-      )}
-      {strategy !== "link" && !iframeError && (
-        <p className="text-[10px] text-muted-foreground/60">
-          Если видео не загружается — возможны региональные ограничения. Попробуйте VPN или{" "}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div className="flex items-center gap-2 mb-2">
+        <Play className="h-4 w-4 text-emerald-400" />
+        <span className="text-sm font-medium">Видео</span>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-red-500/30 text-red-400 bg-red-500/10">
+          {sourceTypeLabels.youtube}
+        </Badge>
+      </div>
+      <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+        <iframe
+          ref={iframeRef}
+          src={embedUrl!}
+          title={title || "YouTube видео"}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 h-full w-full"
+          onError={handleIframeError}
+        />
+      </div>
+      {showFallback && (
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-muted-foreground/60">
+            {playerError ? "Видео не загрузилось из-за ограничений встраивания." : "Если видео не загружается — возможны региональные ограничения."}
+          </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-muted-foreground"
+            className="inline-flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 transition-colors font-medium"
           >
-            откройте на YouTube
-          </a>.
-        </p>
+            <ExternalLink className="h-3 w-3" />
+            Открыть на YouTube
+          </a>
+        </div>
       )}
     </div>
   );
@@ -257,7 +343,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → nocookie + direct fallback
+  // YouTube → nocookie-first + IFrame API error detection
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
@@ -343,4 +429,9 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   // Other / unknown — show cloud link button
   return <CloudLinkButton url={url} label={sourceTypeLabels[type] || sourceTypeLabels.other} className={className} />;
+}
+
+// ─── YouTube Player type (for YT IFrame API) ───
+interface YTPlayer {
+  destroy: () => void;
 }

@@ -2,15 +2,59 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
-import { genId } from "@/lib/gen-id";
 import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
 import ZAI from "z-ai-web-dev-sdk";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+// ── YouTube oEmbed — free, no API key needed ──
+async function getYouTubeMeta(videoId: string): Promise<{ title: string; author?: string }> {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return { title: "" };
+    const data = await res.json();
+    return { title: data.title || "", author: data.author_name || undefined };
+  } catch {
+    return { title: "" };
+  }
+}
+
+// ── Rutube oEmbed ──
+async function getRutubeMeta(videoId: string): Promise<{ title: string; author?: string }> {
+  try {
+    const res = await fetch(
+      `https://rutube.ru/api/oembed/?url=https://rutube.ru/video/${videoId}/&format=json`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return { title: "" };
+    const data = await res.json();
+    return { title: data.title || "", author: data.author_name || undefined };
+  } catch {
+    return { title: "" };
+  }
+}
+
+// ── Web search for video context ──
+async function searchVideoContext(query: string): Promise<string> {
+  try {
+    const zai = await ZAI.create();
+    const results = await zai.functions.invoke("web_search", { query, num: 5 });
+    if (!Array.isArray(results) || results.length === 0) return "";
+    return results
+      .slice(0, 3)
+      .map((r: { name?: string; snippet?: string }) => `${r.name || ""}: ${r.snippet || ""}`)
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
 // POST /api/knowledge/ai/video-article — YouTube→AI article pipeline
-// 1. Extract transcript from YouTube video via Z-AI SDK
+// 1. Gather video metadata (oEmbed + web search)
 // 2. AI generates article content, summary, tags, glossary, quiz, practical_task
 // 3. Creates and publishes the article
 export async function POST(request: NextRequest) {
@@ -34,7 +78,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "url обязателен" }, { status: 400 });
     }
 
-    // Extract YouTube video ID
+    // Extract video ID and source type
     let videoId: string | null = null;
     let sourceType = "youtube";
     try {
@@ -54,7 +98,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Некорректный URL" }, { status: 400 });
     }
 
-    // Step 1: Extract transcript via Z-AI SDK
+    // ── Step 1: Gather context from multiple sources ──
+    let videoTitle = customTitle || "";
+    let videoAuthor = "";
+    let searchContext = "";
+
+    // 1a. oEmbed metadata (fast, free)
+    if (videoId && sourceType === "youtube") {
+      const meta = await getYouTubeMeta(videoId);
+      if (meta.title && !videoTitle) videoTitle = meta.title;
+      if (meta.author) videoAuthor = meta.author;
+    } else if (videoId && sourceType === "rutube") {
+      const meta = await getRutubeMeta(videoId);
+      if (meta.title && !videoTitle) videoTitle = meta.title;
+      if (meta.author) videoAuthor = meta.author;
+    }
+
+    // 1b. Web search for additional context
+    const searchQuery = videoTitle
+      ? `"${videoTitle}" видео урок обучение`
+      : videoId
+        ? `YouTube video ${videoId} описание содержание`
+        : url;
+    searchContext = await searchVideoContext(searchQuery);
+
+    // 1c. Build context string for AI
+    const contextParts: string[] = [];
+    if (videoTitle) contextParts.push(`Название видео: ${videoTitle}`);
+    if (videoAuthor) contextParts.push(`Автор/канал: ${videoAuthor}`);
+    if (searchContext) contextParts.push(`Результаты поиска:\n${searchContext}`);
+    contextParts.push(`URL: ${url}`);
+    contextParts.push(`Тип источника: ${sourceType}`);
+
+    const contextForAI = contextParts.join("\n\n");
+
+    // ── Step 2: AI generates transcript/description from gathered context ──
     let transcript = "";
     try {
       const zai = await ZAI.create();
@@ -62,10 +140,10 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: "system",
-            content: `Ты — эксперт по извлечению учебного контента из видео. Создай максимально подробное описание контента видео на русском языке.
+            content: `Ты — эксперт по созданию учебного контента из видео. На основе доступной информации о видео (название, автор, результаты поиска) создай максимально подробное описание того, о чём это видео.
 Структура:
 ## Описание
-[Подробное описание — 3-5 абзацев]
+[Подробное описание — 3-5 абзацев, предположи содержание на основе названия и контекста]
 ## Ключевые темы
 - Тема 1: описание
 - Тема 2: описание
@@ -78,25 +156,48 @@ export async function POST(request: NextRequest) {
           },
           {
             role: "user",
-            content: videoId 
-              ? `Создай подробное описание контента для YouTube видео: https://www.youtube.com/watch?v=${videoId}`
-              : `Создай подробное описание контента для видео по ссылке: ${url}`
+            content: `Вот информация о видео:\n\n${contextForAI}\n\nСоздай подробное описание контента этого видео.`
           }
         ],
       });
       transcript = completion.choices[0]?.message?.content || "";
     } catch (err) {
-      console.error("[VideoArticle] Z-AI transcript extraction failed:", err);
+      console.error("[VideoArticle] Z-AI description generation failed:", err);
     }
 
+    // If transcript is too short, try OpenRouter/OpenAI as fallback
     if (!transcript || transcript.length < 100) {
-      return NextResponse.json(
-        { error: "Не удалось извлечь содержание видео. Попробуйте добавить статью вручную." },
-        { status: 422 }
-      );
+      try {
+        const fallbackResult = await createChatCompletion([
+          {
+            role: "system",
+            content: `Ты — эксперт по созданию учебного контента. На основе информации о видео создай подробное описание его содержания на русском языке. Минимум 1000 символов.`
+          },
+          {
+            role: "user",
+            content: `Информация о видео:\n${contextForAI}\n\nСоздай подробное описание.`
+          }
+        ], { temperature: 0.7 });
+        transcript = fallbackResult.choices?.[0]?.message?.content || "";
+      } catch (err) {
+        console.error("[VideoArticle] Fallback AI also failed:", err);
+      }
     }
 
-    // Step 2: AI generates article from transcript
+    // If still too short but we have at least a title, create a minimal article
+    if (!transcript || transcript.length < 50) {
+      if (videoTitle || customTitle) {
+        // Create a minimal article with just the video link and title
+        transcript = `## ${videoTitle || customTitle}\n\nВидеоматериал урока. Основной контент — видеоурок.\n\nСмотрите видео для получения полного материала.`;
+      } else {
+        return NextResponse.json(
+          { error: "Не удалось извлечь содержание видео. Попробуйте добавить статью вручную." },
+          { status: 422 }
+        );
+      }
+    }
+
+    // ── Step 3: AI generates article from transcript ──
     const aiResult = await createChatCompletion([
       {
         role: "system",
@@ -144,7 +245,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Create article in database
+    // ── Step 4: Create article in database ──
     const articleId = 'art_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
     const authorId = session.user.id;
     const slug = (articleData.title as string || customTitle || "video-lesson")
@@ -164,7 +265,7 @@ export async function POST(request: NextRequest) {
        RETURNING *`,
       [
         articleId,
-        articleData.title || customTitle || "Видео-урок",
+        articleData.title || customTitle || videoTitle || "Видео-урок",
         slug,
         articleData.content || transcript,
         articleData.summary || null,
@@ -180,11 +281,10 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    // Step 4: Fire-and-forget — AI categorizes and builds glossary/graph
+    // ── Step 5: Fire-and-forget — AI categorizes and builds glossary/graph ──
     const articleCreated = result.rows[0];
     const articleIdForChain = articleCreated.id;
 
-    // Background: metadata (categorization), glossary, graph
     (async () => {
       try {
         await fetch(new URL("/api/knowledge/ai", request.url).toString(), {
@@ -211,6 +311,10 @@ export async function POST(request: NextRequest) {
       message: "Видео-статья создана и опубликована",
       article: articleCreated,
       transcriptLength: transcript.length,
+      sources: {
+        oembed: !!videoTitle,
+        webSearch: !!searchContext,
+      },
     }, { status: 201 });
   } catch (error) {
     console.error("[VideoArticle] Error:", error);
