@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud } from "lucide-react";
+import { ExternalLink, Play, AlertCircle, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -99,113 +99,53 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player with direct-first + IFrame API error detection ───
+// ─── YouTube Player — simplified, no IFrame API ───
+// Error 153 was caused by YT IFrame API trying to re-initialize an already-loaded iframe.
+// Fix: use plain <iframe> with youtube.com/embed/ (NOT nocookie), no JSAPI, no referrer suppression.
 
-type YTStrategy = "direct" | "nocookie" | "link";
+type YTStrategy = "embed" | "link";
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YTStrategy>("direct");
-  const [playerError, setPlayerError] = useState<number | null>(null);
+  const [strategy, setStrategy] = useState<YTStrategy>("embed");
+  const [iframeError, setIframeError] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
-  const playerRef = useRef<YTPlayer | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const embedUrl =
-    strategy === "direct"
-      ? `https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
-      : strategy === "nocookie"
-        ? `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== "undefined" ? window.location.origin : ""}`
-        : null;
+  // youtube.com/embed/ — the reliable option (NOT nocookie which is worse for embedding)
+  const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
 
-  // Load YouTube IFrame API
-  useEffect(() => {
-    if (strategy === "link") return;
-
-    // YT API callback
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    w.onYouTubeIframeAPIReady = w.onYouTubeIframeAPIReady || function() {};
-
-    if (!w.YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.head.appendChild(tag);
-    }
-  }, [strategy]);
-
-  // Initialize YT player when API is ready
-  useEffect(() => {
-    if (strategy === "link" || !iframeRef.current) return;
-
-    let retries = 0;
-    const tryInit = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const YT = (window as any).YT as { Player?: new (...args: unknown[]) => YTPlayer } | undefined;
-      if (YT?.Player && iframeRef.current) {
-        try {
-          playerRef.current = new YT.Player(iframeRef.current, {
-            events: {
-              onError: (event: { data: number }) => {
-                console.warn("[YouTubePlayer] Error code:", event.data);
-                setPlayerError(event.data);
-                // Error 101, 150 = embedding disabled; 153 = player setup error
-                if ([101, 150, 153].includes(event.data)) {
-                  if (strategy === "direct") {
-                    setStrategy("nocookie");
-                  } else if (strategy === "nocookie") {
-                    setStrategy("link");
-                  }
-                }
-              },
-              onReady: () => {
-                setPlayerError(null);
-              },
-            },
-          } as Record<string, unknown>);
-        } catch {
-          // Player init failed silently
-        }
-      } else if (retries < 20) {
-        retries++;
-        setTimeout(tryInit, 500);
-      }
-    };
-
-    tryInit();
-    return () => {
-      try { playerRef.current?.destroy?.(); } catch {}
-      playerRef.current = null;
-    };
-  }, [strategy, videoId]);
-
-  // Show fallback link after 5 seconds if still loading
+  // Show fallback link after 6 seconds if video hasn't loaded
   useEffect(() => {
     if (strategy === "link") return;
     const timer = setTimeout(() => {
       setShowFallback(true);
-    }, 5000);
+    }, 6000);
     return () => clearTimeout(timer);
   }, [strategy]);
 
-  // Auto-fallback: if direct doesn't load after 6s, try nocookie
+  // Detect iframe load failure via postMessage from YouTube
   useEffect(() => {
-    if (strategy === "direct" && !playerError) {
-      const timer = setTimeout(() => {
-        setStrategy("nocookie");
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [strategy, playerError]);
+    if (strategy === "link") return;
 
-  const handleIframeError = useCallback(() => {
-    if (strategy === "direct") {
-      setStrategy("nocookie");
-    } else if (strategy === "nocookie") {
-      setStrategy("link");
-    }
+    const handler = (event: MessageEvent) => {
+      // YouTube sends postMessage events with error info
+      try {
+        if (typeof event.data === "string") {
+          const data = JSON.parse(event.data);
+          // YouTube iframe error events
+          if (data.event === "onError" || data.event === "infoDelivery" && data?.info?.errorCode) {
+            console.warn("[YouTubePlayer] postMessage error:", data);
+            setIframeError(true);
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, [strategy]);
 
-  // Link-only mode
+  // Link-only mode (iframe completely failed)
   if (strategy === "link") {
     return (
       <div className={cn("space-y-2", className)}>
@@ -246,27 +186,29 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
       <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
         <iframe
           ref={iframeRef}
-          src={embedUrl!}
+          src={embedUrl}
           title={title || "YouTube видео"}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
-          referrerPolicy="no-referrer"
           className="absolute inset-0 h-full w-full"
-          onError={handleIframeError}
+          onError={() => {
+            setIframeError(true);
+            setStrategy("link");
+          }}
         />
       </div>
       {showFallback && (
         <div className="flex items-center justify-between gap-2">
           <p className="text-[10px] text-muted-foreground/60">
-            {playerError
+            {iframeError
               ? "Видео не загрузилось из-за ограничений встраивания."
-              : "Если видео не загружается — попробуйте VPN или откройте на YouTube. Edge: Настройки → Конфиденциальность → Предотвращение отслеживания."}
+              : "Если видео не загружается — откройте на YouTube. В Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → Основной."}
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 transition-colors font-medium"
+            className="inline-flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300 transition-colors font-medium shrink-0"
           >
             <ExternalLink className="h-3 w-3" />
             Открыть на YouTube
@@ -345,7 +287,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → nocookie-first + IFrame API error detection
+  // YouTube → simple embed, no IFrame API
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
@@ -431,9 +373,4 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   // Other / unknown — show cloud link button
   return <CloudLinkButton url={url} label={sourceTypeLabels[type] || sourceTypeLabels.other} className={className} />;
-}
-
-// ─── YouTube Player type (for YT IFrame API) ───
-interface YTPlayer {
-  destroy: () => void;
 }
