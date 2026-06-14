@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { storageProvider, S3StorageProvider } from "@/lib/storage";
+import { articleUpdateSchema, buildSetClause, ARTICLE_JSON_FIELDS } from "@/lib/validation";
 
 /**
  * Get an accessible URL for a file stored in S3 or other storage.
@@ -287,49 +288,36 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
 
-    const allowedFields = [
-      "title", "slug", "content", "summary", "spaceId", "isPublished",
-      // Sprint 6: new fields
-      "videoUrl", "pdfUrl", "pptxUrl", "sourceUrl", "sourceType",
-      "difficulty", "estimatedTime", "status", "aiGenerated",
-      "errorMessage",
-      // Complexity ranking
-      "complexityOrder",
-    ];
-    const jsonFields = ["tags", "keyTopics", "keyConcepts", "prerequisites", "nextTopics",
-      // Sprint 7: JSONB fields for interactive lessons
-      "quiz", "practical_task", "timecodes",
-    ];
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    for (const [key, value] of Object.entries(body)) {
-      if (jsonFields.includes(key)) {
-        fields.push(`"${key}" = $${idx++}`);
-        values.push(value ? JSON.stringify(value) : null);
-      } else if (allowedFields.includes(key)) {
-        fields.push(`"${key}" = $${idx++}`);
-        values.push(value);
-      }
+    // Validate with Zod schema — rejects unknown keys and bad types
+    const parseResult = articleUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
 
-    if (fields.length === 0) {
+    const data = parseResult.data;
+
+    // Build SET clause from validated data
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, ARTICLE_JSON_FIELDS);
+
+    if (setClauses.length === 0) {
       return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
     }
 
-    fields.push(`"updatedAt" = NOW()`);
+    setClauses.push(`"updatedAt" = NOW()`);
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE articles SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      `UPDATE articles SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values
     );
 
@@ -354,7 +342,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

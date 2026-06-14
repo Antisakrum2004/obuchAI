@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Upload,
   Files,
@@ -15,6 +23,8 @@ import {
   Video,
   Image,
   AlertCircle,
+  Plus,
+  FolderPlus,
   Sparkles,
 } from "lucide-react";
 import { cn, formatBytes } from "@/lib/utils";
@@ -22,6 +32,21 @@ import { toast } from "sonner";
 
 interface BulkUploadProps {
   onUploadComplete?: () => void;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
+  spaceId: string;
+}
+
+interface Space {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string | null;
 }
 
 interface UploadResult {
@@ -67,19 +92,111 @@ const ACCEPTED_EXTENSIONS = ".pdf,.pptx,.ppt,.docx,.doc,.mp4,.webm,.mov,.png,.jp
 
 export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const [files, setFiles] = useState<File[]>([]);
+  const [spaceId, setSpaceId] = useState<string>("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [autoCategorize, setAutoCategorize] = useState(true);
   const [autoProcess, setAutoProcess] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentFileIndex, setCurrentFileIndex] = useState(-1);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline category creation
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatSpaceId, setNewCatSpaceId] = useState("");
+  const [creatingCat, setCreatingCat] = useState(false);
 
   // Track per-file upload status
   const [fileStatuses, setFileStatuses] = useState<Array<"pending" | "uploading" | "success" | "error">>([]);
 
-  // No manual space selection — AI auto-determines
+  // Fetch categories and spaces
+  const fetchCategories = useCallback(async () => {
+    setLoadingCategories(true);
+    try {
+      const spacesRes = await fetch("/api/knowledge/spaces?all=true");
+      if (!spacesRes.ok) return;
+      const spacesData = await spacesRes.json();
+      const spacesList = Array.isArray(spacesData) ? spacesData : [];
+      setSpaces(spacesList);
+
+      if (!newCatSpaceId && spacesList.length > 0) {
+        setNewCatSpaceId(spacesList[0].id);
+      }
+      if (!spaceId && spacesList.length > 0) {
+        setSpaceId(spacesList[0].id);
+      }
+
+      const allCats: Category[] = [];
+      for (const space of spacesList) {
+        try {
+          const res = await fetch(
+            `/api/knowledge/categories?spaceId=${space.id}&all=true`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) allCats.push(...data);
+          }
+        } catch {
+          // Skip this space's categories
+        }
+      }
+      setCategories(allCats);
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, [newCatSpaceId, spaceId]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim() || !newCatSpaceId) return;
+    setCreatingCat(true);
+    try {
+      const slug = newCatName
+        .toLowerCase()
+        .replace(/[^a-zа-яё0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .substring(0, 60);
+
+      const res = await fetch("/api/knowledge/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newCatName.trim(),
+          slug: slug || `cat-${Date.now()}`,
+          spaceId: newCatSpaceId,
+          icon: "📁",
+        }),
+      });
+
+      if (res.ok) {
+        const newCat = await res.json();
+        setCategories((prev) => [...prev, newCat]);
+        setCategoryId(newCat.id);
+        setShowNewCategory(false);
+        setNewCatName("");
+      } else {
+        const errData = await res.json();
+        setError(errData.error || "Не удалось создать категорию");
+      }
+    } catch {
+      setError("Ошибка при создании категории");
+    } finally {
+      setCreatingCat(false);
+    }
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -125,7 +242,20 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
   const handleUpload = async () => {
     if (files.length === 0) return;
 
-    // AI auto-determines space — no manual selection needed
+    // Resolve spaceId: explicit > from categoryId > none
+    let resolvedSpaceId = spaceId;
+    if (!resolvedSpaceId && categoryId) {
+      const cat = categories.find((c) => c.id === categoryId);
+      if (cat) resolvedSpaceId = cat.spaceId;
+    }
+    if (!resolvedSpaceId && spaces.length > 0) {
+      resolvedSpaceId = spaces[0].id;
+    }
+
+    if (!resolvedSpaceId) {
+      setError("Выберите раздел знаний (space) для загрузки файлов");
+      return;
+    }
 
     setUploading(true);
     setUploadProgress(0);
@@ -150,9 +280,12 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
         const file = files[i];
         const formData = new FormData();
         formData.append("files", file);
-        formData.append("spaceId", ""); // AI auto-assigns
+        formData.append("spaceId", resolvedSpaceId);
+        if (categoryId) {
+          formData.append("categoryId", categoryId);
+        }
         formData.append("autoProcess", String(autoProcess));
-        formData.append("autoCategorize", "true");
+        formData.append("autoCategorize", String(autoCategorize));
 
         try {
           const res = await fetch("/api/knowledge/bulk-upload", {
@@ -184,9 +317,8 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
               return next;
             });
           } else {
-            const errMsg = data.errors?.map((e) => e.error).join("; ") || "Ошибка загрузки";
-            const fileErrors = errMsg;
-            allErrors.push({ fileName: file.name, error: fileErrors });
+            const errMsg = data.errors?.map((e: { error: string }) => e.error).join("; ") || "Ошибка загрузки";
+            allErrors.push({ fileName: file.name, error: errMsg });
             setFileStatuses((prev) => {
               const next = [...prev];
               next[i] = "error";
@@ -280,6 +412,9 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
       setUploading(false);
     }
   };
+
+  const spaceName = (spaceId: string) =>
+    spaces.find((s) => s.id === spaceId)?.name || "";
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
@@ -389,10 +524,167 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
         </div>
       )}
 
-      {/* AI auto-determines space & category */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-        <Sparkles className="h-3.5 w-3.5 shrink-0" />
-        AI автоматически определит раздел, сложность и создаст категорию
+      {/* Space Selection */}
+      <div className="space-y-1.5">
+        <label className="text-xs text-muted-foreground">Раздел знаний</label>
+        {loadingCategories ? (
+          <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Загрузка...
+          </div>
+        ) : spaces.length === 0 ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+            <AlertCircle className="h-3 w-3 shrink-0" />
+            Нет разделов. Создайте раздел знаний сначала.
+          </div>
+        ) : (
+          <Select value={spaceId} onValueChange={setSpaceId}>
+            <SelectTrigger className="bg-white/5 border-white/10">
+              <SelectValue placeholder="Выберите раздел" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#111118] border-white/10">
+              {spaces.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.icon || "📚"} {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {/* AI Auto-Categorize + Category Selection */}
+      <div className="space-y-3">
+        {/* Auto-categorize toggle */}
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <Checkbox
+            checked={autoCategorize}
+            onCheckedChange={(v) => {
+              setAutoCategorize(v === true);
+              if (v === true) setCategoryId(""); // Clear manual category when auto is on
+            }}
+            className="border-white/20 data-[state=checked]:bg-emerald-500/30 data-[state=checked]:border-emerald-500"
+          />
+          <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="text-muted-foreground">
+            AI определит категорию автоматически
+          </span>
+        </label>
+
+        {/* Manual category select (only when auto is OFF) */}
+        {!autoCategorize && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">
+                  Категория
+                </label>
+                {!showNewCategory && categories.length > 0 && (
+                  <button
+                    onClick={() => setShowNewCategory(true)}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Новая
+                  </button>
+                )}
+              </div>
+              {loadingCategories ? (
+                <div className="flex items-center gap-2 h-9 px-3 rounded-md bg-white/5 border border-white/10 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Загрузка...
+                </div>
+              ) : categories.length === 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    Нет категорий. Создайте новую.
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowNewCategory(true)}
+                    className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-xs"
+                  >
+                    <FolderPlus className="h-3 w-3 mr-1" />
+                    Создать категорию
+                  </Button>
+                </div>
+              ) : (
+                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <SelectTrigger className="bg-white/5 border-white/10">
+                    <SelectValue placeholder="Выберите категорию" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#111118] border-white/10">
+                    {spaces.map((s) => (
+                      <SelectItem
+                        key={s.id}
+                        value={s.id}
+                        disabled
+                        className="font-semibold text-emerald-400"
+                      >
+                        {s.icon || "📚"} {s.name}
+                      </SelectItem>
+                    ))}
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        ├ {c.icon || "📁"} {c.name} ({spaceName(c.spaceId)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Inline New Category Form */}
+              {showNewCategory && (
+                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/10 space-y-2">
+                  <Input
+                    placeholder="Название категории"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    className="h-8 text-xs bg-white/5 border-white/10"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCreateCategory();
+                    }}
+                  />
+                  {spaces.length > 1 && (
+                    <Select value={newCatSpaceId} onValueChange={setNewCatSpaceId}>
+                      <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10">
+                        <SelectValue placeholder="Пространство" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#111118] border-white/10">
+                        {spaces.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.icon || "📚"} {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleCreateCategory}
+                      disabled={!newCatName.trim() || !newCatSpaceId || creatingCat}
+                      className="h-7 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
+                    >
+                      {creatingCat ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />}
+                      Создать
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setShowNewCategory(false); setNewCatName(""); }}
+                      className="h-7 text-xs text-muted-foreground"
+                    >
+                      Отмена
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* AI Processing toggle */}
@@ -449,13 +741,15 @@ export function BulkUpload({ onUploadComplete }: BulkUploadProps) {
                 >
                   <span>{article.fileType}</span>
                   <span className="truncate">{article.title}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 shrink-0"
-                  >
-                    <Sparkles className="h-2 w-2 mr-0.5" />
-                    AI
-                  </Badge>
+                  {autoCategorize && (
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 shrink-0"
+                    >
+                      <Sparkles className="h-2 w-2 mr-0.5" />
+                      AI
+                    </Badge>
+                  )}
                   <Badge
                     variant="outline"
                     className="text-[9px] px-1.5 py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0"

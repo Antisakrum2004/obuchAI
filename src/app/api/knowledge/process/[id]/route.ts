@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { processUpdateSchema, buildSetClause, PROCESS_JSON_FIELDS } from "@/lib/validation";
 
 // GET /api/knowledge/process/[id] — Get status of a processing queue item
 export async function GET(
@@ -45,12 +46,23 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // Validate with Zod schema — rejects unknown keys and bad types
+    const parseResult = processUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+
+    const data = parseResult.data;
 
     // Verify the queue item exists
     const existing = await pool.query(
@@ -64,46 +76,28 @@ export async function PUT(
       );
     }
 
-    const allowedFields = ["status", "progress", "result", "error"];
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    // Build SET clause from validated data
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, PROCESS_JSON_FIELDS);
 
-    for (const [key, value] of Object.entries(body)) {
-      if (key === "status" && typeof value === "string") {
-        fields.push(`status = $${idx++}`);
-        values.push(value);
-
-        // Auto-set timestamps based on status
-        if (value === "processing") {
-          fields.push(`"startedAt" = NOW()`);
-        } else if (value === "done" || value === "error") {
-          fields.push(`"completedAt" = NOW()`);
-        }
-      } else if (key === "progress" && typeof value === "number") {
-        fields.push(`progress = $${idx++}`);
-        values.push(Math.max(0, Math.min(100, value)));
-      } else if (key === "result" && typeof value === "object") {
-        fields.push(`result = $${idx++}`);
-        values.push(JSON.stringify(value));
-      } else if (key === "error" && typeof value === "string") {
-        fields.push(`error = $${idx++}`);
-        values.push(value);
-      }
-    }
-
-    if (fields.length === 0) {
+    if (setClauses.length === 0) {
       return NextResponse.json(
         { error: "Нет полей для обновления" },
         { status: 400 }
       );
     }
 
-    fields.push(`"updatedAt" = NOW()`);
+    // Auto-set timestamps based on status
+    if (data.status === "processing") {
+      setClauses.push(`"startedAt" = NOW()`);
+    } else if (data.status === "done" || data.status === "error") {
+      setClauses.push(`"completedAt" = NOW()`);
+    }
+
+    setClauses.push(`"updatedAt" = NOW()`);
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE processing_queue SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      `UPDATE processing_queue SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values
     );
 
@@ -124,7 +118,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

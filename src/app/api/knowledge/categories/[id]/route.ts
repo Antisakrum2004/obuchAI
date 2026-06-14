@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { categoryUpdateSchema, buildSetClause, CATEGORY_JSON_FIELDS } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -39,34 +40,36 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
 
-    const allowedFields = ["name", "slug", "description", "icon", "order", "parentId", "spaceId"];
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    for (const [key, value] of Object.entries(body)) {
-      if (allowedFields.includes(key)) {
-        fields.push(`"${key}" = $${idx++}`);
-        values.push(value);
-      }
+    // Validate with Zod schema — rejects unknown keys and bad types
+    const parseResult = categoryUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
 
-    if (fields.length === 0) {
+    const data = parseResult.data;
+
+    // Build SET clause from validated data
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, CATEGORY_JSON_FIELDS);
+
+    if (setClauses.length === 0) {
       return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
     }
 
-    fields.push(`"updatedAt" = NOW()`);
+    setClauses.push(`"updatedAt" = NOW()`);
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE categories SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      `UPDATE categories SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values
     );
 
@@ -88,7 +91,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

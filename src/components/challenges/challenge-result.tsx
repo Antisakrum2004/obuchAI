@@ -62,7 +62,7 @@ export function ChallengeResult({
           className={cn(
             "flex h-16 w-16 items-center justify-center rounded-full",
             isCorrect
-              ? "bg-emerald-500/20"
+              ? "bg-emerald-500/20 glow-emerald"
               : "bg-red-500/20"
           )}
         >

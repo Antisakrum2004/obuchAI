@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -9,7 +10,9 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <SessionProvider refetchInterval={5 * 60}>
-      {children}
+      <TooltipProvider delayDuration={200}>
+        {children}
+      </TooltipProvider>
     </SessionProvider>
   );
 }

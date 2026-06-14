@@ -4,6 +4,17 @@ import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { xpForQuiz, calculateLevel, getGradeName } from "@/lib/gamification";
 import { genId } from "@/lib/gen-id";
+import { ensureColumn } from "@/lib/db-migrate";
+
+// Ensure Sprint 7 columns exist (delegates to centralized db-migrate)
+let sprint7Ensured = false;
+async function ensureSprint7Columns() {
+  if (sprint7Ensured) return;
+  await ensureColumn("articles", "quiz", "JSONB");
+  await ensureColumn("articles", "practical_task", "JSONB");
+  await ensureColumn("articles", "timecodes", "JSONB");
+  sprint7Ensured = true;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +37,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
     if (!userId) {
       return NextResponse.json(
         { error: "Необходима авторизация" },
@@ -53,28 +64,22 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Validate that the article exists and has a quiz
-    // Try with quiz column first; fallback if Sprint 7 columns missing
-    let articleResult: any;
+    let articleResult;
     try {
       articleResult = await pool.query(
         `SELECT id, quiz FROM articles WHERE id = $1`,
         [articleId]
       );
-    } catch (queryErr: any) {
-      if (queryErr?.code === '42703' || /does not exist/.test(queryErr?.message || '')) {
-        // Sprint 7 columns missing — try auto-migrate then retry
-        try {
-          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`);
-          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`);
-          await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`);
-        } catch {}
-        articleResult = await pool.query(
-          `SELECT id, quiz FROM articles WHERE id = $1`,
-          [articleId]
+    } catch (error: any) {
+      if (error?.code === '42703' || (error?.message && error.message.includes('does not exist'))) {
+        console.log('[QuizSubmit] Sprint 7 columns missing — auto-migrating...');
+        await ensureSprint7Columns();
+        return NextResponse.json(
+          { error: 'Схема обновлена, попробуйте ещё раз', retry: true },
+          { status: 503 }
         );
-      } else {
-        throw queryErr;
       }
+      throw error;
     }
 
     if (!articleResult.rows[0]) {

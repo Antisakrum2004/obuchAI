@@ -21,11 +21,9 @@ import {
   ArrowRight,
   Video,
   GraduationCap,
-  Hash,
 } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useSession } from "next-auth/react";
-import { cn } from "@/lib/utils";
 
 interface ArticleData {
   id: string;
@@ -37,8 +35,6 @@ interface ArticleData {
   spaceId: string;
   videoUrl?: string | null;
   sourceType?: string | null;
-  difficulty?: string | null;
-  complexityOrder?: number;
   isPublished: boolean;
   createdAt: string;
 }
@@ -67,7 +63,7 @@ export default function KnowledgeSpacePage({
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
-  const sessionRole = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const sessionRole = session?.user?.role;
   const isAdmin = storeRole === "admin" || sessionRole === "admin";
 
   useEffect(() => {
@@ -228,7 +224,7 @@ export default function KnowledgeSpacePage({
                             className="shrink-0"
                           >
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors">
-                              <span className="text-sm font-bold text-emerald-400">{article.complexityOrder ?? (idx + 1)}</span>
+                              <GraduationCap className="h-5 w-5 text-emerald-400" />
                             </div>
                           </Link>
                           <div className="flex-1 min-w-0">
@@ -245,9 +241,9 @@ export default function KnowledgeSpacePage({
                           </div>
                           <div className="hidden sm:flex items-center gap-1 shrink-0">
                             {article.videoUrl && (
-                              <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0", getVideoBadgeStyle(article.videoUrl, article.sourceType))}>
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/30 text-white bg-emerald-500/80">
                                 <Video className="h-2.5 w-2.5 mr-0.5" />
-                                {getVideoBadgeLabel(article.videoUrl, article.sourceType)}
+                                Видео
                               </Badge>
                             )}
                             {article.tags && parseTags(article.tags).slice(0, 2).map((tag) => (
@@ -308,45 +304,5 @@ function pluralize(n: number, one: string, few: string, many: string): string {
 }
 
 function pluralizeR(n: number): string {
-  return pluralize(n, "материал", "материала", "материалов");
-}
-
-function detectVideoSource(url: string): string {
-  try {
-    const h = new URL(url).hostname.toLowerCase();
-    if (h.includes("youtube.com") || h.includes("youtu.be")) return "youtube";
-    if (h.includes("rutube.ru")) return "rutube";
-    if (h.includes("vk.com") || h.includes("vkvideo")) return "vk";
-    if (h.includes("disk.yandex") || h.includes("yandex")) return "yandex_disk";
-    if (url.endsWith(".mp4")) return "direct";
-    return "other";
-  } catch {
-    return "other";
-  }
-}
-
-function getVideoBadgeLabel(url: string, sourceType?: string | null): string {
-  const type = sourceType || detectVideoSource(url);
-  const labels: Record<string, string> = {
-    youtube: "YouTube",
-    rutube: "Rutube",
-    vk: "VK Видео",
-    yandex_disk: "Яндекс",
-    direct: "MP4",
-    other: "Видео",
-  };
-  return labels[type] || "Видео";
-}
-
-function getVideoBadgeStyle(url: string, sourceType?: string | null): string {
-  const type = sourceType || detectVideoSource(url);
-  const styles: Record<string, string> = {
-    youtube: "border-red-500/30 text-white bg-red-500/80",
-    rutube: "border-blue-500/30 text-white bg-blue-500/80",
-    vk: "border-blue-500/30 text-white bg-blue-600/80",
-    yandex_disk: "border-yellow-500/30 text-white bg-yellow-600/80",
-    direct: "border-emerald-500/30 text-white bg-emerald-500/80",
-    other: "border-emerald-500/30 text-white bg-emerald-500/80",
-  };
-  return styles[type] || styles.other;
+  return pluralize(n, "статья", "статьи", "статей");
 }

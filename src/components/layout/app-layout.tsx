@@ -17,8 +17,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-white/5">
+      {/* Desktop Sidebar — narrow icon-only bar */}
+      <aside className="hidden md:flex md:w-[70px] md:min-w-[70px] md:flex-col md:border-r md:border-white/5">
         <AppSidebar />
       </aside>
 
@@ -26,7 +26,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent
           side="left"
-          className="w-64 border-white/5 bg-sidebar p-0"
+          className="w-[70px] border-white/5 bg-sidebar p-0"
         >
           <AppSidebar onNavigate={() => setSheetOpen(false)} />
         </SheetContent>

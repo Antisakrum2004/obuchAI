@@ -45,9 +45,8 @@ import {
   X as XIcon,
   Loader2,
   FileText,
-  Video,
-  Plus,
-  Link as LinkIcon,
+  ArrowRight,
+  PlayCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { VideoEmbed } from "@/components/knowledge/video-embed";
@@ -142,6 +141,7 @@ interface ArticleData {
   estimatedTime: string | null;
   status: string;
   aiGenerated: boolean;
+  isPublished: boolean;
   videoUrl: string | null;
   pdfUrl: string | null;
   pptxUrl: string | null;
@@ -174,11 +174,11 @@ export function ArticleClient({
   const [savingField, setSavingField] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [contentPreview, setContentPreview] = useState(false);
-
-  // Video URL editing
-  const [editingVideo, setEditingVideo] = useState(false);
-  const [editVideoUrl, setEditVideoUrl] = useState("");
-  const [savingVideo, setSavingVideo] = useState(false);
+  const [relatedArticles, setRelatedArticles] = useState<Array<{
+    id: string; title: string; summary: string | null; tags: string[];
+    difficulty: string | null; estimatedTime: string | null;
+    videoUrl: string | null;
+  }>>([]);
 
   const headingIdCountsRef = useRef<Map<string, number>>(new Map());
 
@@ -290,45 +290,6 @@ export function ArticleClient({
     }
   };
 
-  // ─── Save video URL ──────────────────────────────────────────
-  const handleSaveVideo = useCallback(async () => {
-    if (!article) return;
-    setSavingVideo(true);
-    try {
-      const videoUrl = editVideoUrl.trim() || null;
-      // Auto-detect sourceType
-      let sourceType: string | null = null;
-      if (videoUrl) {
-        try {
-          const h = new URL(videoUrl).hostname.toLowerCase();
-          if (h.includes("youtube.com") || h.includes("youtu.be")) sourceType = "youtube";
-          else if (h.includes("rutube.ru")) sourceType = "rutube";
-          else if (h.includes("vk.com") || h.includes("vkvideo")) sourceType = "vk";
-          else if (h.includes("disk.yandex") || h.includes("yandex")) sourceType = "yandex_disk";
-          else if (videoUrl.endsWith(".mp4")) sourceType = "direct";
-          else sourceType = "other";
-        } catch { sourceType = "other"; }
-      }
-      const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoUrl, sourceType }),
-      });
-      if (res.ok) {
-        toast.success(videoUrl ? "Видео добавлено" : "Видео удалено");
-        setArticle((prev) => prev ? { ...prev, videoUrl, sourceType } : prev);
-        setEditingVideo(false);
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Ошибка сохранения");
-      }
-    } catch {
-      toast.error("Не удалось сохранить");
-    } finally {
-      setSavingVideo(false);
-    }
-  }, [article, editVideoUrl]);
-
   // ─── Extract content ─────────────────────────────────────────
   const handleExtractContent = async () => {
     if (!article) return;
@@ -351,6 +312,40 @@ export function ArticleClient({
       setExtracting(false);
     }
   };
+
+  // ─── Fetch related articles ────────────────────────────────
+  useEffect(() => {
+    if (!article?.space?.id) return;
+    async function loadRelated() {
+      try {
+        const res = await fetch(`/api/knowledge/articles?spaceId=${article!.space!.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        // Filter out current article, parse tags, pick top 3 by relevance
+        const others = data
+          .filter((a: Record<string, unknown>) => a.id !== article!.id)
+          .map((a: Record<string, unknown>) => ({
+            ...a,
+            tags: Array.isArray(a.tags) ? a.tags : (typeof a.tags === "string" ? (() => { try { return JSON.parse(a.tags as string); } catch { return []; } })() : []),
+          }));
+
+        // Score by shared tags + same difficulty
+        const currentTags = new Set(article!.tags);
+        const scored = others.map((a: Record<string, unknown> & { tags: string[] }) => {
+          let score = 0;
+          if (a.tags) a.tags.forEach((t: string) => { if (currentTags.has(t)) score += 2; });
+          if (a.difficulty && a.difficulty === article!.difficulty) score += 1;
+          return { ...a, score };
+        });
+        scored.sort((a: typeof scored[0], b: typeof scored[0]) => b.score - a.score);
+        setRelatedArticles(scored.slice(0, 3));
+      } catch {
+        // Silently fail — related articles are non-critical
+      }
+    }
+    loadRelated();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [article?.id, article?.space?.id]);
 
   // ─── Derived state (MUST be before any early returns — Rules of Hooks) ──
   const headings = useMemo(() =>
@@ -515,6 +510,41 @@ export function ArticleClient({
                     {statusConfig[article.status].label}
                   </Badge>
                 )}
+                {/* Preview Badge for unpublished articles (admin only) */}
+                {isAdmin && !article.isPublished && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0 border-amber-500/40 text-amber-400 bg-amber-500/10 gap-1">
+                    <Eye className="h-3 w-3" /> Предпросмотр
+                  </Badge>
+                )}
+                {/* Publish Button for unpublished articles (admin only) */}
+                {isAdmin && !article.isPublished && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-emerald-400/80 hover:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/knowledge/articles/${encodeURIComponent(article.id)}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ isPublished: true }),
+                        });
+                        if (res.ok) {
+                          toast.success("Статья опубликована");
+                          setArticle(prev => prev ? { ...prev, isPublished: true } : prev);
+                        } else {
+                          const d = await res.json();
+                          toast.error(d.error || "Ошибка публикации");
+                        }
+                      } catch {
+                        toast.error("Не удалось опубликовать");
+                      }
+                    }}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline text-xs">Опубликовать</span>
+                  </Button>
+                )}
                 {/* Delete Button */}
                 {isAdmin && (
                   <AlertDialog>
@@ -622,105 +652,12 @@ export function ArticleClient({
               </div>
             </div>
 
-            {/* Video — show embed if exists, or "Add video" button for admins */}
-            {article.videoUrl ? (
+            {/* Video */}
+            {article.videoUrl && (
               <div className="mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} className="flex-1" />
-                </div>
-                {isAdmin && !editingVideo && (
-                  <button
-                    onClick={() => { setEditVideoUrl(article.videoUrl || ""); setEditingVideo(true); }}
-                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                  >
-                    <Pencil className="h-3 w-3" /> Изменить ссылку на видео
-                  </button>
-                )}
-                {isAdmin && editingVideo && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Input
-                      value={editVideoUrl}
-                      onChange={(e) => setEditVideoUrl(e.target.value)}
-                      placeholder="Ссылка на видео (YouTube, VK, Яндекс, MP4)"
-                      className="bg-white/5 border-white/10 h-8 text-sm"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleSaveVideo}
-                      disabled={savingVideo}
-                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 h-8"
-                    >
-                      {savingVideo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setEditingVideo(false)}
-                      className="h-8"
-                    >
-                      <XIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
+                <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
               </div>
-            ) : isAdmin ? (
-              <div className="mb-6">
-                {editingVideo ? (
-                  <div className="glass rounded-xl p-4 border-dashed border-emerald-500/30">
-                    <h4 className="text-sm font-medium flex items-center gap-1.5 mb-3">
-                      <Video className="h-4 w-4 text-emerald-400" />
-                      Добавить видео
-                    </h4>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={editVideoUrl}
-                        onChange={(e) => setEditVideoUrl(e.target.value)}
-                        placeholder="Вставьте ссылку — YouTube, VK, Яндекс Диск, MP4"
-                        className="bg-white/5 border-white/10"
-                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveVideo(); }}
-                      />
-                      <Button
-                        onClick={handleSaveVideo}
-                        disabled={savingVideo || !editVideoUrl.trim()}
-                        className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30"
-                      >
-                        {savingVideo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
-                        {savingVideo ? "" : "Сохранить"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setEditingVideo(false)}
-                        className="text-muted-foreground"
-                      >
-                        <XIcon className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-2">
-                      YouTube · Rutube · VK Видео · Яндекс Диск · Прямая ссылка MP4
-                    </p>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => { setEditVideoUrl(""); setEditingVideo(true); }}
-                    className="w-full glass rounded-xl p-4 border-dashed border-white/10 hover:border-emerald-500/30 transition-all text-left group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors shrink-0">
-                        <Plus className="h-5 w-5 text-emerald-400" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-                          Добавить видео
-                        </p>
-                        <p className="text-xs text-muted-foreground/60">
-                          YouTube, VK, Яндекс Диск, MP4
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                )}
-              </div>
-            ) : null}
+            )}
 
             {/* Source Links */}
             {(article.pdfUrl || article.pptxUrl || article.sourceUrl) && (
@@ -860,6 +797,59 @@ export function ArticleClient({
             </motion.aside>
           )}
         </div>
+
+        {/* Related Articles */}
+        {relatedArticles.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="mt-12"
+          >
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-emerald-400" />
+              Похожие статьи
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {relatedArticles.map((rel) => (
+                <a
+                  key={rel.id}
+                  href={`/knowledge/article/${rel.id}`}
+                  className="group glass rounded-xl p-5 border-white/5 hover:border-emerald-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-sm font-medium leading-snug group-hover:text-emerald-400 transition-colors line-clamp-2">
+                      {rel.title}
+                    </h3>
+                    <ArrowRight className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                  {rel.summary && (
+                    <p className="mt-2 text-xs text-muted-foreground/70 line-clamp-2 leading-relaxed">
+                      {rel.summary}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
+                    {rel.difficulty && difficultyConfig[rel.difficulty] && (
+                      <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", difficultyConfig[rel.difficulty].color)}>
+                        {difficultyConfig[rel.difficulty].label}
+                      </Badge>
+                    )}
+                    {rel.estimatedTime && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-white/10 text-muted-foreground">
+                        <Clock className="h-2.5 w-2.5 mr-1" />{rel.estimatedTime}
+                      </Badge>
+                    )}
+                    {rel.videoUrl && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10">
+                        <PlayCircle className="h-2.5 w-2.5 mr-0.5" />Видео
+                      </Badge>
+                    )}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
     </AppLayout>
   );

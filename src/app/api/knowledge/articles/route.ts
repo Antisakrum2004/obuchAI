@@ -3,23 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
-// Auto-migrate: ensure complexityOrder column exists (runs once, then no-op)
-let complexityOrderMigrated = false;
-async function ensureComplexityOrderColumn() {
-  if (complexityOrderMigrated) return;
-  complexityOrderMigrated = true;
-  try {
-    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`);
-  } catch {
-    // Column already exists
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
-    // Auto-migrate complexityOrder column on first request
-    await ensureComplexityOrderColumn();
-
     const { searchParams } = new URL(request.url);
     const spaceId = searchParams.get("spaceId");
     const recent = searchParams.get("recent");
@@ -67,16 +52,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Articles by space — sorted by complexityOrder (easiest first), fallback to createdAt
+    // Articles by space
     const { rows } = await pool.query(
-      `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."spaceId", a."isPublished", a."createdAt", a."videoUrl", a."sourceType", a."complexityOrder", a.difficulty
+      `SELECT a.id, a.title, a.slug, a.summary, a.tags, a."viewCount", a."spaceId", a."isPublished", a."createdAt", a."videoUrl", a."sourceType",
+              a.difficulty, a."estimatedTime"
        FROM articles a
        ${all !== "true" ? 'WHERE a."isPublished" = true AND' : "WHERE"} a."spaceId" = $1
-       ORDER BY a."complexityOrder" ASC NULLS LAST, a."createdAt" ASC`,
+       ORDER BY a."createdAt" DESC`,
       [spaceId]
     );
 
-    const result = rows.map((article, idx) => ({
+    const result = rows.map((article) => ({
       id: article.id,
       title: article.title,
       slug: article.slug,
@@ -88,8 +74,8 @@ export async function GET(request: NextRequest) {
       createdAt: new Date(article.createdAt).toISOString(),
       videoUrl: article.videoUrl,
       sourceType: article.sourceType,
-      complexityOrder: article.complexityOrder ?? (idx + 1),
       difficulty: article.difficulty,
+      estimatedTime: article.estimatedTime,
     }));
 
     return NextResponse.json(result);
@@ -103,7 +89,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
@@ -149,28 +135,7 @@ export async function POST(request: NextRequest) {
     }
 
     const id = 'art_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-    const authorId = (session.user as Record<string, unknown>).id as string;
-
-    // If spaceId is null, create a temporary "uncategorized" space or use existing one
-    let finalSpaceId = spaceId;
-    if (!finalSpaceId) {
-      // Find or create an "uncategorized" space for AI to categorize later
-      const { rows: uncategorizedSpace } = await pool.query(
-        `SELECT id FROM knowledge_spaces WHERE slug = 'uncategorized' LIMIT 1`
-      );
-      if (uncategorizedSpace.length > 0) {
-        finalSpaceId = uncategorizedSpace[0].id;
-      } else {
-        const tempSpaceId = 'sp_uncategorized';
-        await pool.query(
-          `INSERT INTO knowledge_spaces (id, name, slug, "order", "isPublished", "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, 999, false, NOW(), NOW())
-           ON CONFLICT (slug) DO NOTHING`,
-          [tempSpaceId, 'Без категории', 'uncategorized']
-        );
-        finalSpaceId = tempSpaceId;
-      }
-    }
+    const authorId = session.user.id;
 
     const result = await pool.query(
       `INSERT INTO articles (id, title, slug, content, summary, tags, "keyTopics", "spaceId", "authorId", "isPublished", "viewCount",
@@ -188,7 +153,7 @@ export async function POST(request: NextRequest) {
         summary || null,
         tags ? JSON.stringify(tags) : null,
         keyTopics ? JSON.stringify(keyTopics) : null,
-        finalSpaceId,
+        spaceId,
         authorId,
         isPublished !== undefined ? isPublished : true,
         // Sprint 6 fields

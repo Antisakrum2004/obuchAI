@@ -65,11 +65,10 @@ interface ChallengeData {
   xpReward: number;
   content: string;
   options: string | null;
-  correctAnswer: string;
+  // correctAnswer is NOT sent from server — validated server-side on submit
   explanation: string | null;
   hints: string | null;
   validationType: string;
-  validationConfig: string | null;
   isSolved?: boolean;
   cooldownUntil?: string | null;
   order?: number;
@@ -256,7 +255,7 @@ function ChallengePageInner() {
       fetch("/api/auth/session")
         .then((r) => r.json())
         .then((session) => {
-          const uid = (session?.user as Record<string, unknown>)?.id as string;
+          const uid = session?.user?.id;
           if (uid) setUserId(uid);
         })
         .catch(() => {});

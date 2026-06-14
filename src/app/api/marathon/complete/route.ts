@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
     const body = await request.json();
     const { correctCount, totalAttempts, longestStreak } = body;
 

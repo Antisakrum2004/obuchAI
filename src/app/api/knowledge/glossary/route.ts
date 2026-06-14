@@ -2,18 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { ensureColumn } from "@/lib/db-migrate";
 
 // Runtime migration memo — ensure aliases column exists
 let aliasesEnsured = false;
 
 async function ensureAliasesColumn(): Promise<void> {
   if (aliasesEnsured) return;
-  try {
-    await pool.query(`ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aliases" TEXT`);
-  } catch {
-    // Column already exists — not critical
-  }
-  aliasesEnsured = true;
+  aliasesEnsured = await ensureColumn("glossary_terms", "aliases", "TEXT");
 }
 
 export async function GET() {
@@ -38,7 +34,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

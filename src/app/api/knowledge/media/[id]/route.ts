@@ -46,7 +46,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userRole = (session.user as Record<string, unknown>)?.role;
+    const userRole = session.user?.role;
     if (userRole !== "admin") {
       return NextResponse.json(
         { error: "Недостаточно прав для удаления файлов" },

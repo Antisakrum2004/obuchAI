@@ -517,7 +517,7 @@ export function ShareCardButton({ profile }: ShareCardProps) {
       <Button
         onClick={generateImage}
         disabled={generating}
-        className="gap-2 bg-gradient-to-r from-emerald-500 to-purple-500 hover:from-emerald-400 hover:to-purple-400 text-white font-semibold"
+        className="gap-2 bg-gradient-to-r from-emerald-500 to-purple-500 hover:from-emerald-400 hover:to-purple-400 text-white font-semibold shadow-lg shadow-emerald-500/20"
         size="lg"
       >
         {generating ? (

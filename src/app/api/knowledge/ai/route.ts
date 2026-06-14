@@ -5,6 +5,7 @@ import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
 import { createChatCompletion, isAIConfigured } from "@/lib/ai-provider";
 import { storageProvider, S3StorageProvider } from "@/lib/storage";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // AI processing can take 30-90s per step
@@ -13,8 +14,17 @@ export const maxDuration = 120; // AI processing can take 30-90s per step
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
+    }
+
+    // Rate limit: 5 AI requests per minute per user
+    const rateResult = checkRateLimit(`ai:${session.user.id}`, RATE_LIMITS.ai);
+    if (!rateResult.allowed) {
+      return NextResponse.json(
+        { error: "Слишком много запросов к AI. Подождите минуту." },
+        { status: 429 }
+      );
     }
 
     const body = await request.json();
@@ -142,7 +152,21 @@ export async function POST(request: NextRequest) {
 
     try {
       if (type === "content") {
-        await processContentExtraction(article, articleId, queueId);
+        // Skip content extraction for video articles — they don't have PDF content
+        const sourceType = (article.sourceType as string) || "";
+        const videoUrl = (article as { videoUrl?: string }).videoUrl || "";
+        const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(sourceType) ||
+          (videoUrl && !article.pdfUrl);
+        if (isVideoArticle) {
+          console.log(`[AI] Skipping content extraction for video article ${articleId} (sourceType=${sourceType})`);
+          // Mark queue item as done immediately
+          await pool.query(
+            `UPDATE processing_queue SET status = 'done', progress = 100, "completedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+            [queueId]
+          );
+        } else {
+          await processContentExtraction(article, articleId, queueId);
+        }
       } else if (type === "metadata" || type === "categorize") {
         // Check if we need auto-categorization (article has no spaceId)
         const needsCategorization = !article.spaceId;
@@ -182,14 +206,14 @@ export async function POST(request: NextRequest) {
 
       // Determine expected queue types for this article
       const expectedTypes = ["ai_metadata", "glossary_extract", "graph_build", "course_draft"];
-      // Check if article has PDF → needs content_extract too
-      // BUT skip content_extract for video articles (they already have AI-generated content)
+      // Check if article has PDF AND is not a video article → needs content_extract too
       const { rows: articlePdfCheck } = await pool.query(
-        `SELECT "pdfUrl", "sourceType" FROM articles WHERE id = $1`,
+        `SELECT "pdfUrl", "sourceType", "videoUrl" FROM articles WHERE id = $1`,
         [articleId]
       );
-      const isVideoArticle = ["youtube", "rutube", "vk"].includes(articlePdfCheck[0]?.sourceType);
-      if (articlePdfCheck[0]?.pdfUrl && !isVideoArticle) {
+      const isVideoForAutoPublish = articlePdfCheck[0]?.videoUrl &&
+        ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(articlePdfCheck[0]?.sourceType || "");
+      if (articlePdfCheck[0]?.pdfUrl && !isVideoForAutoPublish) {
         expectedTypes.unshift("content_extract");
       }
 
@@ -219,17 +243,14 @@ export async function POST(request: NextRequest) {
       if (allDone) {
         // Check if article content is still a placeholder
         const { rows: contentCheck } = await pool.query(
-          `SELECT content, "pdfUrl", "sourceType" FROM articles WHERE id = $1`,
+          `SELECT content, "pdfUrl" FROM articles WHERE id = $1`,
           [articleId]
         );
         const content = contentCheck[0]?.content || "";
         const hasPdf = !!contentCheck[0]?.pdfUrl;
-        const isVideoArticle = ["youtube", "rutube", "vk"].includes(contentCheck[0]?.sourceType);
         const isPlaceholder = content.includes("Содержимое будет добавлено после обработки") || content.length < 50;
 
-        // For video articles, content is already generated — always publish
-        // For PDF articles, don't publish if content is still placeholder
-        if (isPlaceholder && hasPdf && !isVideoArticle) {
+        if (isPlaceholder && hasPdf) {
           skippedPublish = true;
           console.log(`[AI] Article ${articleId} all tasks done but content is placeholder — not publishing`);
           await pool.query(
@@ -427,9 +448,6 @@ ${JSON.stringify(spaceList, null, 2)}
       `UPDATE articles SET "spaceId" = $1, "updatedAt" = NOW() WHERE id = $2`,
       [assignedSpaceId, articleId]
     );
-
-    // Re-rank complexityOrder for articles in the new space
-    await recalculateComplexityOrder(articleId);
   }
 }
 
@@ -531,46 +549,6 @@ async function processMetadata(
     `UPDATE processing_queue SET result = $1, progress = 90, "updatedAt" = NOW() WHERE id = $2`,
     [JSON.stringify(parsed), queueId]
   );
-
-  // ─── Re-rank complexityOrder for all articles in the same space ───
-  await recalculateComplexityOrder(articleId);
-}
-
-/**
- * Re-rank complexityOrder for all articles in the same space as the given article.
- * Articles are sorted by difficulty (easy → medium → hard) then by title.
- * Each article gets a sequential complexityOrder starting from 1.
- */
-async function recalculateComplexityOrder(articleId: string) {
-  // Get the spaceId of the article
-  const { rows: [art] } = await pool.query(
-    `SELECT "spaceId" FROM articles WHERE id = $1`,
-    [articleId]
-  );
-  if (!art?.spaceId) return;
-
-  // Get all articles in this space, ordered by difficulty then title
-  const difficultyOrder = { easy: 1, medium: 2, hard: 3 };
-  const { rows: spaceArticles } = await pool.query(
-    `SELECT id, difficulty, title FROM articles WHERE "spaceId" = $1 ORDER BY difficulty ASC, title ASC`,
-    [art.spaceId]
-  );
-
-  // Sort with proper difficulty ordering
-  const sorted = spaceArticles.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
-    const da = difficultyOrder[(a.difficulty as string) || "medium"] || 2;
-    const db = difficultyOrder[(b.difficulty as string) || "medium"] || 2;
-    if (da !== db) return da - db;
-    return String(a.title).localeCompare(String(b.title));
-  });
-
-  // Update each article's complexityOrder
-  for (let i = 0; i < sorted.length; i++) {
-    await pool.query(
-      `UPDATE articles SET "complexityOrder" = $1, "updatedAt" = NOW() WHERE id = $2`,
-      [i + 1, sorted[i].id]
-    );
-  }
 }
 
 /**
@@ -805,26 +783,7 @@ async function processContentExtraction(
 
   let pdfUrl = (article.pdfUrl as string) || "";
   const title = (article.title as string) || "";
-  const sourceType = (article.sourceType as string) || "";
   let pdfFileKey: string | null = null;
-
-  // ── Video articles already have AI-generated content — skip PDF extraction ──
-  if (sourceType === "youtube" || sourceType === "rutube" || sourceType === "vk") {
-    console.log(`[Content] Article ${articleId} is from video (${sourceType}) — content already generated, marking as done`);
-    // Check if content is already substantive (not a placeholder)
-    const content = (article.content as string) || "";
-    const isPlaceholder = content.includes("Содержимое будет добавлено после обработки") || content.length < 50;
-    if (!isPlaceholder) {
-      // Content is already good — mark this queue item as done
-      await pool.query(
-        `UPDATE processing_queue SET result = $1, progress = 100, "updatedAt" = NOW() WHERE id = $2`,
-        [JSON.stringify({ skipped: true, reason: "Video article — content already generated" }), queueId]
-      );
-      return; // Skip PDF download entirely
-    }
-    // If content IS still placeholder for a video article, fall through and try PDF
-    console.warn(`[Content] Video article ${articleId} has placeholder content — attempting PDF extraction as fallback`);
-  }
 
   // If pdfUrl is not set on the article, check the media table for PDF files
   if (!pdfUrl) {
@@ -1231,7 +1190,7 @@ ${courseContext}`;
 
   // ─── Step 6: Sanitize and validate quiz data ───
   // Quiz is MANDATORY — minimum 5 questions required for a valid lesson
-  const validQuiz = (parsed.quiz || [])
+  let validQuiz = (parsed.quiz || [])
     .filter((q) =>
       q.question &&
       Array.isArray(q.options) && q.options.length >= 2 &&
@@ -1240,8 +1199,66 @@ ${courseContext}`;
     )
     .slice(0, 10); // Max 10 questions
 
+  // Auto-retry quiz generation once if fewer than 5 valid questions
   if (validQuiz.length < 5) {
-    console.warn(`[Course] Article ${articleId}: only ${validQuiz.length} quiz questions (minimum 5 recommended). AI may need re-processing.`);
+    console.warn(`[Course] Article ${articleId}: only ${validQuiz.length} quiz questions (minimum 5). Retrying quiz generation...`);
+
+    try {
+      const retryQuizPrompt = `Ты — AI-ассистент для создания тестовых вопросов по образовательным урокам.
+
+КРИТИЧЕСКИ ВАЖНО: Создай РОВНО 5 или больше вопросов. Это обязательное требование — возвращай минимум 5 вопросов.
+
+Верни ТОЛЬКО валидный JSON-массив вопросов в формате:
+[
+  {
+    "question": "Вопрос по материалу урока",
+    "options": ["Вариант А", "Вариант Б", "Вариант В", "Вариант Г"],
+    "correctIndex": 0,
+    "explanation": "Объяснение почему этот ответ правильный"
+  }
+]
+
+ПРАВИЛА:
+- ОБЯЗАТЕЛЬНО минимум 5 вопросов (лучше 7-10)
+- 4 варианта ответа, один правильный
+- Вопросы должны проверять ПОНИМАНИЕ, а не запоминание
+- Explanation — 1-2 предложения
+
+Урок: ${title}
+
+Конспект:
+${content.substring(0, 12000)}`;
+
+      const retryCompletion = await createChatCompletion([
+        { role: "system", content: retryQuizPrompt },
+        { role: "user", content: "Создай минимум 5 тестовых вопросов по этому уроку. Верни ТОЛЬКО JSON-массив." },
+      ], { temperature: 0.3, max_tokens: 4096 });
+
+      const retryResult = retryCompletion.choices[0]?.message?.content;
+      if (retryResult) {
+        const retryCleaned = retryResult.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        const retryParsed = JSON.parse(retryCleaned);
+        const retryQuiz = (Array.isArray(retryParsed) ? retryParsed : retryParsed.quiz || [])
+          .filter((q: { question?: string; options?: unknown[]; correctIndex?: number; explanation?: string }) =>
+            q.question &&
+            Array.isArray(q.options) && q.options.length >= 2 &&
+            typeof q.correctIndex === "number" && q.correctIndex >= 0 && q.correctIndex < q.options.length &&
+            q.explanation
+          )
+          .slice(0, 10);
+
+        if (retryQuiz.length > validQuiz.length) {
+          console.log(`[Course] Article ${articleId}: retry produced ${retryQuiz.length} quiz questions (was ${validQuiz.length})`);
+          validQuiz = retryQuiz;
+        }
+      }
+    } catch (retryError) {
+      console.warn(`[Course] Article ${articleId}: quiz retry failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+    }
+
+    if (validQuiz.length < 5) {
+      console.warn(`[Course] Article ${articleId}: still only ${validQuiz.length} quiz questions after retry. Accepting what we have.`);
+    }
   }
 
   // ─── Step 7: Sanitize practical task ───
@@ -1267,78 +1284,36 @@ ${courseContext}`;
     }))
     .slice(0, 30);
 
-  // ─── Step 9: Ensure Sprint 7 columns exist (auto-migrate) ───
-  try {
-    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`);
-    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`);
-    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`);
-    console.log(`[Course] Sprint 7 columns ensured for articles table`);
-  } catch (migErr: any) {
-    console.warn(`[Course] Sprint 7 auto-migration warning: ${migErr.message}`);
-  }
-
-  // ─── Step 10: Save everything to the article ───
-  try {
-    await pool.query(
-      `UPDATE articles SET
-        summary = COALESCE($1, summary),
-        difficulty = COALESCE($2, difficulty),
-        "keyConcepts" = COALESCE($3, "keyConcepts"),
-        "estimatedTime" = COALESCE($4, "estimatedTime"),
-        tags = COALESCE($5, tags),
-        "keyTopics" = COALESCE($6, "keyTopics"),
-        quiz = $7,
-        practical_task = $8,
-        timecodes = $9,
-        prerequisites = COALESCE($10, prerequisites),
-        "aiGenerated" = true,
-        "updatedAt" = NOW()
-      WHERE id = $11`,
-      [
-        parsed.summary || null,
-        parsed.difficulty || null,
-        parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
-        parsed.estimatedTime || null,
-        parsed.tags ? JSON.stringify(parsed.tags) : null,
-        parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
-        validQuiz.length > 0 ? JSON.stringify(validQuiz) : null,
-        validPracticalTask ? JSON.stringify(validPracticalTask) : null,
-        validTimecodes.length > 0 ? JSON.stringify(validTimecodes) : null,
-        validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
-        articleId,
-      ]
-    );
-  } catch (updateErr: any) {
-    // Fallback: if Sprint 7 columns still missing (error 42703), save without quiz/practical_task/timecodes
-    if (updateErr?.code === '42703' || /does not exist/.test(updateErr?.message || '')) {
-      console.warn(`[Course] Sprint 7 columns still missing after auto-migration, saving without quiz/practice/timecodes`);
-      await pool.query(
-        `UPDATE articles SET
-          summary = COALESCE($1, summary),
-          difficulty = COALESCE($2, difficulty),
-          "keyConcepts" = COALESCE($3, "keyConcepts"),
-          "estimatedTime" = COALESCE($4, "estimatedTime"),
-          tags = COALESCE($5, tags),
-          "keyTopics" = COALESCE($6, "keyTopics"),
-          prerequisites = COALESCE($7, prerequisites),
-          "aiGenerated" = true,
-          "updatedAt" = NOW()
-        WHERE id = $8`,
-        [
-          parsed.summary || null,
-          parsed.difficulty || null,
-          parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
-          parsed.estimatedTime || null,
-          parsed.tags ? JSON.stringify(parsed.tags) : null,
-          parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
-          validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
-          articleId,
-        ]
-      );
-    } else {
-      throw updateErr; // Re-throw if it's not a missing column error
-    }
-  }
+  // ─── Step 9: Save everything to the article ───
+  await pool.query(
+    `UPDATE articles SET
+      summary = COALESCE($1, summary),
+      difficulty = COALESCE($2, difficulty),
+      "keyConcepts" = COALESCE($3, "keyConcepts"),
+      "estimatedTime" = COALESCE($4, "estimatedTime"),
+      tags = COALESCE($5, tags),
+      "keyTopics" = COALESCE($6, "keyTopics"),
+      quiz = $7,
+      practical_task = $8,
+      timecodes = $9,
+      prerequisites = COALESCE($10, prerequisites),
+      "aiGenerated" = true,
+      "updatedAt" = NOW()
+    WHERE id = $11`,
+    [
+      parsed.summary || null,
+      parsed.difficulty || null,
+      parsed.keyConcepts ? JSON.stringify(parsed.keyConcepts) : null,
+      parsed.estimatedTime || null,
+      parsed.tags ? JSON.stringify(parsed.tags) : null,
+      parsed.keyTopics ? JSON.stringify(parsed.keyTopics) : null,
+      validQuiz.length > 0 ? JSON.stringify(validQuiz) : null,
+      validPracticalTask ? JSON.stringify(validPracticalTask) : null,
+      validTimecodes.length > 0 ? JSON.stringify(validTimecodes) : null,
+      validPrerequisites.length > 0 ? JSON.stringify(validPrerequisites) : null,
+      articleId,
+    ]
+  );
 
   console.log(`[Course] Article ${articleId} processed: ${validQuiz.length} quiz questions, ${validTimecodes.length} timecodes, practical: ${!!validPracticalTask}, prerequisites: ${validPrerequisites.length}`);
 
@@ -1347,7 +1322,7 @@ ${courseContext}`;
     [queueId]
   );
 
-  // ─── Step 11: Update queue result ───
+  // ─── Step 10: Update queue result ───
   await pool.query(
     `UPDATE processing_queue SET result = $1, progress = 95, "updatedAt" = NOW() WHERE id = $2`,
     [

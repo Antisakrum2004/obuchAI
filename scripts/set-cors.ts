@@ -101,7 +101,7 @@ async function setupCORS() {
   console.log(`  Endpoint:   ${endpoint}`);
   console.log(`  Region:     ${region}`);
   console.log(`  Bucket:     ${bucket}`);
-  console.log(`  AccessKey:  ${accessKeyId.substring(0, 8)}...`);
+  console.log(`  AccessKey:  ${accessKeyId?.substring(0, 8)}...`);
   console.log("═══════════════════════════════════════════════════");
   console.log();
 

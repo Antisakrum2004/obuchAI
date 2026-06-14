@@ -16,7 +16,7 @@ export async function GET() {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
 
     // Check streak
     const userResult = await query(

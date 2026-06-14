@@ -50,7 +50,7 @@ export default function AdminLoginPage() {
         <div className="glass rounded-2xl p-8">
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 glow-emerald">
               <Shield className="h-6 w-6 text-emerald-400" />
             </div>
             <div>

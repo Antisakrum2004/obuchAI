@@ -14,7 +14,7 @@ export async function GET() {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
 
     // Fixed 15 challenges for marathon mode
     const count = 15;
@@ -96,7 +96,7 @@ export async function GET() {
     // Generate marathon ID
     const marathonId = genId();
 
-    // Format challenges for the client — include correctAnswer for local marathon validation
+    // Format challenges for the client — correctAnswer is NOT sent to prevent cheating
     const formattedChallenges = challenges.map((c: Record<string, unknown>) => ({
       id: c.id,
       title: c.title,
@@ -107,11 +107,8 @@ export async function GET() {
       xpReward: c.xpReward,
       content: c.content,
       options: c.options,
-      correctAnswer: c.correctAnswer,
       explanation: c.explanation,
       hints: c.hints,
-      validationType: c.validationType,
-      validationConfig: c.validationConfig,
     }));
 
     return NextResponse.json({

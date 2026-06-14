@@ -17,11 +17,11 @@ export interface CachedChallengeData {
   xpReward: number;
   content: string;
   options: string | null;
-  correctAnswer: string;
+  // correctAnswer intentionally omitted — validated server-side
   explanation: string | null;
   hints: string | null;
   validationType: string;
-  validationConfig: string | null;
+  // validationConfig intentionally omitted — internal server logic
   isSolved?: boolean;
   cooldownUntil?: string | null;
   order?: number;

@@ -2,12 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { glossaryUpdateSchema, buildSetClause, GLOSSARY_JSON_FIELDS } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
-
-// Allowed fields for update (whitelist to prevent SQL injection)
-const ALLOWED_FIELDS = new Set(["term", "definition", "shortDefinition", "category", "aliases", "relatedTerms", "sourceArticleId", "order", "aiGenerated"]);
-const JSON_FIELDS = new Set(["aliases", "relatedTerms"]);
 
 // GET /api/knowledge/glossary/[id] — Get single term by ID
 export async function GET(
@@ -40,39 +37,36 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    // Only allow whitelisted fields
-    for (const [key, value] of Object.entries(body)) {
-      if (ALLOWED_FIELDS.has(key)) {
-        fields.push(`"${key}" = $${idx++}`);
-        // JSON fields need to be stringified if they're arrays
-        if (JSON_FIELDS.has(key) && Array.isArray(value)) {
-          values.push(JSON.stringify(value));
-        } else {
-          values.push(value);
-        }
-      }
+    // Validate with Zod schema — rejects unknown keys and bad types
+    const parseResult = glossaryUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
 
-    if (fields.length === 0) {
+    const data = parseResult.data;
+
+    // Build SET clause from validated data
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, GLOSSARY_JSON_FIELDS);
+
+    if (setClauses.length === 0) {
       return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
     }
 
-    fields.push(`"updatedAt" = NOW()`);
+    setClauses.push(`"updatedAt" = NOW()`);
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE glossary_terms SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      `UPDATE glossary_terms SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values,
     );
 
@@ -94,7 +88,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

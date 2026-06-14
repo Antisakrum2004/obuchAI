@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userRole = (session.user as Record<string, unknown>)?.role;
+    const userRole = session.user?.role;
     if (userRole !== "admin") {
       return NextResponse.json(
         { error: "Недостаточно прав для загрузки файлов" },
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
         // Create media record
         try {
           const mediaId = genId("med-");
-          const userId = (session.user as Record<string, unknown>).id as string;
+          const userId = session.user.id;
           await pool.query(
             `INSERT INTO media (
               id, "fileName", "fileType", "mimeType", "fileSize",

@@ -4,538 +4,336 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  BookOpen,
-  ChevronRight,
-  CheckCircle2,
-  Lock,
-  Play,
-  Trophy,
-  MapPin,
-  Target,
-} from "lucide-react";
+import { BookOpen, ArrowRight, CheckCircle, Lock, PlayCircle, Clock, Loader2, AlertCircle } from "lucide-react";
+import { useUserStore } from "@/store/user-store";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-// ── Types ──────────────────────────────────────────────────────
-
-interface SpaceProgress {
+interface CourseSpace {
   id: string;
   name: string;
   slug: string;
   description: string | null;
   icon: string | null;
   order: number;
-  totalArticles: number;
-  completedArticles: number;
+  articleCount: number;
 }
 
-interface ArticleItem {
+interface ArticleData {
   id: string;
   title: string;
+  slug: string;
   difficulty: string | null;
   estimatedTime: string | null;
-  completed: boolean;
-  complexityOrder: number | null;
-  status?: string;
+  isPublished: boolean;
+  status: string | null; // 'pending' | 'processing' | 'done' | 'error' | null
+  sourceType: string | null; // 'youtube' | 'rutube' | 'vk' | 'yandex_disk' | 'pdf' | null
+  videoUrl: string | null;
 }
-
-interface SpaceWithArticles extends SpaceProgress {
-  articles: ArticleItem[];
-}
-
-interface CourseMapData {
-  spaces: SpaceWithArticles[];
-  totalArticles: number;
-  totalCompleted: number;
-  percentage: number;
-  hasStarted: boolean;
-  isComplete: boolean;
-  nextLesson: { id: string; title: string; slug: string; spaceSlug: string; spaceName: string } | null;
-}
-
-// ── Helpers ────────────────────────────────────────────────────
-
-function isEmojiIcon(str: string): boolean {
-  if (!str) return false;
-  const graphemes = [...str];
-  return graphemes.length <= 2 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(str);
-}
-
-function getAbbrev(label: string): string {
-  const words = label.trim().split(/\s+/);
-  if (words.length >= 2) {
-    return words.slice(0, 2).map((w) => w[0]).join("").toUpperCase();
-  }
-  return label.slice(0, 2).toUpperCase();
-}
-
-function getDifficultyColor(difficulty: string | null): string {
-  switch (difficulty) {
-    case "easy": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-    case "medium": return "text-amber-400 bg-amber-500/10 border-amber-500/20";
-    case "hard": return "text-red-400 bg-red-500/10 border-red-500/20";
-    default: return "text-muted-foreground bg-white/5 border-white/10";
-  }
-}
-
-function getDifficultyLabel(difficulty: string | null): string {
-  switch (difficulty) {
-    case "easy": return "Легко";
-    case "medium": return "Средне";
-    case "hard": return "Сложно";
-    default: return "—";
-  }
-}
-
-// ── Component ──────────────────────────────────────────────────
 
 export default function CourseMapPage() {
-  const [courseMap, setCourseMap] = useState<CourseMapData | null>(null);
+  const { completedChallenges, xp } = useUserStore();
+  const [spaces, setSpaces] = useState<CourseSpace[]>([]);
+  const [spaceArticles, setSpaceArticles] = useState<Record<string, ArticleData[]>>({});
   const [loading, setLoading] = useState(true);
-  const [expandedSpace, setExpandedSpace] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fetch course progress with articles
-    fetch("/api/knowledge/course-progress")
+    fetch("/api/knowledge/spaces")
       .then((r) => r.json())
-      .then((progressData) => {
-        if (!progressData.spaces) {
-          setCourseMap(null);
-          setLoading(false);
-          return;
-        }
-
-        // Map articles from articlesBySpace
-        const articlesBySpace = progressData.articlesBySpace || {};
-        const spacesWithArticles: SpaceWithArticles[] = progressData.spaces.map(
-          (space: SpaceProgress) => ({
-            ...space,
-            articles: (articlesBySpace[space.id] || []).map(
-              (a: { id: string; title: string; difficulty: string | null; estimatedTime: string | null; complexityOrder: number | null; completed: boolean; status?: string }) => ({
-                id: a.id,
-                title: a.title,
-                difficulty: a.difficulty,
-                estimatedTime: a.estimatedTime,
-                complexityOrder: a.complexityOrder,
-                completed: a.completed,
-                status: a.status,
-              })
-            ),
+      .then(async (data: CourseSpace[]) => {
+        setSpaces(Array.isArray(data) ? data : []);
+        // Fetch articles for each space
+        const articlesMap: Record<string, ArticleData[]> = {};
+        await Promise.all(
+          data.map(async (space) => {
+            try {
+              const res = await fetch(`/api/knowledge/articles?spaceId=${space.id}&limit=50`);
+              const articles = await res.json();
+              articlesMap[space.id] = Array.isArray(articles) ? articles : [];
+            } catch {
+              articlesMap[space.id] = [];
+            }
           })
         );
-
-        setCourseMap({
-          ...progressData,
-          spaces: spacesWithArticles,
-        });
+        setSpaceArticles(articlesMap);
         setLoading(false);
       })
-      .catch(() => {
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
   }, []);
 
-  // Determine space states
-  const getSpaceState = (space: SpaceProgress, index: number) => {
-    if (!courseMap) return "locked";
-    const isComplete = space.completedArticles >= space.totalArticles && space.totalArticles > 0;
-    if (isComplete) return "complete";
-
-    const isStarted = space.completedArticles > 0;
-    if (isStarted) return "current";
-
-    // First space or previous space is complete → unlocked
-    if (index === 0) return "available";
-    const prevSpace = courseMap.spaces[index - 1];
-    if (prevSpace && prevSpace.completedArticles >= prevSpace.totalArticles && prevSpace.totalArticles > 0) {
-      return "available";
-    }
-
+  // Determine article status based on user progress + processing status
+  const getArticleStatus = (article: ArticleData, index: number, total: number): "completed" | "current" | "locked" | "processing" | "error" => {
+    // Show processing/error status for articles not yet published
+    if (article.status === 'error') return "error";
+    if (article.status === 'processing') return "processing";
+    if (article.status === 'pending' && !article.isPublished) return "processing";
+    // User progress-based status
+    const userLevel = Math.floor((completedChallenges || 0) / Math.max(1, total));
+    if (index < userLevel) return "completed";
+    if (index === userLevel) return "current";
     return "locked";
+  };
+
+  const getSpaceProgress = (spaceId: string): number => {
+    const articles = spaceArticles[spaceId] || [];
+    if (articles.length === 0) return 0;
+    const completed = articles.filter((art, i) => getArticleStatus(art, i, articles.length) === "completed").length;
+    return Math.round((completed / articles.length) * 100);
+  };
+
+  const getStatusColor = (status: "completed" | "current" | "locked" | "processing" | "error") => {
+    switch (status) {
+      case "completed": return "text-emerald-400";
+      case "current": return "text-blue-400";
+      case "locked": return "text-muted-foreground/40";
+      case "processing": return "text-yellow-400";
+      case "error": return "text-red-400";
+    }
+  };
+
+  const getStatusBg = (status: "completed" | "current" | "locked" | "processing" | "error") => {
+    switch (status) {
+      case "completed": return "bg-emerald-500/15 border-emerald-500/30";
+      case "current": return "bg-blue-500/15 border-blue-500/30";
+      case "locked": return "bg-white/3 border-white/8";
+      case "processing": return "bg-yellow-500/15 border-yellow-500/30";
+      case "error": return "bg-red-500/15 border-red-500/30";
+    }
+  };
+
+  const getStatusIcon = (status: "completed" | "current" | "locked" | "processing" | "error") => {
+    switch (status) {
+      case "completed": return <CheckCircle className="h-5 w-5 text-emerald-400" />;
+      case "current": return <PlayCircle className="h-5 w-5 text-blue-400" />;
+      case "locked": return <Lock className="h-4 w-4 text-muted-foreground/40" />;
+      case "processing": return <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />;
+      case "error": return <AlertCircle className="h-4 w-4 text-red-400" />;
+    }
+  };
+
+  const getDifficultyBadge = (difficulty: string | null) => {
+    if (!difficulty) return null;
+    const colors: Record<string, string> = {
+      easy: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+      medium: "bg-amber-500/15 text-amber-400 border-amber-500/20",
+      hard: "bg-rose-500/15 text-rose-400 border-rose-500/20",
+    };
+    const labels: Record<string, string> = {
+      easy: "Лёгкий",
+      medium: "Средний",
+      hard: "Сложный",
+    };
+    return (
+      <span className={cn("text-[10px] px-2 py-0.5 rounded-full border", colors[difficulty] || "bg-secondary text-muted-foreground border-white/10")}>
+        {labels[difficulty] || difficulty}
+      </span>
+    );
   };
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-5xl space-y-6">
-        {/* Page Header — compact */}
+      <div className="mx-auto max-w-5xl space-y-8">
+        {/* Page Header */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="flex items-center gap-2.5"
+          transition={{ duration: 0.5 }}
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20">
-            <MapPin className="h-4 w-4 text-violet-400" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">Карта курса</h1>
-            <p className="text-muted-foreground text-xs">
-              Разделы по порядку — от основ к продвинутым
-            </p>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20">
+                <BookOpen className="h-6 w-6 text-emerald-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold md:text-3xl">Карта курса</h1>
+                <p className="text-muted-foreground text-sm mt-0.5">
+                  Визуальный путь обучения — от основ до продвинутых тем
+                </p>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-emerald-400" />
+                <span className="text-muted-foreground">Пройдено</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <PlayCircle className="h-4 w-4 text-blue-400" />
+                <span className="text-muted-foreground">Текущий</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground/40" />
+                <span className="text-muted-foreground">Заблокирован</span>
+              </div>
+            </div>
           </div>
         </motion.div>
 
-        {/* Total Progress — compact inline bar */}
-        {courseMap && courseMap.totalArticles > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.03 }}
-            className="glass rounded-xl border border-white/5 px-4 py-2.5"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 shrink-0">
-                {courseMap.isComplete ? (
-                  <Trophy className="h-3.5 w-3.5 text-amber-400" />
-                ) : courseMap.hasStarted ? (
-                  <Target className="h-3.5 w-3.5 text-violet-400" />
-                ) : (
-                  <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
-                )}
-                <span className="text-xs font-medium">
-                  {courseMap.isComplete ? "Пройден!" : courseMap.hasStarted ? "Прогресс" : "Начать?"}
-                </span>
-              </div>
-              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
-                <motion.div
-                  className={cn(
-                    "h-full rounded-full",
-                    courseMap.isComplete
-                      ? "bg-gradient-to-r from-amber-500 to-yellow-400"
-                      : "bg-gradient-to-r from-violet-500 to-cyan-400"
-                  )}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${courseMap.percentage}%` }}
-                  transition={{ duration: 0.8, delay: 0.2 }}
-                />
-              </div>
-              <span className="text-[10px] text-muted-foreground shrink-0">
-                {courseMap.totalCompleted}/{courseMap.totalArticles} · {courseMap.percentage}%
-              </span>
-              {courseMap.nextLesson && !courseMap.isComplete && (
-                <Link
-                  href={`/knowledge/${encodeURIComponent(courseMap.nextLesson.spaceSlug)}/learn/${courseMap.nextLesson.id}`}
-                  className="inline-flex items-center gap-0.5 text-[10px] font-medium text-violet-400 hover:text-violet-300 transition-colors shrink-0"
-                >
-                  <Play className="h-2.5 w-2.5" />
-                  {courseMap.nextLesson.title}
-                </Link>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Loading */}
-        {loading && (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="glass rounded-2xl p-5 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-10 w-10 rounded-lg" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-5 w-40" />
-                    <Skeleton className="h-3 w-64" />
-                  </div>
+        {/* Course Map */}
+        {loading ? (
+          <div className="space-y-6">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="glass rounded-2xl p-6 space-y-4">
+                <Skeleton className="h-6 w-48" />
+                <div className="flex gap-3">
+                  <Skeleton className="h-20 w-40 rounded-xl" />
+                  <Skeleton className="h-20 w-40 rounded-xl" />
+                  <Skeleton className="h-20 w-40 rounded-xl" />
                 </div>
-                <Skeleton className="h-2 w-full rounded-full" />
               </div>
             ))}
           </div>
-        )}
-
-        {/* Course Map — compact rows, all on one screen */}
-        {!loading && courseMap && courseMap.spaces.length > 0 && (
-          <div className="space-y-1">
-            {courseMap.spaces.map((space, idx) => {
-              const state = getSpaceState(space, idx);
-              const isLocked = state === "locked";
-              const isComplete = state === "complete";
-              const isCurrent = state === "current";
-              const isAvailable = state === "available";
-              const isExpanded = expandedSpace === space.id;
-
-              // Progress dots: ● for completed, ○ for available, ◌ for locked
-              const progressDots = Array.from({ length: Math.min(space.totalArticles, 10) }, (_, i) => {
-                if (i < space.completedArticles) return "completed";
-                if (isLocked) return "locked";
-                return "pending";
-              });
+        ) : spaces.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-20"
+          >
+            <BookOpen className="h-16 w-16 text-muted-foreground/20 mx-auto mb-4" />
+            <h3 className="text-xl font-medium text-muted-foreground">Курс пока не добавлен</h3>
+            <p className="text-sm text-muted-foreground/60 mt-2">
+              Разделы и уроки скоро появятся
+            </p>
+          </motion.div>
+        ) : (
+          <div className="space-y-5">
+            {spaces.map((space, spaceIdx) => {
+              const articles = spaceArticles[space.id] || [];
+              const progress = getSpaceProgress(space.id);
+              const isSpaceLocked = spaceIdx > 0 && progress === 0 && articles.length > 0 && getArticleStatus(articles[0], 0, articles.length) === "locked";
 
               return (
                 <motion.div
                   key={space.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: isLocked ? 0.35 : 1, x: 0 }}
-                  transition={{ duration: 0.25, delay: idx * 0.03 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: spaceIdx * 0.08 }}
+                  className="glass rounded-2xl p-6 border border-white/5"
                 >
-                  <div
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all cursor-pointer group",
-                      isLocked
-                        ? "bg-white/[0.01] hover:bg-white/[0.02]"
-                        : isComplete
-                        ? "bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08]"
-                        : isCurrent
-                        ? "bg-violet-500/[0.04] hover:bg-violet-500/[0.08]"
-                        : "bg-white/[0.02] hover:bg-white/[0.04]"
-                    )}
-                    onClick={() => !isLocked && setExpandedSpace(isExpanded ? null : space.id)}
-                  >
-                    {/* Space icon — small */}
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-lg shrink-0 text-sm",
-                        isComplete
-                          ? "bg-emerald-500/20 text-emerald-400"
-                          : isCurrent
-                          ? "bg-violet-500/20 text-violet-400"
-                          : isAvailable
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "bg-white/5 text-muted-foreground/40"
-                      )}
-                    >
-                      {isComplete ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : isLocked ? (
-                        <Lock className="h-3.5 w-3.5" />
-                      ) : isEmojiIcon(space.icon || "") ? (
-                        <span>{space.icon}</span>
-                      ) : (
-                        <span className="text-[10px] font-bold">{getAbbrev(space.name)}</span>
-                      )}
-                    </div>
-
-                    {/* Space info — inline */}
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "text-xs font-medium truncate",
-                          isLocked
-                            ? "text-muted-foreground/50"
-                            : isComplete
-                            ? "text-emerald-400"
-                            : isCurrent
-                            ? "text-violet-400"
-                            : "text-foreground"
-                        )}
-                      >
-                        {space.name}
-                      </span>
-
-                      {/* Progress dots — inline */}
-                      <div className="flex items-center gap-[3px] shrink-0">
-                        {progressDots.map((dot, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              dot === "completed"
-                                ? "bg-emerald-400"
-                                : dot === "locked"
-                                ? "bg-white/10"
-                                : "bg-white/20"
-                            )}
-                          />
-                        ))}
-                        {space.totalArticles > 10 && (
-                          <span className="text-[8px] text-muted-foreground ml-0.5">
-                            +{space.totalArticles - 10}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Count */}
-                      <span className="text-[9px] text-muted-foreground shrink-0">
-                        {space.completedArticles}/{space.totalArticles}
-                      </span>
-
-                      {/* Status badge — minimal */}
-                      {isLocked && (
-                        <Lock className="h-2.5 w-2.5 text-muted-foreground/30 shrink-0" />
-                      )}
-                      {isCurrent && (
-                        <Badge variant="outline" className="text-[7px] px-1 py-0 border-violet-500/30 text-violet-400 bg-violet-500/10 shrink-0">
-                          Текущий
-                        </Badge>
-                      )}
-                      {isComplete && (
-                        <Badge variant="outline" className="text-[7px] px-1 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10 shrink-0">
-                          Пройден
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* CTA — compact */}
-                    {!isLocked && (
-                      <div className="shrink-0">
-                        {isCurrent && courseMap.nextLesson && space.id === courseMap.spaces.find(
-                          (s) => s.completedArticles < s.totalArticles && s.totalArticles > 0
-                        )?.id ? (
-                          <Link
-                            href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${courseMap.nextLesson.id}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button
-                              size="sm"
-                              className="h-6 gap-1 bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30 text-[10px] px-2"
-                            >
-                              <Play className="h-2.5 w-2.5" />
-                              Продолжить
-                            </Button>
-                          </Link>
-                        ) : isAvailable && space.totalArticles > 0 ? (
-                          <Link
-                            href={`/knowledge/${encodeURIComponent(space.slug)}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button
-                              size="sm"
-                              className="h-6 gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-[10px] px-2"
-                            >
-                              <Play className="h-2.5 w-2.5" />
-                              Начать
-                            </Button>
-                          </Link>
+                  {/* Space Header */}
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "flex h-11 w-11 items-center justify-center rounded-xl text-xl",
+                        isSpaceLocked ? "bg-white/5" : "bg-emerald-500/15"
+                      )}>
+                        {space.icon && isEmoji(space.icon) ? (
+                          <span>{space.icon}</span>
                         ) : (
-                          <ChevronRight
-                            className={cn(
-                              "h-3 w-3 transition-transform",
-                              isExpanded ? "rotate-90 text-foreground" : "text-muted-foreground/30"
-                            )}
-                          />
+                          <span className="text-base font-bold text-emerald-400">{spaceIdx + 1}</span>
                         )}
                       </div>
-                    )}
+                      <div>
+                        <h2 className={cn(
+                          "text-lg font-bold",
+                          isSpaceLocked ? "text-muted-foreground" : "text-foreground"
+                        )}>
+                          {space.name}
+                        </h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {articles.length} {pluralize(articles.length, "урок", "урока", "уроков")}
+                          {space.description && ` · ${space.description}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {/* Progress bar */}
+                      <div className="hidden sm:flex items-center gap-2">
+                        <div className="w-28 h-2 rounded-full bg-white/5 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-500/60 transition-all duration-500"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">{progress}%</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Expanded: Articles list — compact */}
-                  {isExpanded && !isLocked && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="ml-11 mt-1 space-y-0.5"
-                    >
-                      {space.articles.length > 0 ? (
-                        space.articles.map((article, artIdx) => (
-                          <Link
-                            key={article.id}
-                            href={`/knowledge/${encodeURIComponent(space.slug)}/learn/${article.id}`}
-                            className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-white/5 transition-colors group"
-                          >
-                            <div
-                              className={cn(
-                                "flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold shrink-0",
-                                article.completed
-                                  ? "bg-emerald-500/20 text-emerald-400"
-                                  : article.status === "processing"
-                                  ? "bg-blue-500/20 text-blue-400"
-                                  : article.status === "error"
-                                  ? "bg-red-500/20 text-red-400"
-                                  : article.status === "pending"
-                                  ? "bg-amber-500/20 text-amber-400"
-                                  : "bg-white/5 text-muted-foreground/50"
-                              )}
-                            >
-                              {article.completed ? (
-                                <CheckCircle2 className="h-2.5 w-2.5" />
-                              ) : article.status === "processing" ? (
-                                <span className="text-[7px]">⚡</span>
-                              ) : article.status === "error" ? (
-                                <span className="text-[7px]">!</span>
-                              ) : article.status === "pending" ? (
-                                <span className="text-[7px]">⏳</span>
-                              ) : (
-                                artIdx + 1
-                              )}
-                            </div>
-                            <span
-                              className={cn(
-                                "flex-1 text-[11px] truncate",
-                                article.completed
-                                  ? "text-muted-foreground line-through"
-                                  : article.status === "processing"
-                                  ? "text-blue-400/70"
-                                  : article.status === "error"
-                                  ? "text-red-400/70"
-                                  : article.status === "pending"
-                                  ? "text-amber-400/70"
-                                  : "text-foreground group-hover:text-emerald-400"
-                              )}
-                            >
-                              {article.title}
-                            </span>
-                            {article.status === "processing" && (
-                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
-                                Обработка
-                              </Badge>
-                            )}
-                            {article.status === "error" && (
-                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-red-500/30 text-red-400 bg-red-500/10 shrink-0">
-                                Ошибка
-                              </Badge>
-                            )}
-                            {article.status === "pending" && (
-                              <Badge variant="outline" className="text-[7px] px-1 py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0">
-                                В очереди
-                              </Badge>
-                            )}
-                            {article.difficulty && (
-                              <Badge
-                                variant="outline"
-                                className={cn("text-[7px] px-1 py-0 shrink-0", getDifficultyColor(article.difficulty))}
+                  {/* Articles Grid */}
+                  {articles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {articles.map((article, artIdx) => {
+                        const status = getArticleStatus(article, artIdx, articles.length);
+                        return (
+                          <Tooltip key={article.id} delayDuration={200}>
+                            <TooltipTrigger asChild>
+                              <Link
+                                href={status !== "locked" && status !== "processing" && status !== "error" ? `/knowledge/${space.slug}/learn/${article.id}` : "#"}
+                                className={cn(
+                                  "block rounded-xl p-4 border transition-all",
+                                  getStatusBg(status),
+                                  status !== "locked" && status !== "processing" && status !== "error" && "hover:scale-[1.02] cursor-pointer",
+                                  status === "locked" && "opacity-50 cursor-not-allowed",
+                                  (status === "processing" || status === "error") && "opacity-70 cursor-not-allowed"
+                                )}
                               >
-                                {getDifficultyLabel(article.difficulty)}
-                              </Badge>
-                            )}
-                          </Link>
-                        ))
-                      ) : (
-                        <div className="px-2 py-2 text-[10px] text-muted-foreground/50">
-                          Нет статей в этом разделе
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-
-                  {/* Arrow between sections — minimal */}
-                  {idx < courseMap.spaces.length - 1 && (
-                    <div className="flex justify-center py-0.5">
-                      <div className="h-2 w-px bg-white/10" />
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 shrink-0">
+                                    {getStatusIcon(status)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className={cn(
+                                      "font-semibold text-sm leading-tight",
+                                      getStatusColor(status)
+                                    )}>
+                                      {article.title}
+                                    </h3>
+                                    <div className="flex items-center gap-2 mt-2">
+                                      {getDifficultyBadge(article.difficulty)}
+                                      {article.estimatedTime && (
+                                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                          <Clock className="h-3 w-3" />
+                                          {article.estimatedTime}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {status !== "locked" && status !== "processing" && status !== "error" && (
+                                    <ArrowRight className={cn("h-4 w-4 mt-1 shrink-0", getStatusColor(status))} />
+                                  )}
+                                </div>
+                              </Link>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="bg-card border-border text-foreground">
+                              <span className="font-medium">{article.title}</span>
+                              {status === "completed" && <span className="ml-1.5 text-emerald-400">✓</span>}
+                              {status === "current" && <span className="ml-1.5 text-blue-400 text-xs">← начни здесь</span>}
+                              {status === "locked" && <span className="ml-1.5 text-muted-foreground text-xs">🔒 пройдите предыдущие</span>}
+                              {status === "processing" && <span className="ml-1.5 text-yellow-400 text-xs">⏳ AI обрабатывает</span>}
+                              {status === "error" && <span className="ml-1.5 text-red-400 text-xs">⚠ ошибка обработки</span>}
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground/50">Уроки ещё не добавлены</p>
                   )}
                 </motion.div>
               );
             })}
           </div>
         )}
-
-        {/* Empty state */}
-        {!loading && (!courseMap || courseMap.spaces.length === 0) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-8"
-          >
-            <BookOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-            <h3 className="text-sm font-medium text-muted-foreground">
-              Разделы пока не добавлены
-            </h3>
-            <p className="text-xs text-muted-foreground/60 mt-0.5">
-              Скоро здесь появится карта курса с темами и уроками
-            </p>
-          </motion.div>
-        )}
-
-        {/* Quick tip — minimal */}
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/50 px-1">
-          <span>💡</span>
-          <span>Разделы открываются последовательно. Кнопка «Начать курс» на главной ведёт сюда.</span>
-        </div>
       </div>
     </AppLayout>
   );
+}
+
+function pluralize(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
+}
+
+function isEmoji(str: string): boolean {
+  const graphemes = [...str];
+  return graphemes.length <= 2 && /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(str);
 }

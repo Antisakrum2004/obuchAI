@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { challengeUpdateSchema, buildSetClause, CHALLENGE_JSON_FIELDS } from "@/lib/validation";
 
 export async function GET(
   _request: Request,
@@ -28,6 +29,7 @@ export async function GET(
     }
 
     const row = result.rows[0];
+    // SECURITY: Do NOT send correctAnswer to client — prevents cheating
     const challenge = {
       id: row.id,
       title: row.title,
@@ -38,11 +40,11 @@ export async function GET(
       xpReward: row.xpReward,
       content: row.content,
       options: row.options,
-      correctAnswer: row.correctAnswer,
+      // correctAnswer intentionally omitted — validated server-side on submit
       explanation: row.explanation,
       hints: row.hints,
       validationType: row.validationType,
-      validationConfig: row.validationConfig,
+      // validationConfig intentionally omitted — internal server logic
       skillId: row.skillId,
       order: row.order,
       isActive: row.isActive,
@@ -72,7 +74,7 @@ export async function GET(
 
     const session = await getServerSession(authOptions);
     if (session?.user) {
-      const userId = (session.user as Record<string, unknown>).id as string;
+      const userId = session.user.id;
       if (userId) {
         const solvedResult = await query(
           `SELECT id FROM challenge_attempts WHERE "userId" = $1 AND "challengeId" = $2 AND "isCorrect" = true LIMIT 1`,
@@ -103,41 +105,47 @@ export async function GET(
   }
 }
 
+// PUT — Update challenge (admin only) — with Zod validation
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
 
-    // Build UPDATE query dynamically from body
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    for (const [key, value] of Object.entries(body)) {
-      fields.push(`"${key}" = $${idx++}`);
-      values.push(value);
+    // Validate with Zod schema — rejects unknown keys (SQL injection prevention)
+    const parseResult = challengeUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
 
-    values.push(id); // WHERE clause param
+    const data = parseResult.data;
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, CHALLENGE_JSON_FIELDS);
 
-    const result = await query(
-      `UPDATE challenges SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+    if (setClauses.length === 0) {
+      return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
+    }
+
+    values.push(id);
+    const updateResult = await query(
+      `UPDATE challenges SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values,
     );
 
-    if (result.rows.length === 0) {
+    if (updateResult.rows.length === 0) {
       return NextResponse.json({ error: "Задача не найдена" }, { status: 404 });
     }
 
-    return NextResponse.json(result.rows[0]);
+    return NextResponse.json(updateResult.rows[0]);
   } catch (error) {
     console.error("Challenge update error:", error);
     return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
@@ -150,7 +158,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

@@ -1,29 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, Cloud, Info } from "lucide-react";
+import { ExternalLink, Play, AlertCircle, ShieldCheck, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-
-// Detect browsers with strict tracking prevention that blocks 3rd-party cookies
-function hasStrictTrackingPrevention(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  // Edge has tracking prevention on by default
-  if (ua.includes("Edg/")) return true;
-  // Firefox with strict content blocking
-  // Safari with ITP
-  if (ua.includes("Safari/") && !ua.includes("Chrome/")) return true;
-  return false;
-}
-
-function getBrowserHint(): string {
-  if (typeof navigator === "undefined") return "";
-  const ua = navigator.userAgent;
-  if (ua.includes("Edg/")) return "Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → Основной";
-  if (ua.includes("Safari/") && !ua.includes("Chrome/")) return "Safari: Настройки → Конфиденциальность → Отключить «Предотвращать кросс-сайтовое отслеживание»";
-  return "Отключите блокировку сторонних cookie для этого сайта";
-}
 
 interface VideoEmbedProps {
   url: string;
@@ -119,15 +99,40 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
   );
 }
 
-// ─── YouTube Player — standard embed + browser hint for Edge/Safari ───
+// ─── YouTube Player with nocookie + direct fallback ───
 
 function YouTubePlayer({ videoId, title, className }: { videoId: string; title?: string; className?: string }) {
-  // Use youtube.com/embed/ directly — same domain as YouTube, so if user
-  // is logged into YouTube in their browser, their cookies/session apply
-  // and no "sign in to prove you're not a bot" check appears.
-  // youtube-nocookie.com is a SEPARATE domain and may trigger anti-bot.
-  const needsHint = hasStrictTrackingPrevention();
-  const browserHint = getBrowserHint();
+  const [strategy, setStrategy] = useState<"direct" | "nocookie" | "link">("direct");
+  const [iframeError, setIframeError] = useState(false);
+
+  const embedUrl =
+    strategy === "direct"
+      ? `https://www.youtube.com/embed/${videoId}`
+      : strategy === "nocookie"
+        ? `https://www.youtube-nocookie.com/embed/${videoId}`
+        : null;
+
+  // Auto-fallback: if direct iframe doesn't signal load within 8s, try nocookie
+  useEffect(() => {
+    if (strategy === "direct" && !iframeError) {
+      const timer = setTimeout(() => {
+        setStrategy("nocookie");
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [strategy, iframeError]);
+
+  const handleIframeError = useCallback(() => {
+    if (strategy === "direct") {
+      setStrategy("nocookie");
+    } else if (strategy === "nocookie") {
+      setStrategy("link");
+    }
+  }, [strategy]);
+
+  const handleIframeLoad = useCallback(() => {
+    // iframe loaded successfully — stop timeout
+  }, []);
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -138,45 +143,64 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
           {sourceTypeLabels.youtube}
         </Badge>
       </div>
-      <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-        <iframe
-          src={`https://www.youtube.com/embed/${videoId}`}
-          title={title || "YouTube видео"}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          className="absolute inset-0 h-full w-full"
-        />
-      </div>
-      {/* Hint for Edge/Safari users whose browsers block 3rd-party cookies */}
-      {needsHint && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
-          <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p>Если YouTube просит войти в аккаунт — ваш браузер блокирует cookies.</p>
-            <p className="text-blue-400/80">{browserHint}</p>
-            <a
-              href={`https://www.youtube.com/watch?v=${videoId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-emerald-400 hover:underline"
-            >
-              <ExternalLink className="h-2.5 w-2.5" />
-              Открыть на YouTube (без проблем)
-            </a>
-          </div>
+      {strategy === "link" || iframeError ? (
+        <div className="glass rounded-xl p-5 border-white/5">
+          <p className="text-sm text-muted-foreground mb-3">
+            Не удалось загрузить встроенный плеер. Некоторые браузеры (Edge, Safari) блокируют YouTube-iframe. Попробуйте VPN или откройте видео напрямую.
+          </p>
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors text-sm font-medium"
+          >
+            <Play className="h-4 w-4" />
+            Открыть на YouTube
+          </a>
         </div>
+      ) : (
+        <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
+          <iframe
+            src={embedUrl!}
+            title={title || "YouTube видео"}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 h-full w-full"
+            onError={handleIframeError}
+            onLoad={handleIframeLoad}
+          />
+        </div>
+      )}
+      {strategy !== "link" && !iframeError && (
+        <p className="text-[10px] text-muted-foreground/60">
+          Если видео не загружается — возможны региональные ограничения. Попробуйте VPN или{" "}
+          <a
+            href={`https://www.youtube.com/watch?v=${videoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-muted-foreground"
+          >
+            откройте на YouTube
+          </a>.
+        </p>
       )}
     </div>
   );
 }
 
-// ─── Yandex Disk Video Player with fallback ───
+// ─── Yandex Disk Video Player with fallback strategies ───
+
+type YandexStrategy = "iframe" | "link";
 
 function YandexDiskPlayer({ url, title, className }: { url: string; title?: string; className?: string }) {
+  const [strategy, setStrategy] = useState<YandexStrategy>("iframe");
   const [iframeFailed, setIframeFailed] = useState(false);
 
-  if (iframeFailed) {
-    return <CloudLinkButton url={url} label={sourceTypeLabels.yandex_disk} className={className} />;
+  // If iframe also fails, show link
+  if (iframeFailed || strategy === "link") {
+    return (
+      <CloudLinkButton url={url} label={sourceTypeLabels.yandex_disk} className={className} />
+    );
   }
 
   let playerSrc = url;
@@ -203,7 +227,10 @@ function YandexDiskPlayer({ url, title, className }: { url: string; title?: stri
           allowFullScreen
           allow="autoplay; encrypted-media; fullscreen"
           className="absolute inset-0 h-full w-full"
-          onError={() => setIframeFailed(true)}
+          onError={() => {
+            setIframeFailed(true);
+            setStrategy("link");
+          }}
         />
       </div>
       <div className="flex items-center justify-between mt-2 px-1">
@@ -229,7 +256,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → youtube.com/embed/ + browser hint for Edge/Safari
+  // YouTube → nocookie + direct fallback
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;

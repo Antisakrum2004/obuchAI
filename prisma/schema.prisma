@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ============================================
@@ -14,46 +14,54 @@ datasource db {
 // ============================================
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
   name          String?
   image         String?
-  role          String   @default("user") // "user" | "admin"
-  githubId      String?  @unique
+  role          String    @default("user") // "user" | "admin"
+  githubId      String?   @unique
   emailVerified DateTime?
 
   // Gamification
-  xp            Int      @default(0)
-  level         Int      @default(1)
-  streak        Int      @default(0)
-  maxStreak     Int      @default(0)
-  lastActiveAt  DateTime?
+  xp           Int       @default(0)
+  level        Int       @default(1)
+  streak       Int       @default(0)
+  maxStreak    Int       @default(0)
+  lastActiveAt DateTime?
 
   // Tracking info
-  lastIp        String?  // Last known IP address
-  lastUserAgent String?  // Last browser User-Agent
-  lastDevice    String?  // Parsed device info (e.g. "Chrome / Windows" or "Safari / iPhone")
+  lastIp        String? // Last known IP address
+  lastUserAgent String? // Last browser User-Agent
+  lastDevice    String? // Parsed device info (e.g. "Chrome / Windows" or "Safari / iPhone")
 
   // Adaptive difficulty tracking
-  consecutiveCorrect Int   @default(0) // Streak of correct answers for adaptive difficulty
-  consecutiveWrong   Int   @default(0) // Streak of wrong answers for adaptive difficulty
+  consecutiveCorrect Int @default(0) // Streak of correct answers for adaptive difficulty
+  consecutiveWrong   Int @default(0) // Streak of wrong answers for adaptive difficulty
 
   // Referral system
-  referralCode  String?  @unique // User's unique referral code
-  referredBy    String?          // Referral code of the user who invited this user
-  referralCount Int      @default(0) // Number of users referred by this user
+  referralCode  String? @unique // User's unique referral code
+  referredBy    String? // Referral code of the user who invited this user
+  referralCount Int     @default(0) // Number of users referred by this user
+
+  // Hearts system
+  hearts      Int       @default(3)
+  nextHeartAt DateTime?
+
+  // Ban system
+  banned   Boolean   @default(false)
+  bannedAt DateTime?
 
   // Timestamps
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  accounts      Account[]
-  sessions      Session[]
-  attempts      ChallengeAttempt[]
-  xpLogs        XPLog[]
-  userSkills    UserSkill[]
-  achievements  UserAchievement[]
+  accounts        Account[]
+  sessions        Session[]
+  attempts        ChallengeAttempt[]
+  xpLogs          XPLog[]
+  userSkills      UserSkill[]
+  achievements    UserAchievement[]
   dailyChallenges DailyChallengeAssignment[]
 
   @@map("users")
@@ -100,40 +108,52 @@ model VerificationToken {
 }
 
 // ============================================
+// APP SETTINGS
+// ============================================
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now()) @updatedAt @map("updatedAt")
+
+  @@map("app_settings")
+}
+
+// ============================================
 // SKILLS & SKILL TREE
 // ============================================
 
 model Skill {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  slug        String   @unique
+  slug        String  @unique
   description String
   icon        String?
-  category    String   // "prompting" | "agents" | "tools" | "automation" | "1c"
-  order       Int      @default(0)
+  category    String // "prompting" | "agents" | "tools" | "automation" | "1c"
+  order       Int     @default(0)
   parentId    String?
-  requiredXp  Int      @default(100)
+  requiredXp  Int     @default(100)
 
-  parent      Skill?   @relation("SkillTree", fields: [parentId], references: [id])
-  children    Skill[]  @relation("SkillTree")
-  userSkills  UserSkill[]
-  challenges  Challenge[]
+  parent     Skill?      @relation("SkillTree", fields: [parentId], references: [id])
+  children   Skill[]     @relation("SkillTree")
+  userSkills UserSkill[]
+  challenges Challenge[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("skills")
 }
 
 model UserSkill {
-  id        String   @id @default(cuid())
-  userId    String
-  skillId   String
-  xp        Int      @default(0)
-  level     Int      @default(0)
+  id      String @id @default(cuid())
+  userId  String
+  skillId String
+  xp      Int    @default(0)
+  level   Int    @default(0)
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@unique([userId, skillId])
   @@map("user_skills")
@@ -144,53 +164,53 @@ model UserSkill {
 // ============================================
 
 model Challenge {
-  id            String   @id @default(cuid())
-  title         String
-  description   String
-  difficulty    String   // "easy" | "medium" | "hard"
-  type          String   // "multiple_choice" | "ordering" | "workflow_build"
-  category      String   // "prompting" | "agents" | "debugging" | "workflow" | "1c" | "review"
-  xpReward      Int      @default(25)
+  id          String @id @default(cuid())
+  title       String
+  description String
+  difficulty  String // "easy" | "medium" | "hard"
+  type        String // "multiple_choice" | "ordering" | "workflow_build"
+  category    String // "prompting" | "agents" | "debugging" | "workflow" | "1c" | "review"
+  xpReward    Int    @default(25)
 
   // Challenge content (JSON strings)
-  content       String   // Main content/question as JSON
-  options       String?  // Options for multiple choice as JSON array
-  correctAnswer String   // Correct answer(s) as JSON
-  explanation   String?  // Explanation shown after answer
-  hints         String?  // Hints as JSON array
+  content       String // Main content/question as JSON
+  options       String? // Options for multiple choice as JSON array
+  correctAnswer String // Correct answer(s) as JSON
+  explanation   String? // Explanation shown after answer
+  hints         String? // Hints as JSON array
 
   // Validation
-  validationType String  @default("static") // "static" | "pattern"
+  validationType   String  @default("static") // "static" | "pattern"
   validationConfig String? // Additional validation config as JSON (keywords, structure, etc.)
 
   // Relations
-  skillId       String?
-  skill         Skill?   @relation(fields: [skillId], references: [id])
-  attempts      ChallengeAttempt[]
+  skillId          String?
+  skill            Skill?                     @relation(fields: [skillId], references: [id])
+  attempts         ChallengeAttempt[]
   dailyAssignments DailyChallengeAssignment[]
 
   // Metadata
-  order         Int      @default(0)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("challenges")
 }
 
 model ChallengeAttempt {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   userId      String
   challengeId String
   answer      String
   isCorrect   Boolean
-  xpEarned    Int      @default(0)
-  timeSpent   Int?     // seconds
+  xpEarned    Int     @default(0)
+  timeSpent   Int? // seconds
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@map("challenge_attempts")
 }
@@ -200,15 +220,15 @@ model ChallengeAttempt {
 // ============================================
 
 model DailyChallengeAssignment {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   challengeId String
   date        DateTime // The date this challenge was assigned
-  completed   Boolean  @default(false)
+  completed   Boolean   @default(false)
   completedAt DateTime?
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
   @@map("daily_challenge_assignments")
@@ -219,33 +239,33 @@ model DailyChallengeAssignment {
 // ============================================
 
 model XPLog {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   userId      String
   amount      Int
-  reason      String   // "challenge" | "daily" | "streak_bonus" | "achievement" | "admin"
-  referenceId String?  // ID of related entity (challenge, achievement, etc.)
+  reason      String // "challenge" | "daily" | "streak_bonus" | "achievement" | "admin"
+  referenceId String? // ID of related entity (challenge, achievement, etc.)
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@map("xp_logs")
 }
 
 model Achievement {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   name        String
-  slug        String   @unique
+  slug        String @unique
   description String
   icon        String
-  category    String   // "streak" | "challenges" | "skills" | "special"
-  requirement String   // JSON describing the requirement
-  xpReward    Int      @default(0)
+  category    String // "streak" | "challenges" | "skills" | "special"
+  requirement String // JSON describing the requirement
+  xpReward    Int    @default(0)
 
   userAchievements UserAchievement[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("achievements")
 }
@@ -256,8 +276,8 @@ model UserAchievement {
   achievementId String
   earnedAt      DateTime @default(now())
 
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
 
   @@unique([userId, achievementId])
   @@map("user_achievements")
@@ -268,78 +288,77 @@ model UserAchievement {
 // ============================================
 
 model KnowledgeSpace {
-  id          String     @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
-  slug        String     @unique
+  slug        String    @unique
   description String?
   icon        String?
-  order       Int        @default(0)
-  isPublished Boolean    @default(false)
+  order       Int       @default(0)
+  isPublished Boolean   @default(false)
   articles    Article[]
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("knowledge_spaces")
 }
 
 model Category {
-  id          String     @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  slug        String     @unique
+  slug        String  @unique
   description String?
   icon        String?
-  order       Int        @default(0)
+  order       Int     @default(0)
   spaceId     String
   parentId    String?
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("categories")
 }
 
 model Article {
-  id            String     @id @default(cuid())
-  title         String
-  slug          String     @unique
-  content       String     // Markdown content
-  summary       String?    // AI-generated short summary
-  tags          String?    // JSON array of tags ["prompt", "mcp"]
-  keyTopics     String?    // JSON array of key topics
-  spaceId       String
-  space         KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  authorId      String?
-  media         Media[]
-  isPublished   Boolean    @default(false)
-  viewCount     Int        @default(0)
+  id          String         @id @default(cuid())
+  title       String
+  slug        String         @unique
+  content     String // Markdown content
+  summary     String? // AI-generated short summary
+  tags        String? // JSON array of tags ["prompt", "mcp"]
+  keyTopics   String? // JSON array of key topics
+  spaceId     String
+  space       KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  authorId    String?
+  media       Media[]
+  isPublished Boolean        @default(false)
+  viewCount   Int            @default(0)
 
   // Sprint 6: AI Content Processing Pipeline
-  difficulty       String?    // "easy" | "medium" | "hard" — AI-generated
-  complexityOrder  Int?       // AI-determined rank within space (1 = easiest, ascending)
-  prerequisites    String?    // JSON array of article IDs
-  nextTopics       String?    // JSON array of article IDs
-  keyConcepts   String?    // JSON array of key concept strings
-  estimatedTime String?    // "30 min", "2 hours" — AI-estimated
-  status        String     @default("pending") // "pending" | "processing" | "done" | "error"
-  aiGenerated   Boolean    @default(false) // true if metadata was AI-generated
-  processedAt   DateTime?  // When AI processing completed
-  errorMessage  String?    // Error message if processing failed
+  difficulty    String? // "easy" | "medium" | "hard" — AI-generated
+  prerequisites Json? // JSON array of article IDs
+  nextTopics    Json? // JSON array of article IDs
+  keyConcepts   Json? // JSON array of key concept strings
+  estimatedTime String? // "30 min", "2 hours" — AI-estimated
+  status        String    @default("pending") // "pending" | "processing" | "done" | "error"
+  aiGenerated   Boolean   @default(false) // true if metadata was AI-generated
+  processedAt   DateTime? // When AI processing completed
+  errorMessage  String? // Error message if processing failed
 
   // Sprint 6: External media links (Яндекс Диск, YouTube, Rutube, etc.)
-  videoUrl      String?    // Link to video (YouTube, Rutube, VK Video, Yandex Disk)
-  pdfUrl        String?    // Link to PDF on Yandex Disk
-  pptxUrl       String?    // Link to PPTX on Yandex Disk
-  sourceUrl     String?    // General source link
-  sourceType    String?    // "youtube" | "rutube" | "vk" | "yandex_disk" | "direct" | "other"
+  videoUrl   String? // Link to video (YouTube, Rutube, VK Video, Yandex Disk)
+  pdfUrl     String? // Link to PDF on Yandex Disk
+  pptxUrl    String? // Link to PPTX on Yandex Disk
+  sourceUrl  String? // General source link
+  sourceType String? // "youtube" | "rutube" | "vk" | "yandex_disk" | "direct" | "other"
 
   // Sprint 7: Interactive lesson fields
-  quiz           Json?      // JSONB — array of quiz questions for the lesson
-  practical_task Json?      // JSONB — practical task with hidden solution
-  timecodes      Json?      // JSONB — structured video timecodes
+  quiz           Json? // JSONB — array of quiz questions for the lesson
+  practical_task Json? @map("practical_task") // JSONB — practical task with hidden solution
+  timecodes      Json? // JSONB — structured video timecodes
 
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("articles")
 }
@@ -347,36 +366,36 @@ model Article {
 model Media {
   id           String   @id @default(cuid())
   fileName     String
-  fileType     String   // "video" | "document" | "image"
+  fileType     String // "video" | "document" | "image"
   mimeType     String
-  fileSize     Int      // bytes
-  url          String   // Storage URL (MinIO, S3, local)
+  fileSize     Int // bytes
+  url          String // Storage URL (MinIO, S3, local)
   thumbnailUrl String?
-  duration     Int?     // seconds, for video
+  duration     Int? // seconds, for video
   fileKey      String?  @map("fileKey") // S3 object key for Signed URL generation
   articleId    String?
   article      Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
   uploadedBy   String?
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@map("media")
 }
 
 model GlossaryTerm {
-  id              String   @id @default(cuid())
-  term            String   @unique
+  id              String  @id @default(cuid())
+  term            String  @unique
   definition      String
-  shortDefinition String?  // Brief definition for tooltip/popup
-  category        String?  // "AI" | "Tools" | "1C" | "General"
-  aliases         String?  // JSON array of synonyms/alternate names (e.g. ["МСП","msp","Model Context Protocol"])
-  relatedTerms    String?  // JSON array of related term slugs
-  sourceArticleId String?  // Link back to article if auto-extracted
-  order           Int      @default(0)
-  aiGenerated     Boolean  @default(false) // true if auto-extracted by AI
+  shortDefinition String? // Brief definition for tooltip/popup
+  category        String? // "AI" | "Tools" | "1C" | "General"
+  aliases         String? // JSON array of synonyms/alternate names (e.g. ["МСП","msp","Model Context Protocol"])
+  relatedTerms    String? // JSON array of related term slugs
+  sourceArticleId String? // Link back to article if auto-extracted
+  order           Int     @default(0)
+  aiGenerated     Boolean @default(false) // true if auto-extracted by AI
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("glossary_terms")
 }
@@ -387,18 +406,18 @@ model GlossaryTerm {
 
 model ProcessingQueue {
   id          String    @id @default(cuid())
-  type        String    // "zip_import" | "ai_metadata" | "glossary_extract" | "graph_build" | "course_draft"
+  type        String // "zip_import" | "ai_metadata" | "glossary_extract" | "graph_build" | "course_draft" | "content_extract"
   status      String    @default("pending") // "pending" | "processing" | "done" | "error"
-  articleId   String?   // Link to article (nullable for zip_import before articles are created)
-  inputData   String?   // JSON with input parameters
-  result      String?   // JSON with results
-  error       String?   // Error message
+  articleId   String? // Link to article (nullable for zip_import before articles are created)
+  inputData   String? // JSON with input parameters
+  result      Json? // JSON with results
+  error       String? // Error message
   progress    Int       @default(0) // 0-100 percentage
   startedAt   DateTime?
   completedAt DateTime?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("processing_queue")
 }

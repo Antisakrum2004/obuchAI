@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   CommandDialog,
   CommandInput,
@@ -11,7 +12,9 @@ import {
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, ArrowRight, X } from "lucide-react";
+import { BookOpen, ArrowRight, X, FileText, Target, ExternalLink } from "lucide-react";
+
+// ── Types ──
 
 interface GlossaryTerm {
   id: string;
@@ -23,68 +26,55 @@ interface GlossaryTerm {
   aliases: string | null;
 }
 
-let openGlossaryFn: (() => void) | null = null;
-export function useGlossaryOpen() { return openGlossaryFn; }
+interface ArticleResult {
+  id: string;
+  title: string;
+  summary: string | null;
+  tags: string[] | null;
+  spaceId: string | null;
+  spaceName: string | null;
+}
 
-// ── Keyboard layout switch (EN ↔ RU physical keys) ──
+interface ChallengeResult {
+  id: string;
+  title: string;
+  description: string | null;
+  difficulty: string | null;
+  type: string | null;
+  category: string | null;
+}
+
+interface SearchResults {
+  glossary: GlossaryTerm[];
+  articles: ArticleResult[];
+  challenges: ChallengeResult[];
+}
+
+// Shared state between GlossaryCommand and GlossaryTrigger
+let openGlossaryFn: (() => void) | null = null;
+
+export function useGlossaryOpen() {
+  return openGlossaryFn;
+}
+
+// ── Keyboard layout switch (EN ↔ RU) ──
 const RU_TO_EN: Record<string, string> = {
   'й':'q','ц':'w','у':'e','к':'r','е':'t','н':'y','г':'u','ш':'i','щ':'o','з':'p',
-  'х':'[','ъ':']','ф':'a','ы':'s','в':'d','а':'f','п':'g','р':'h','о':'j','л':'k',
-  'д':'l','ж':';','э':"'",'я':'z','ч':'x','с':'c','м':'v','и':'b','т':'n','ь':'m',
-  'б':',','ю':'.',
+  'х':'[','ъ':']',
+  'ф':'a','ы':'s','в':'d','а':'f','п':'g','р':'h','о':'j','л':'k','д':'l',
+  'ж':';','э':"'",
+  'я':'z','ч':'x','с':'c','м':'v','и':'b','т':'n','ь':'m','б':',','ю':'.',
 };
 const EN_TO_RU: Record<string, string> = Object.fromEntries(
   Object.entries(RU_TO_EN).map(([k, v]) => [v, k])
 );
 
-// ── Multi-mapping Cyrillic → Latin (phonetic + visual) ──
-// Each Cyrillic char maps to multiple Latin interpretations
-// This makes "раг" → "rag" (phonetic) AND "мсп" → "mcp" (visual)
-const CYR_MULTI_LAT: Record<string, string[]> = {
-  'а': ['a'], 'б': ['b'], 'в': ['v', 'b'], 'г': ['g'], 'д': ['d'],
-  'е': ['e', 'ye'], 'ё': ['yo', 'e'], 'ж': ['zh', 'j'], 'з': ['z'],
-  'и': ['i'], 'й': ['y', 'j'], 'к': ['k'], 'л': ['l'], 'м': ['m'],
-  'н': ['n', 'h'], 'о': ['o'], 'п': ['p'], 'р': ['r', 'p'], 'с': ['s', 'c'],
-  'т': ['t'], 'у': ['u', 'y'], 'ф': ['f'], 'х': ['kh', 'x', 'h'],
-  'ц': ['ts', 'c'], 'ч': ['ch'], 'ш': ['sh'], 'щ': ['shch'],
-  'ы': ['y'], 'э': ['e'], 'ю': ['yu'], 'я': ['ya'],
-};
-
-// ── Simple Latin → Cyrillic (for reverse transliteration) ──
-const LAT_TO_CYR: Record<string, string> = {
-  'a':'а','b':'б','c':'с','d':'д','e':'е','f':'ф','g':'г','h':'х','i':'и',
-  'j':'й','k':'к','l':'л','m':'м','n':'н','o':'о','p':'п','q':'ку','r':'р',
-  's':'с','t':'т','u':'у','v':'в','w':'в','x':'кс','y':'у','z':'з',
-};
-
+/** Convert a string typed on the wrong keyboard layout */
 function switchLayout(str: string, map: Record<string, string>): string {
-  return str.split("").map((ch) => map[ch.toLowerCase()] || ch).join("");
-}
-
-/** Simple Cyrillic → Latin (single best phonetic match) */
-function cyrToLat(str: string): string {
-  return str.split("").map((ch) => CYR_MULTI_LAT[ch.toLowerCase()]?.[0] || ch).join("");
-}
-
-/** Simple Latin → Cyrillic */
-function latToCyr(str: string): string {
-  return str.split("").map((ch) => LAT_TO_CYR[ch.toLowerCase()] || ch).join("");
-}
-
-/** Generate ALL possible transliterations of a Cyrillic string */
-function allCyrToLatVariants(str: string): string[] {
-  let results = [""];
-  for (const ch of str.toLowerCase()) {
-    const lats = CYR_MULTI_LAT[ch] || [ch];
-    const next: string[] = [];
-    for (const r of results) {
-      for (const l of lats) {
-        next.push(r + l);
-      }
-    }
-    results = next;
-  }
-  return results;
+  return str
+    .split("")
+    .map((ch) => map[ch.toLowerCase()] || ch)
+    .join("");
 }
 
 /** Parse aliases JSON field into a string array */
@@ -93,217 +83,422 @@ function parseAliases(json: string | null): string[] {
   try {
     const arr = JSON.parse(json);
     return Array.isArray(arr) ? arr.filter((a: unknown) => typeof a === "string") : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
+/** Parse relatedTerms JSON field into a string array */
+function parseRelatedTerms(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    return JSON.parse(json);
+  } catch {
+    return [];
+  }
+}
+
+// ── Category colors ──
+const categoryColors: Record<string, string> = {
+  AI: "text-purple-400 border-purple-500/30 bg-purple-500/10",
+  Tools: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+  "1C": "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  General: "text-sky-400 border-sky-500/30 bg-sky-500/10",
+};
+
+const difficultyColors: Record<string, string> = {
+  easy: "text-green-400 border-green-500/30 bg-green-500/10",
+  medium: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10",
+  hard: "text-red-400 border-red-500/30 bg-red-500/10",
+};
+
+// ── Component ──
+
 export function GlossaryCommand() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [terms, setTerms] = useState<GlossaryTerm[]>([]);
+  const [results, setResults] = useState<SearchResults>({ glossary: [], articles: [], challenges: [] });
   const [search, setSearch] = useState("");
   const [selectedTerm, setSelectedTerm] = useState<GlossaryTerm | null>(null);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Register the open function for external triggers
   useEffect(() => {
     openGlossaryFn = () => setOpen(true);
-    return () => { openGlossaryFn = null; };
+    return () => {
+      openGlossaryFn = null;
+    };
   }, []);
 
-  const loadTerms = useCallback(() => {
-    setLoading(true);
-    fetch("/api/knowledge/glossary")
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setTerms(data); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
+  // Global keyboard shortcut: Ctrl+K / Cmd+K (also Ctrl+Л for Russian layout)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "л" || e.key === "K" || e.key === "Л")) {
         e.preventDefault();
         setOpen((prev) => {
           const next = !prev;
-          if (next) loadTerms();
-          else { setSearch(""); setSelectedTerm(null); }
+          if (!next) {
+            setSearch("");
+            setSelectedTerm(null);
+            setResults({ glossary: [], articles: [], challenges: [] });
+          }
           return next;
         });
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [loadTerms]);
-
-  const handleOpenChange = useCallback((isOpen: boolean) => {
-    setOpen(isOpen);
-    if (isOpen) loadTerms();
-    else { setSearch(""); setSelectedTerm(null); }
-  }, [loadTerms]);
-
-  // ── Core search filter ──
-  const filteredTerms = terms.filter((t) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-
-    // Collect ALL search variants
-    const variants = new Set<string>();
-    variants.add(q);                                   // original
-    variants.add(switchLayout(q, EN_TO_RU));           // keyboard: EN→RU
-    variants.add(switchLayout(q, RU_TO_EN));           // keyboard: RU→EN
-    variants.add(cyrToLat(q));                         // phonetic: раг→rag
-    variants.add(latToCyr(q));                         // reverse: rag→раг
-
-    // All Cyrillic→Latin variants (раг→rag,pag | мсп→msp,mcp)
-    for (const v of allCyrToLatVariants(q)) {
-      variants.add(v);
-    }
-
-    const queries = [...variants].filter(v => v.length > 0);
-
-    const matchesAny = (field: string | null | undefined): boolean => {
-      if (!field) return false;
-      const fl = field.toLowerCase();
-      return queries.some(qv => qv && fl.includes(qv));
-    };
-
-    // ONLY search in: term name, shortDefinition, category, aliases
-    // Do NOT search in full definition body — that causes false matches like "сдд" finding "One Source of Truth" just because "SDD" appears in the text
-    return matchesAny(t.term) || matchesAny(t.shortDefinition) || matchesAny(t.category)
-      || parseAliases(t.aliases).some(alias => matchesAny(alias));
-  });
-
-  const handleSearch = useCallback((value: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setSearch(value), 100);
   }, []);
 
-  const handleSelectTerm = useCallback((term: GlossaryTerm) => setSelectedTerm(term), []);
+  // Handle open/close
+  const handleOpenChange = useCallback((isOpen: boolean) => {
+    setOpen(isOpen);
+    if (!isOpen) {
+      setSearch("");
+      setSelectedTerm(null);
+      setResults({ glossary: [], articles: [], challenges: [] });
+    }
+  }, []);
+
+  // Debounced search — calls the server-side search API with layout-switched alternatives
+  useEffect(() => {
+    if (!search.trim()) {
+      setResults({ glossary: [], articles: [], challenges: [] });
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const q = search.trim();
+        // Compute layout-switched alternatives
+        const qAltRu = switchLayout(q, EN_TO_RU);
+        const qAltEn = switchLayout(q, RU_TO_EN);
+
+        const alts: string[] = [];
+        if (qAltRu !== q.toLowerCase()) alts.push(qAltRu);
+        if (qAltEn !== q.toLowerCase() && qAltEn !== qAltRu) alts.push(qAltEn);
+
+        const params = new URLSearchParams({ q });
+        if (alts.length > 0) {
+          params.set("qAlt", alts.join(","));
+        }
+
+        const res = await fetch(`/api/knowledge/search?${params}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data: SearchResults = await res.json();
+        setResults(data);
+      } catch {
+        setResults({ glossary: [], articles: [], challenges: [] });
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+  }, [search]);
+
+  // Handle search input change (just update the search state, effect handles the API call)
+  const handleSearch = useCallback((value: string) => {
+    setSearch(value);
+    setSelectedTerm(null); // reset detail view when typing
+  }, []);
+
+  const handleSelectTerm = useCallback((term: GlossaryTerm) => {
+    setSelectedTerm(term);
+  }, []);
+
+  const handleNavigateArticle = useCallback((id: string) => {
+    setOpen(false);
+    setSearch("");
+    setSelectedTerm(null);
+    router.push(`/knowledge/article/${id}`);
+  }, [router]);
+
+  const handleNavigateChallenge = useCallback((id: string) => {
+    setOpen(false);
+    setSearch("");
+    setSelectedTerm(null);
+    router.push(`/challenges/${id}`);
+  }, [router]);
 
   const handleRelatedTermClick = useCallback(
     (termName: string) => {
-      const found = terms.find((t) => t.term.toLowerCase() === termName.toLowerCase());
-      if (found) setSelectedTerm(found);
+      const found = results.glossary.find(
+        (t) => t.term.toLowerCase() === termName.toLowerCase()
+      );
+      if (found) {
+        setSelectedTerm(found);
+      }
     },
-    [terms]
+    [results.glossary]
   );
 
-  const categoryColors: Record<string, string> = {
-    AI: "text-purple-400 border-purple-500/30 bg-purple-500/10",
-    Tools: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
-    "1C": "text-amber-400 border-amber-500/30 bg-amber-500/10",
-    General: "text-sky-400 border-sky-500/30 bg-sky-500/10",
-  };
-
-  const parseRelatedTerms = (json: string | null): string[] => {
-    if (!json) return [];
-    try { return JSON.parse(json); } catch { return []; }
-  };
+  // Limit results per type
+  const maxPerType = 5;
+  const glossarySlice = results.glossary.slice(0, maxPerType);
+  const articlesSlice = results.articles.slice(0, maxPerType);
+  const challengesSlice = results.challenges.slice(0, maxPerType);
+  const hasAnyResults = glossarySlice.length > 0 || articlesSlice.length > 0 || challengesSlice.length > 0;
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={handleOpenChange}
-      title="Глоссарий AI терминов"
-      description="Поиск по глоссарию терминов"
+      title="Поиск по знаниям"
+      description="Термины, статьи и задачи"
       className="sm:max-w-xl"
     >
       <CommandInput
-        placeholder="Поиск терминов... (RAG, раг, MCP, мсп — найдёт)"
+        placeholder="Поиск... (термины, статьи, задачи)"
         onValueChange={handleSearch}
       />
       <CommandList>
         {loading ? (
           <div className="py-6 text-center text-sm text-muted-foreground">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent mx-auto mb-2" />
-            Загрузка...
+            Поиск...
           </div>
-        ) : filteredTerms.length === 0 && search.trim() ? (
+        ) : !hasAnyResults && search.trim() ? (
           <CommandEmpty>Ничего не найдено</CommandEmpty>
         ) : null}
 
         {!selectedTerm ? (
-          <CommandGroup heading="Термины">
-            {filteredTerms.slice(0, 50).map((term) => (
-              <CommandItem
-                key={term.id}
-                onSelect={() => handleSelectTerm(term)}
-                className="flex items-start gap-3 py-3 px-3 cursor-pointer"
-              >
-                <BookOpen className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm text-foreground">{term.term}</span>
-                    {term.category && (
-                      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${categoryColors[term.category] || ""}`}>
-                        {term.category}
-                      </Badge>
-                    )}
-                  </div>
-                  {term.shortDefinition && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{term.shortDefinition}</p>
-                  )}
-                  {parseAliases(term.aliases).length > 0 && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {parseAliases(term.aliases).slice(0, 3).map((alias) => (
-                        <span key={alias} className="text-[9px] text-muted-foreground/60 bg-white/5 px-1.5 py-0 rounded">{alias}</span>
-                      ))}
+          <>
+            {/* ── Glossary Terms ── */}
+            {glossarySlice.length > 0 && (
+              <CommandGroup heading="📖 Термины">
+                {glossarySlice.map((term) => (
+                  <CommandItem
+                    key={term.id}
+                    onSelect={() => handleSelectTerm(term)}
+                    className="flex items-start gap-3 py-3 px-3 cursor-pointer"
+                  >
+                    <BookOpen className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-foreground">
+                          {term.term}
+                        </span>
+                        {term.category && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] px-1.5 py-0 ${
+                              categoryColors[term.category] || ""
+                            }`}
+                          >
+                            {term.category}
+                          </Badge>
+                        )}
+                      </div>
+                      {term.shortDefinition && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                          {term.shortDefinition}
+                        </p>
+                      )}
+                      {parseAliases(term.aliases).length > 0 && (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {parseAliases(term.aliases).slice(0, 3).map((alias) => (
+                            <span key={alias} className="text-[9px] text-muted-foreground/60 bg-white/5 px-1.5 py-0 rounded">
+                              {alias}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0 mt-1" />
-              </CommandItem>
-            ))}
-          </CommandGroup>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0 mt-1" />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {/* ── Articles ── */}
+            {articlesSlice.length > 0 && (
+              <CommandGroup heading="📄 Статьи">
+                {articlesSlice.map((article) => (
+                  <CommandItem
+                    key={article.id}
+                    onSelect={() => handleNavigateArticle(article.id)}
+                    className="flex items-start gap-3 py-3 px-3 cursor-pointer"
+                  >
+                    <FileText className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-foreground">
+                          {article.title}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 text-blue-400 border-blue-500/30 bg-blue-500/10"
+                        >
+                          Статья
+                        </Badge>
+                      </div>
+                      {article.summary && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                          {article.summary}
+                        </p>
+                      )}
+                      {article.spaceName && (
+                        <span className="text-[9px] text-muted-foreground/60 mt-0.5 block">
+                          {article.spaceName}
+                        </span>
+                      )}
+                    </div>
+                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0 mt-1" />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {/* ── Challenges ── */}
+            {challengesSlice.length > 0 && (
+              <CommandGroup heading="🎯 Задачи">
+                {challengesSlice.map((challenge) => (
+                  <CommandItem
+                    key={challenge.id}
+                    onSelect={() => handleNavigateChallenge(challenge.id)}
+                    className="flex items-start gap-3 py-3 px-3 cursor-pointer"
+                  >
+                    <Target className="h-4 w-4 text-orange-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-foreground">
+                          {challenge.title}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 text-orange-400 border-orange-500/30 bg-orange-500/10"
+                        >
+                          Задача
+                        </Badge>
+                        {challenge.difficulty && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[9px] px-1.5 py-0 ${
+                              difficultyColors[challenge.difficulty] || ""
+                            }`}
+                          >
+                            {challenge.difficulty}
+                          </Badge>
+                        )}
+                      </div>
+                      {challenge.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                          {challenge.description}
+                        </p>
+                      )}
+                      {challenge.category && (
+                        <span className="text-[9px] text-muted-foreground/60 mt-0.5 block">
+                          {challenge.category}
+                        </span>
+                      )}
+                    </div>
+                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/30 shrink-0 mt-1" />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {/* ── Empty state (no query) ── */}
+            {!search.trim() && (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                Начните вводить запрос для поиска
+              </div>
+            )}
+          </>
         ) : (
+          /* ── Glossary Term Detail View ── */
           <div className="p-4 space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-lg font-bold text-foreground">{selectedTerm.term}</h3>
+                <h3 className="text-lg font-bold text-foreground">
+                  {selectedTerm.term}
+                </h3>
                 {selectedTerm.category && (
-                  <Badge variant="outline" className={`text-[10px] mt-1 ${categoryColors[selectedTerm.category] || ""}`}>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] mt-1 ${
+                      categoryColors[selectedTerm.category] || ""
+                    }`}
+                  >
                     {selectedTerm.category}
                   </Badge>
                 )}
                 {parseAliases(selectedTerm.aliases).length > 0 && (
                   <div className="flex gap-1 mt-1.5 flex-wrap">
                     {parseAliases(selectedTerm.aliases).map((alias) => (
-                      <span key={alias} className="text-[10px] text-muted-foreground/70 bg-white/5 px-1.5 py-0.5 rounded">{alias}</span>
+                      <span key={alias} className="text-[10px] text-muted-foreground/70 bg-white/5 px-1.5 py-0.5 rounded">
+                        {alias}
+                      </span>
                     ))}
                   </div>
                 )}
               </div>
-              <button onClick={() => setSelectedTerm(null)} className="p-1 rounded-md hover:bg-secondary transition-colors">
+              <button
+                onClick={() => setSelectedTerm(null)}
+                className="p-1 rounded-md hover:bg-secondary transition-colors"
+              >
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">{selectedTerm.definition}</p>
-            {selectedTerm.relatedTerms && parseRelatedTerms(selectedTerm.relatedTerms).length > 0 && (
-              <>
-                <Separator className="bg-white/5" />
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Связанные термины</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {parseRelatedTerms(selectedTerm.relatedTerms).map((rt) => {
-                      const exists = terms.some((t) => t.term.toLowerCase() === rt.toLowerCase());
-                      return exists ? (
-                        <button key={rt} onClick={() => handleRelatedTermClick(rt)} className="text-xs px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors">{rt}</button>
-                      ) : (
-                        <span key={rt} className="text-xs px-2 py-1 rounded-md bg-secondary text-muted-foreground">{rt}</span>
-                      );
-                    })}
+
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {selectedTerm.definition}
+            </p>
+
+            {/* Related Terms */}
+            {selectedTerm.relatedTerms &&
+              parseRelatedTerms(selectedTerm.relatedTerms).length > 0 && (
+                <>
+                  <Separator className="bg-white/5" />
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      Связанные термины
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {parseRelatedTerms(selectedTerm.relatedTerms).map(
+                        (rt) => {
+                          const exists = results.glossary.some(
+                            (t) =>
+                              t.term.toLowerCase() === rt.toLowerCase()
+                          );
+                          return exists ? (
+                            <button
+                              key={rt}
+                              onClick={() => handleRelatedTermClick(rt)}
+                              className="text-xs px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                            >
+                              {rt}
+                            </button>
+                          ) : (
+                            <span
+                              key={rt}
+                              className="text-xs px-2 py-1 rounded-md bg-secondary text-muted-foreground"
+                            >
+                              {rt}
+                            </span>
+                          );
+                        }
+                      )}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
           </div>
         )}
       </CommandList>
 
+      {/* Footer hint */}
       {!selectedTerm && (
         <div className="border-t border-white/5 px-4 py-2">
           <p className="text-[10px] text-muted-foreground/50 text-center">
-            <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono border border-white/10">Esc</kbd>{" "}
-            закрыть • Любая раскладка + транслитерация
+            <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono border border-white/10">
+              Esc
+            </kbd>{" "}
+            для закрытия • Поддерживается поиск на обоих раскладках
           </p>
         </div>
       )}

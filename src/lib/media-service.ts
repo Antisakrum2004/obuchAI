@@ -9,6 +9,7 @@
 
 import { storageProvider } from "@/lib/storage";
 import { pool } from "@/lib/db";
+import { ensureColumn } from "@/lib/db-migrate";
 import {
   validateFile,
   detectFileType,
@@ -224,21 +225,12 @@ function generateId(): string {
 }
 
 /**
- * Runtime migration: добавляем колонку "fileKey" в таблицу media,
- * если она ещё не существует. Паттерн ensureColumns(), как принято в проекте.
+ * Runtime check: ensure "fileKey" column exists in media table.
+ * Delegates to the centralized db-migrate module.
  */
 let fileKeyEnsured = false;
 
 async function ensureFileKeyColumn(): Promise<void> {
   if (fileKeyEnsured) return;
-
-  try {
-    await pool.query(
-      `ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`
-    );
-    fileKeyEnsured = true;
-  } catch {
-    // Колонка уже существует или другая ошибка — не критично
-    fileKeyEnsured = true;
-  }
+  fileKeyEnsured = await ensureColumn("media", "fileKey", "TEXT");
 }

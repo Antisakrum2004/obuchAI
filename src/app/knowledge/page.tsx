@@ -65,7 +65,7 @@ export default function KnowledgePage() {
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
-  const sessionRole = (session?.user as Record<string, unknown>)?.role as string | undefined;
+  const sessionRole = session?.user?.role;
   const isAdmin = storeRole === "admin" || sessionRole === "admin";
 
   useEffect(() => {
@@ -220,7 +220,7 @@ export default function KnowledgePage() {
               {recentArticles.map((article) => (
                 <motion.div key={article.id} variants={itemVariants}>
                   <Link href={`/knowledge/article/${article.id}`} className="block group">
-                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 h-full">
+                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5 h-full">
                       <CardContent className="p-4 flex flex-col h-full">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm">{article.spaceIcon || "📚"}</span>
@@ -309,7 +309,7 @@ export default function KnowledgePage() {
               {spaces.map((space) => (
                 <motion.div key={space.id} variants={itemVariants}>
                   <Link href={`/knowledge/${space.slug}`} className="block group">
-                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30">
+                    <Card className="glass card-hover border-white/5 rounded-xl py-0 transition-all duration-300 group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
                       <CardContent className="p-5">
                         <div className="flex items-start gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 shrink-0 group-hover:bg-emerald-500/20 transition-colors">

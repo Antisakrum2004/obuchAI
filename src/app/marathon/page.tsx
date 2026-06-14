@@ -26,11 +26,8 @@ interface ChallengeData {
   xpReward: number;
   content: string;
   options: string | null;
-  correctAnswer: string;
   explanation: string | null;
   hints: string | null;
-  validationType: string;
-  validationConfig: string | null;
 }
 
 type MarathonState = "start" | "playing" | "gameover";
@@ -76,33 +73,20 @@ function getMultiplierLabel(multiplier: number): string {
   return "×1.0";
 }
 
-// Validate answer locally (no API call during marathon)
-function validateAnswer(challenge: ChallengeData, answer: unknown): boolean {
-  if (challenge.validationType === "static") {
-    try {
-      const correctAnswer = JSON.parse(challenge.correctAnswer);
-      if (challenge.type === "multiple_choice") {
-        return answer === correctAnswer;
-      } else if (challenge.type === "ordering" || challenge.type === "workflow_build") {
-        const userAnswer = Array.isArray(answer) ? answer : JSON.parse(typeof answer === "string" ? answer : "[]");
-        return JSON.stringify(userAnswer) === JSON.stringify(correctAnswer);
-      }
-    } catch {
-      return false;
-    }
-  } else if (challenge.validationType === "pattern") {
-    try {
-      const config = challenge.validationConfig ? JSON.parse(challenge.validationConfig) : {};
-      const keywords: string[] = config.keywords || [];
-      if (keywords.length > 0) {
-        const answerStr = String(answer).toLowerCase();
-        return keywords.every((kw: string) => answerStr.includes(kw.toLowerCase()));
-      }
-    } catch {
-      return false;
-    }
+// Validate answer via server-side endpoint (prevents cheating — correctAnswer never reaches the client)
+async function validateAnswerServer(challengeId: string, answer: unknown): Promise<boolean> {
+  try {
+    const res = await fetch("/api/marathon/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challengeId, answer }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.isCorrect === true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 // ─── Animation variants ──────────────────────────────────────────────────────
@@ -189,7 +173,7 @@ export default function MarathonPage() {
     fetch("/api/auth/session")
       .then((r) => r.json())
       .then((session) => {
-        const uid = (session?.user as Record<string, unknown>)?.id as string;
+        const uid = session?.user?.id;
         if (uid) setUserId(uid);
       })
       .catch(() => {});
@@ -350,8 +334,8 @@ export default function MarathonPage() {
     setShowXpAnimation(false);
   }, []);
 
-  // Handle submit
-  const handleSubmit = useCallback(() => {
+  // Handle submit — validates answer server-side to prevent cheating
+  const handleSubmit = useCallback(async () => {
     const answer = getAnswer();
     if (!answer || !challenge) return;
     if (Array.isArray(answer) && answer.length === 0) return;
@@ -359,7 +343,7 @@ export default function MarathonPage() {
     setIsSubmitting(true);
     totalAttemptsRef.current += 1;
 
-    const isCorrect = validateAnswer(challenge, answer);
+    const isCorrect = await validateAnswerServer(challenge.id, answer);
 
     if (isCorrect) {
       setResultState("correct");

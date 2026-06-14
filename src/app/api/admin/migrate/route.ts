@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { Pool, neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 
@@ -6,11 +8,16 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   try {
-    // Verify admin secret (NEXTAUTH_SECRET or fallback to ADMIN_SEED_KEY)
+    // Check 1: Session-based admin auth (preferred for UI)
+    const session = await getServerSession(authOptions)
+    const isSessionAdmin = session?.user && session.user.role === 'admin'
+
+    // Check 2: Key-based auth (for CLI/curl access)
     const body = await request.json().catch(() => ({}))
-    const adminSecret = process.env.NEXTAUTH_SECRET
-    const fallbackKey = process.env.ADMIN_SEED_KEY || 'seed-v1.5.0'
-    if (body.secret !== adminSecret && body.secret !== fallbackKey) {
+    const fallbackKey = process.env.ADMIN_SEED_KEY
+    const isKeyValid = fallbackKey && body.secret === fallbackKey
+
+    if (!isSessionAdmin && !isKeyValid) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -25,6 +32,7 @@ export async function POST(request: Request) {
     const client = await pool.connect()
 
     try {
+      // ─── Phase 1: CREATE TABLE statements ──────────────────────────────────
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY,
@@ -170,57 +178,13 @@ export async function POST(request: Request) {
         );
       `)
 
-      // Add foreign keys (separate to avoid issues with table creation order)
-      const fkStatements = [
-        `ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_userId_fkey;
-         ALTER TABLE accounts ADD CONSTRAINT accounts_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
+      // ─── Phase 2: ALTER TABLE via centralized module ────────────────────────
+      // Delegate all column additions to the shared db-migrate module
+      const { ensureSchema } = await import('@/lib/db-migrate')
+      const migrationResult = await ensureSchema()
+      console.log('[Admin Migrate] Schema ensured:', migrationResult)
 
-        `ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_userId_fkey;
-         ALTER TABLE sessions ADD CONSTRAINT sessions_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE user_skills DROP CONSTRAINT IF EXISTS user_skills_userId_fkey;
-         ALTER TABLE user_skills ADD CONSTRAINT user_skills_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE user_skills DROP CONSTRAINT IF EXISTS user_skills_skillId_fkey;
-         ALTER TABLE user_skills ADD CONSTRAINT user_skills_skillId_fkey FOREIGN KEY ("skillId") REFERENCES skills(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE skills DROP CONSTRAINT IF EXISTS skills_parentId_fkey;
-         ALTER TABLE skills ADD CONSTRAINT skills_parentId_fkey FOREIGN KEY ("parentId") REFERENCES skills(id) ON DELETE SET NULL ON UPDATE CASCADE;`,
-
-        `ALTER TABLE challenges DROP CONSTRAINT IF EXISTS challenges_skillId_fkey;
-         ALTER TABLE challenges ADD CONSTRAINT challenges_skillId_fkey FOREIGN KEY ("skillId") REFERENCES skills(id) ON DELETE SET NULL ON UPDATE CASCADE;`,
-
-        `ALTER TABLE challenge_attempts DROP CONSTRAINT IF EXISTS challenge_attempts_userId_fkey;
-         ALTER TABLE challenge_attempts ADD CONSTRAINT challenge_attempts_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE challenge_attempts DROP CONSTRAINT IF EXISTS challenge_attempts_challengeId_fkey;
-         ALTER TABLE challenge_attempts ADD CONSTRAINT challenge_attempts_challengeId_fkey FOREIGN KEY ("challengeId") REFERENCES challenges(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE daily_challenge_assignments DROP CONSTRAINT IF EXISTS daily_challenge_assignments_userId_fkey;
-         ALTER TABLE daily_challenge_assignments ADD CONSTRAINT daily_challenge_assignments_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE daily_challenge_assignments DROP CONSTRAINT IF EXISTS daily_challenge_assignments_challengeId_fkey;
-         ALTER TABLE daily_challenge_assignments ADD CONSTRAINT daily_challenge_assignments_challengeId_fkey FOREIGN KEY ("challengeId") REFERENCES challenges(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE xp_logs DROP CONSTRAINT IF EXISTS xp_logs_userId_fkey;
-         ALTER TABLE xp_logs ADD CONSTRAINT xp_logs_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE user_achievements DROP CONSTRAINT IF EXISTS user_achievements_userId_fkey;
-         ALTER TABLE user_achievements ADD CONSTRAINT user_achievements_userId_fkey FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-
-        `ALTER TABLE user_achievements DROP CONSTRAINT IF EXISTS user_achievements_achievementId_fkey;
-         ALTER TABLE user_achievements ADD CONSTRAINT user_achievements_achievementId_fkey FOREIGN KEY ("achievementId") REFERENCES achievements(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
-      ]
-
-      for (const fkSql of fkStatements) {
-        try {
-          await client.query(fkSql)
-        } catch (fkErr) {
-          console.warn('FK warning (may already exist):', fkErr)
-        }
-      }
-
-      // Create app_settings table
+      // ─── Phase 3: App settings table + seed ─────────────────────────────────
       await client.query(`
         CREATE TABLE IF NOT EXISTS app_settings (
           key TEXT PRIMARY KEY,
@@ -229,7 +193,6 @@ export async function POST(request: Request) {
         );
       `)
 
-      // Seed default settings
       await client.query(`
         INSERT INTO app_settings (key, value) VALUES
           ('particles', 'true'),
@@ -243,30 +206,7 @@ export async function POST(request: Request) {
         ON CONFLICT (key) DO NOTHING;
       `)
 
-      // Add missing columns for users and challenge_attempts (these tables already exist)
-      const alterStatementsPhase1 = [
-        `ALTER TABLE challenge_attempts ADD COLUMN IF NOT EXISTS "timeSpent" INTEGER;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastIp" TEXT;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastUserAgent" TEXT;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "lastDevice" TEXT;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "consecutiveCorrect" INTEGER NOT NULL DEFAULT 0;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "consecutiveWrong" INTEGER NOT NULL DEFAULT 0;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCode" TEXT UNIQUE;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referredBy" TEXT;`,
-        `ALTER TABLE users ADD COLUMN IF NOT EXISTS "referralCount" INTEGER DEFAULT 0;`,
-      ];
-
-      for (const alterSql of alterStatementsPhase1) {
-        try {
-          await client.query(alterSql)
-        } catch (alterErr) {
-          console.warn('ALTER Phase 1 warning:', alterErr)
-        }
-      }
-
-      // ==========================================
-      // KNOWLEDGE HUB TABLES
-      // ==========================================
+      // ─── Phase 4: Knowledge Hub tables ──────────────────────────────────────
       await client.query(`
         CREATE TABLE IF NOT EXISTS knowledge_spaces (
           id TEXT PRIMARY KEY,
@@ -337,50 +277,9 @@ export async function POST(request: Request) {
         );
       `)
 
-      // Sprint 6: Add columns to articles and glossary_terms (AFTER tables are created)
-      const alterStatementsPhase2 = [
-        // Article extensions for AI Content Processing Pipeline
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3);`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT;`,
+      // ─── Phase 5: Seed data ────────────────────────────────────────────────
 
-        // GlossaryTerm extension
-        `ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false;`,
-
-        // Sprint 7: Interactive lesson fields (quiz, practical_task, timecodes)
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB;`,
-        `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB;`,
-
-        // Sprint 6.1: Allow categoryId to be NULL (AI auto-categorization)
-        // PostgreSQL doesn't support ALTER COLUMN in IF NOT EXISTS, so we use a DO block
-        `DO $$ BEGIN
-          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'articles' AND column_name = 'categoryId' AND is_nullable = 'NO') THEN
-            ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL;
-          END IF;
-        END $$;`,
-      ];
-
-      for (const alterSql of alterStatementsPhase2) {
-        try {
-          await client.query(alterSql)
-        } catch (alterErr) {
-          console.warn('ALTER Phase 2 warning:', alterErr)
-        }
-      }
-
-      // Drop existing Knowledge Hub FK constraints first (they may block seed data insertion)
+      // Drop Knowledge Hub FK constraints first (they may block seed data insertion)
       const dropKnowledgeFkStatements = [
         `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey;`,
         `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_categoryId_fkey;`,
@@ -389,23 +288,15 @@ export async function POST(request: Request) {
       ]
 
       for (const dropSql of dropKnowledgeFkStatements) {
-        try {
-          await client.query(dropSql)
-        } catch (dropErr) {
-          console.warn('Drop FK warning:', dropErr)
-        }
+        try { await client.query(dropSql) } catch {}
       }
 
-      // Clean up orphaned categories that reference non-existent knowledge spaces
+      // Clean up orphaned categories
       try {
-        await client.query(`
-          DELETE FROM categories WHERE "spaceId" NOT IN (SELECT id FROM knowledge_spaces) AND "spaceId" IS NOT NULL;
-        `)
-      } catch (cleanErr) {
-        console.warn('Cleanup warning:', cleanErr)
-      }
+        await client.query(`DELETE FROM categories WHERE "spaceId" NOT IN (SELECT id FROM knowledge_spaces) AND "spaceId" IS NOT NULL;`)
+      } catch {}
 
-      // Seed default knowledge spaces FIRST (before FK constraints so referential data exists)
+      // Seed default knowledge spaces
       await client.query(`
         INSERT INTO knowledge_spaces (id, name, slug, description, icon, "order", "isPublished") VALUES
           ('ks_ai_dev', 'AI Разработка', 'ai-development', 'Инструменты и концепции AI-разработки', '🤖', 1, true),
@@ -443,7 +334,7 @@ export async function POST(request: Request) {
         ON CONFLICT (term) DO NOTHING;
       `)
 
-      // Knowledge Hub foreign keys (AFTER seed data so referential integrity is valid)
+      // ─── Phase 6: Knowledge Hub foreign keys ────────────────────────────────
       const knowledgeFkStatements = [
         `ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_spaceId_fkey;
          ALTER TABLE categories ADD CONSTRAINT categories_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE;`,
@@ -456,14 +347,10 @@ export async function POST(request: Request) {
       ]
 
       for (const fkSql of knowledgeFkStatements) {
-        try {
-          await client.query(fkSql)
-        } catch (fkErr) {
-          console.warn('Knowledge FK warning (may already exist):', fkErr)
-        }
+        try { await client.query(fkSql) } catch {}
       }
 
-      // Sprint 6: Processing Queue table
+      // ─── Phase 7: Processing Queue table ────────────────────────────────────
       await client.query(`
         CREATE TABLE IF NOT EXISTS processing_queue (
           id TEXT PRIMARY KEY,
@@ -481,7 +368,7 @@ export async function POST(request: Request) {
         );
       `)
 
-      // Create indexes
+      // ─── Phase 8: Indexes ──────────────────────────────────────────────────
       const indexStatements = [
         `CREATE INDEX IF NOT EXISTS accounts_userId_idx ON accounts("userId");`,
         `CREATE INDEX IF NOT EXISTS sessions_userId_idx ON sessions("userId");`,
@@ -509,14 +396,14 @@ export async function POST(request: Request) {
       ]
 
       for (const idxSql of indexStatements) {
-        try {
-          await client.query(idxSql)
-        } catch (idxErr) {
-          console.warn('Index warning:', idxErr)
-        }
+        try { await client.query(idxSql) } catch {}
       }
 
-      return NextResponse.json({ success: true, message: 'Database tables created successfully' })
+      return NextResponse.json({
+        success: true,
+        message: 'Database tables created successfully',
+        migrationsApplied: migrationResult.applied,
+      })
     } finally {
       client.release()
       await pool.end()

@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { spaceUpdateSchema, buildSetClause } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
-
-// Allowed fields for update (whitelist to prevent SQL injection)
-const ALLOWED_FIELDS = new Set(["name", "slug", "description", "icon", "order", "isPublished"]);
 
 // GET /api/knowledge/spaces/[id] — Get single space with article count
 export async function GET(
@@ -42,34 +40,36 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
 
-    const fields: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    // Only allow whitelisted fields
-    for (const [key, value] of Object.entries(body)) {
-      if (ALLOWED_FIELDS.has(key)) {
-        fields.push(`"${key}" = $${idx++}`);
-        values.push(value);
-      }
+    // Validate with Zod schema — rejects unknown keys and bad types
+    const parseResult = spaceUpdateSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Ошибка валидации", details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
 
-    if (fields.length === 0) {
+    const data = parseResult.data;
+
+    // Build SET clause from validated data (no JSON fields in spaces)
+    const { setClauses, values, nextParamIdx } = buildSetClause(data, new Set());
+
+    if (setClauses.length === 0) {
       return NextResponse.json({ error: "Нет полей для обновления" }, { status: 400 });
     }
 
-    fields.push(`"updatedAt" = NOW()`);
+    setClauses.push(`"updatedAt" = NOW()`);
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE knowledge_spaces SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      `UPDATE knowledge_spaces SET ${setClauses.join(", ")} WHERE id = $${nextParamIdx} RETURNING *`,
       values,
     );
 
@@ -91,7 +91,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

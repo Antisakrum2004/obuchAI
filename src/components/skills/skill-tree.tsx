@@ -176,9 +176,9 @@ function SkillGridCard({
       <div
         className={cn(
           "relative rounded-xl p-3 transition-all duration-300 bg-gradient-to-br min-w-0",
-          /* completed → bright emerald border */
+          /* completed → bright emerald border + glow */
           isCompleted
-            ? "border-2 border-emerald-400/70 " +
+            ? "border-2 border-emerald-400/70 shadow-lg shadow-emerald-500/20 " +
                 colors.bg
             : /* in-progress → amber border */
               status === "in-progress"
@@ -465,7 +465,8 @@ function SkillDetailPanel({
                       className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium",
                         "bg-gradient-to-r from-emerald-600 to-emerald-500 text-white",
-                        "hover:from-emerald-500 hover:to-emerald-400"
+                        "hover:from-emerald-500 hover:to-emerald-400",
+                        "shadow-md shadow-emerald-500/20"
                       )}
                     >
                       {status === "completed" ? "Повторить" : "Начать"} (
@@ -534,13 +535,13 @@ export function SkillTree({ skills }: SkillTreeProps) {
       {/* Stats summary */}
       <div className="flex items-center gap-4 mb-5 text-sm">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
           <span className="text-muted-foreground">
             {completedSkills} пройдено
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50" />
           <span className="text-muted-foreground">
             {inProgressSkills} в процессе
           </span>

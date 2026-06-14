@@ -2,7 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { pool } from "@/lib/db";
-import { cookies } from "next/headers";
+import { processReferralReward, getReferrerIdFromCookie } from "@/lib/referral";
 
 // Check if Google OAuth is properly configured
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
@@ -55,22 +55,7 @@ providers.push(
         const id = genId();
 
         // Check for referral code from cookie
-        let referredById: string | null = null;
-        try {
-          const cookieStore = await cookies();
-          const refCode = cookieStore.get("ref")?.value;
-          if (refCode) {
-            const referrerResult = await pool.query(
-              `SELECT id FROM users WHERE "referralCode" = $1`,
-              [refCode]
-            );
-            if (referrerResult.rows[0]) {
-              referredById = referrerResult.rows[0].id;
-            }
-          }
-        } catch {
-          // Cookie access may fail in some contexts
-        }
+        const referredById = await getReferrerIdFromCookie();
 
         await pool.query(
           `INSERT INTO users (id, email, name, role, xp, level, streak, "maxStreak", "lastActiveAt", "referredBy") VALUES ($1, $2, $3, 'user', 0, 1, 0, 0, NOW(), $4)`,
@@ -79,30 +64,7 @@ providers.push(
 
         // Process referral rewards
         if (referredById) {
-          try {
-            // Increment referrer's referral count and award XP to both
-            await pool.query(
-              `UPDATE users SET "referralCount" = COALESCE("referralCount", 0) + 1, xp = xp + 50 WHERE id = $1`,
-              [referredById]
-            );
-            await pool.query(
-              `UPDATE users SET xp = xp + 50 WHERE id = $1`,
-              [id]
-            );
-            // Log XP for referrer
-            await pool.query(
-              `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус', $3)`,
-              [genId(), referredById, id]
-            );
-            // Log XP for referee
-            await pool.query(
-              `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус (приглашённый)', $3)`,
-              [genId(), id, referredById]
-            );
-            console.log("[Auth] Referral applied for demo user:", id, "referred by:", referredById);
-          } catch (refErr) {
-            console.error("[Auth] Referral reward error (non-critical):", refErr);
-          }
+          await processReferralReward(id, referredById);
         }
 
         result = await pool.query(
@@ -138,9 +100,14 @@ providers.push(
       password: { label: "Пароль", type: "password" },
     },
     async authorize(credentials) {
-      // Hardcoded admin credentials
-      const ADMIN_USER = "admin";
-      const ADMIN_PASS = "admin123";
+      // Admin credentials from env vars ONLY — no hardcoded fallbacks
+      const ADMIN_USER = process.env.ADMIN_USERNAME;
+      const ADMIN_PASS = process.env.ADMIN_PASSWORD;
+
+      if (!ADMIN_USER || !ADMIN_PASS) {
+        console.error("[Auth] ADMIN_USERNAME / ADMIN_PASSWORD env vars not set — admin login disabled");
+        return null;
+      }
 
       if (
         credentials?.username !== ADMIN_USER ||
@@ -227,22 +194,7 @@ export const authOptions: NextAuthOptions = {
             }
           } else {
             // New user — check for referral code from cookie
-            let referredById: string | null = null;
-            try {
-              const cookieStore = await cookies();
-              const refCode = cookieStore.get("ref")?.value;
-              if (refCode) {
-                const referrerResult = await pool.query(
-                  `SELECT id FROM users WHERE "referralCode" = $1`,
-                  [refCode]
-                );
-                if (referrerResult.rows[0]) {
-                  referredById = referrerResult.rows[0].id;
-                }
-              }
-            } catch {
-              // Cookie access may fail in some contexts
-            }
+            const referredById = await getReferrerIdFromCookie();
 
             userId = genId();
             await pool.query(
@@ -252,30 +204,7 @@ export const authOptions: NextAuthOptions = {
 
             // Process referral rewards
             if (referredById) {
-              try {
-                // Increment referrer's referral count and award XP to both
-                await pool.query(
-                  `UPDATE users SET "referralCount" = COALESCE("referralCount", 0) + 1, xp = xp + 50 WHERE id = $1`,
-                  [referredById]
-                );
-                await pool.query(
-                  `UPDATE users SET xp = xp + 50 WHERE id = $1`,
-                  [userId]
-                );
-                // Log XP for referrer
-                await pool.query(
-                  `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус', $3)`,
-                  [genId(), referredById, userId]
-                );
-                // Log XP for referee
-                await pool.query(
-                  `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус (приглашённый)', $3)`,
-                  [genId(), userId, referredById]
-                );
-                console.log("[Auth] Referral applied for Google user:", userId, "referred by:", referredById);
-              } catch (refErr) {
-                console.error("[Auth] Referral reward error (non-critical):", refErr);
-              }
+              await processReferralReward(userId, referredById);
             }
           }
 
@@ -283,10 +212,10 @@ export const authOptions: NextAuthOptions = {
           user.id = userId;
 
           // Store user data on user object for JWT callback
-          (user as unknown as Record<string, unknown>).role = userResult.rows[0]?.role || "user";
-          (user as unknown as Record<string, unknown>).xp = userResult.rows[0]?.xp || 0;
-          (user as unknown as Record<string, unknown>).level = userResult.rows[0]?.level || 1;
-          (user as unknown as Record<string, unknown>).streak = userResult.rows[0]?.streak || 0;
+          user.role = userResult.rows[0]?.role || "user";
+          user.xp = userResult.rows[0]?.xp || 0;
+          user.level = userResult.rows[0]?.level || 1;
+          user.streak = userResult.rows[0]?.streak || 0;
 
           // Upsert account record
           try {
@@ -334,12 +263,12 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         // Copy custom fields from user (set in signIn callback for Google)
-        const role = (user as unknown as Record<string, unknown>).role;
+        const role = user.role;
         if (role) {
           token.role = role;
-          token.xp = (user as unknown as Record<string, unknown>).xp || 0;
-          token.level = (user as unknown as Record<string, unknown>).level || 1;
-          token.streak = (user as unknown as Record<string, unknown>).streak || 0;
+          token.xp = user.xp || 0;
+          token.level = user.level || 1;
+          token.streak = user.streak || 0;
         } else {
           // Fallback: fetch from DB if not set
           if (user.email) {
@@ -390,11 +319,11 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as unknown as Record<string, unknown>).id = token.id;
-        (session.user as unknown as Record<string, unknown>).role = token.role;
-        (session.user as unknown as Record<string, unknown>).xp = token.xp;
-        (session.user as unknown as Record<string, unknown>).level = token.level;
-        (session.user as unknown as Record<string, unknown>).streak = token.streak;
+        session.user.id = token.id;
+        session.user.role = token.role;
+        session.user.xp = token.xp;
+        session.user.level = token.level;
+        session.user.streak = token.streak;
       }
       return session;
     },

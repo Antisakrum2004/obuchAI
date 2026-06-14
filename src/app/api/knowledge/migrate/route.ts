@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { ensureSchema } from "@/lib/db-migrate";
 
 export const dynamic = "force-dynamic";
 
@@ -10,41 +11,23 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const logs: string[] = [];
 
-    // 1. Add aliases column to glossary_terms
-    logs.push("1. Adding aliases column to glossary_terms...");
+    // Run centralized schema migrations (all ALTER TABLE + FK)
+    logs.push("0. Running centralized schema migrations...");
     try {
-      await pool.query(`ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS aliases TEXT`);
-      logs.push("   aliases column added or already exists");
+      const result = await ensureSchema();
+      logs.push(`   Schema ensured — ${result.applied} statements applied`);
     } catch (e: any) {
       logs.push(`   Warning: ${e.message}`);
     }
 
-    // 2. Add spaceId column to articles
-    logs.push("2. Adding spaceId column to articles...");
-    try {
-      await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS "spaceId" TEXT`);
-      logs.push("   spaceId column added or already exists");
-    } catch (e: any) {
-      logs.push(`   Warning: ${e.message}`);
-    }
-
-    // 3. Make categoryId nullable (for transition period)
-    logs.push("3. Making categoryId nullable...");
-    try {
-      await pool.query(`ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL`);
-      logs.push("   categoryId is now nullable");
-    } catch (e: any) {
-      logs.push(`   Warning: ${e.message}`);
-    }
-
-    // 4. Migrate data: set articles.spaceId from category -> space
-    logs.push("4. Migrating article spaceId from categories...");
+    // 1. Migrate data: set articles.spaceId from category -> space
+    logs.push("1. Migrating article spaceId from categories...");
     try {
       const migrateResult = await pool.query(`
         UPDATE articles a
@@ -57,9 +40,9 @@ export async function POST(request: NextRequest) {
       logs.push(`   Warning: ${e.message}`);
     }
 
-    // 5. For any articles that still don't have spaceId but have categoryId,
+    // 2. For any articles that still don't have spaceId but have categoryId,
     //    try to find the spaceId from the category table
-    logs.push("5. Checking for orphan articles...");
+    logs.push("2. Checking for orphan articles...");
     try {
       const orphanCheck = await pool.query(`
         SELECT COUNT(*) as count FROM articles WHERE "spaceId" IS NULL OR "spaceId" = ''
@@ -81,18 +64,8 @@ export async function POST(request: NextRequest) {
       logs.push(`   Warning: ${e.message}`);
     }
 
-    // 6. Add foreign key for articles.spaceId
-    logs.push("6. Adding foreign key for articles.spaceId...");
-    try {
-      await pool.query(`ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_spaceId_fkey`);
-      await pool.query(`ALTER TABLE articles ADD CONSTRAINT articles_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE`);
-      logs.push("   Foreign key added");
-    } catch (e: any) {
-      logs.push(`   Warning: ${e.message}`);
-    }
-
-    // 7. Add index for articles.spaceId
-    logs.push("7. Adding index for articles.spaceId...");
+    // 3. Add index for articles.spaceId
+    logs.push("3. Adding index for articles.spaceId...");
     try {
       await pool.query(`CREATE INDEX IF NOT EXISTS articles_spaceId_idx ON articles("spaceId")`);
       logs.push("   Index added or already exists");
@@ -100,80 +73,8 @@ export async function POST(request: NextRequest) {
       logs.push(`   Warning: ${e.message}`);
     }
 
-    // 8. Add Sprint 6 columns if missing
-    logs.push("8. Adding Sprint 6 columns if missing...");
-    const sprint6Columns = [
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3)`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT`,
-    ];
-    for (const sql of sprint6Columns) {
-      try {
-        await pool.query(sql);
-      } catch {
-        // Column may already exist
-      }
-    }
-    logs.push("   Sprint 6 columns checked");
-
-    // 9. Add Sprint 7 columns if missing (JSONB for interactive lessons)
-    logs.push("9. Adding Sprint 7 columns if missing...");
-    const sprint7Columns = [
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
-      `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`,
-    ];
-    for (const sql of sprint7Columns) {
-      try {
-        await pool.query(sql);
-      } catch {
-        // Column may already exist
-      }
-    }
-    logs.push("   Sprint 7 columns (quiz, practical_task, timecodes, complexityOrder) checked");
-
-    // 10. Populate complexityOrder for existing articles (based on difficulty)
-    logs.push("10. Populating complexityOrder for existing articles...");
-    try {
-      const difficultyOrder = { easy: 1, medium: 2, hard: 3 };
-      const { rows: spaces } = await pool.query(`SELECT id FROM knowledge_spaces`);
-      for (const space of spaces) {
-        const { rows: spaceArticles } = await pool.query(
-          `SELECT id, difficulty, title FROM articles WHERE "spaceId" = $1 ORDER BY difficulty ASC, title ASC`,
-          [space.id]
-        );
-        const sorted = spaceArticles.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
-          const da = difficultyOrder[(a.difficulty as string) || "medium"] || 2;
-          const db = difficultyOrder[(b.difficulty as string) || "medium"] || 2;
-          if (da !== db) return da - db;
-          return String(a.title).localeCompare(String(b.title));
-        });
-        for (let i = 0; i < sorted.length; i++) {
-          await pool.query(
-            `UPDATE articles SET "complexityOrder" = $1 WHERE id = $2 AND "complexityOrder" IS NULL`,
-            [i + 1, sorted[i].id]
-          );
-        }
-      }
-      logs.push("   complexityOrder populated for all articles");
-    } catch (e: any) {
-      logs.push(`   Warning: ${e.message}`);
-    }
-
-    // 11. Verification
-    logs.push("11. Verification:");
+    // 4. Verification
+    logs.push("4. Verification:");
     try {
       const articleWithSpace = await pool.query(`
         SELECT COUNT(*) as count FROM articles WHERE "spaceId" IS NOT NULL AND "spaceId" != ''

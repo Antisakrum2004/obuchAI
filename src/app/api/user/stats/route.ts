@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { calculateLevel } from "@/lib/gamification";
+import { ensureReferralCode } from "@/lib/referral";
 
 // Parse a User-Agent string into a short human-readable device description
 function parseUserAgent(ua: string): string {
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
 
     // Capture tracking info from this request
     const ip = extractIp(request);
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     );
 
     const userResult = await query(
-      `SELECT id, name, email, image, role, xp, level, streak, "maxStreak", "lastActiveAt", "referralCode", "referralCount", "referredBy"
+      `SELECT id, name, email, image, role, xp, level, streak, "maxStreak", "lastActiveAt", "referralCode", "referralCount", "referredBy", "consecutiveCorrect", "consecutiveWrong"
        FROM users WHERE id = $1`,
       [userId],
     );
@@ -74,38 +74,11 @@ export async function GET(request: NextRequest) {
 
     const user = userResult.rows[0];
 
-    // Auto-correct level if it's stale (can happen if XP was added without updating level)
-    const correctLevel = calculateLevel(user.xp ?? 0);
-    if (user.level !== correctLevel) {
-      await query(`UPDATE users SET level = $1 WHERE id = $2`, [correctLevel, userId]);
-      user.level = correctLevel;
-    }
-
-    // Auto-generate referral code if missing
+    // Auto-generate referral code if missing (using shared function)
     if (!user.referralCode) {
-      const emailPrefix = (user.email || "user").split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 8);
-      const randomSuffix = Math.random().toString(36).substring(2, 6);
-      const referralCode = `${emailPrefix}-${randomSuffix}`;
-
-      try {
-        await query(
-          `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
-          [referralCode, userId]
-        );
-        user.referralCode = referralCode;
-      } catch {
-        // If there's a unique collision, try once more with a different suffix
-        const altSuffix = Math.random().toString(36).substring(2, 6);
-        const altCode = `${emailPrefix}-${altSuffix}`;
-        try {
-          await query(
-            `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
-            [altCode, userId]
-          );
-          user.referralCode = altCode;
-        } catch {
-          // Silently fail — referral code generation can be retried later
-        }
+      const code = await ensureReferralCode(userId, user.email || "user");
+      if (code) {
+        user.referralCode = code;
       }
     }
 
@@ -123,6 +96,16 @@ export async function GET(request: NextRequest) {
     );
     const completedChallenges = Number(completedResult.rows[0].count);
 
+    // Determine adaptive difficulty boost
+    const consecutiveCorrect = Number(user.consecutiveCorrect || 0);
+    const consecutiveWrong = Number(user.consecutiveWrong || 0);
+    let difficultyBoost: string | null = null;
+    if (consecutiveCorrect >= 5) {
+      difficultyBoost = "harder";
+    } else if (consecutiveWrong >= 3) {
+      difficultyBoost = "easier";
+    }
+
     return NextResponse.json({
       ...user,
       rank,
@@ -130,6 +113,7 @@ export async function GET(request: NextRequest) {
       referralCode: user.referralCode,
       referralCount: user.referralCount || 0,
       referredBy: user.referredBy || null,
+      difficultyBoost,
     });
   } catch (error) {
     console.error("Stats error:", error);

@@ -1,6 +1,6 @@
 # PROJECT_BRAIN
 
-> Срез проекта на 2026-06-13 (обновлено до v0.23.0 — Карта курса, YouTube→AI статья пайплайн, удалён ручной выбор раздела, «Из видео» вкладка в CreateArticleDialog). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
+> Срез проекта на 2026-06-14 (обновлено до v0.23.0 — Карта курса, YouTube→AI статья пайплайн, удалён ручной выбор раздела, «Из видео» вкладка в CreateArticleDialog, VideoEmbed inline, auto-migration Sprint 7, violet квиз кнопки). Для нового разработчика или AI — понять проект за 3-5 минут без чтения всего кода.
 >
 > **Расположение**: `/docs/PROJECT_BRAIN.md` в корне проекта (Git-репозиторий). Этот файл — единый источник правды о проекте, ведётся с самой первой сессии разработки.
 
@@ -73,7 +73,7 @@
 │  ┌───────────┐  ┌──────────────┐  ┌──────────────┐ │
 │  │ Next.js   │  │ API Routes   │  │ Auth         │ │
 │  │ Pages     │──│ /api/*       │──│ NextAuth v4  │ │
-│  │ (SSR/CSR) │  │ (27+ routes) │  │ JWT + OAuth  │ │
+│  │ (SSR/CSR) │  │ (55+ routes) │  │ JWT + OAuth  │ │
 │  └───────────┘  └──────┬───────┘  └──────────────┘ │
 │                        │                             │
 │          ┌─────────────┼───────────────┐             │
@@ -110,7 +110,7 @@ src/
 │   ├── admin/                    # Админ-панель
 │   │   ├── page.tsx              # Dashboard админа
 │   │   └── login/page.tsx        # Логин для админа
-│   └── api/                      # 27+ API маршрутов
+│   └── api/                      # 55+ API маршрутов
 │       ├── auth/[...nextauth]/   # NextAuth endpoints
 │       ├── challenges/           # GET list, GET [id], POST submit
 │       ├── marathon/             # GET start, POST complete
@@ -131,7 +131,7 @@ src/
 │       │   ├── bulk-upload/      # POST — массовая загрузка файлов
 │       │   └── ...               # Остальные knowledge-роуты
 │       └── admin/                # CRUD challenges, skills, achievements, users, seed, settings, migrate
-├── components/                   # 92+ компонента
+├── components/                   # 97+ компонентов
 │   ├── challenges/               # Challenge card, result, multiple-choice, ordering
 │   ├── dashboard/                # Stats grid, weekly chart, daily widget, mini leaderboard
 │   ├── gamification/             # XP bar (с grade name), streak, hearts, achievements, avatar frame, level badge
@@ -139,7 +139,7 @@ src/
 │   ├── effects/                  # Particles background
 │   ├── profile/                  # Share card, referral card
 │   ├── skills/                   # Skill tree
-│   ├── knowledge/                # QuizBlock, VideoEmbed, UrlImportForm, ZipUpload, ProcessingQueue, GlossaryCommand
+│   ├── knowledge/                # QuizBlock, VideoEmbed, UrlImportForm, ZipUpload, ProcessingQueue, GlossaryCommand, CreateArticleDialog
 │   ├── theme-provider.tsx        # next-themes wrapper
 │   ├── theme-toggle.tsx          # Dark/light switch
 │   ├── vercel-toolbar-hider.tsx  # Хак для скрытия Vercel Toolbar
@@ -182,7 +182,7 @@ src/
 | @dnd-kit/core | ^6.3.1 | Drag-and-drop (ordering challenges) |
 | canvas-confetti | ^1.9.4 | Конфетти при правильном ответе |
 | html-to-image | ^1.11.13 | Генерация share-карточки (PNG) |
-| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (интегрирован в Sprint 6: metadata/glossary/graph processing) |
+| z-ai-web-dev-sdk | ^0.0.17 | AI SDK (интегрирован в Sprint 6: metadata/glossary/graph processing + v0.23.0 YouTube subtitle extraction) |
 | next-themes | ^0.4.6 | Dark/light переключатель |
 | sonner | ^2.0.6 | Toast уведомления |
 | ws | ^8.20.1 | WebSocket (для Neon pool в dev) |
@@ -212,6 +212,7 @@ src/
 5. **Feature flags**: `/api/settings` (revalidate 30s) → `useAppSettings` React context → все компоненты читают флаги
 6. **Реферал**: Cookie `ref` → при регистрации → XP бонус обоим → `xp_logs` запись
 7. **Квиз**: QuizBlock (клиент) → single-question режим с таймером 30с → POST `/api/knowledge/quiz/submit` → валидация → `xpForQuiz()` расчёт XP → UPDATE users (xp, level) → INSERT xp_logs → Zustand update
+8. **YouTube→AI статья (v0.23.0)**: Вставка YouTube ссылки → CreateArticleDialog (вкладка «Из видео») → POST `/api/knowledge/ai/video-article/` → Z-AI SDK извлекает субтитры через `/api/knowledge/video/transcript/` → AI генерирует статью/глоссарий/квиз/практику → статья сохраняется и публикуется
 
 ---
 
@@ -264,6 +265,7 @@ src/
 - **Без сердечек**: Квизы НЕ используют hearts — неправильные ответы просто не приносят XP
 - **API**: POST `/api/knowledge/quiz/submit` — валидация (статья существует + есть квиз), расчёт XP, UPDATE users (xp, level, lastActiveAt), INSERT xp_logs (reason='quiz'), возврат { success, xpEarned, totalXp, newLevel, grade }
 - **Навигация**: Кнопка «Следующий вопрос» / «Проверить ответы» (на последнем), точечная навигация для прыжка между вопросами
+- **Violet кнопки (v0.17.3)**: Кнопки «Следующий вопрос» и «Проверить ответы» используют мягкий пастельный фиолетовый `bg-violet-400/50 hover:bg-violet-400/70` вместо ядовитого `bg-purple-600`
 
 ### 3.4 User Store (`src/store/user-store.ts` — 50 строк)
 - **Zustand 5**: id, name, email, image, role, xp, level, streak, maxStreak, completedChallenges, rank, isLoading
@@ -337,7 +339,7 @@ src/
 - **Admin CRUD**: Вкладка «Знания» в /admin — полный CRUD для пространств, категорий, статей, глоссария
 - **Markdown Editor**: Создание/редактирование статей с превью в admin
 - **Publish/Draft**: Переключатель isPublished для пространств и статей
-- **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья + медиа)
+- **UI**: /knowledge (пространства), /knowledge/[slug] (категории+статьи), /knowledge/article/[id] (статья + медиа), /knowledge/course-map (карта курса — v0.23.0)
 
 ### 3.14 AI-Глоссарий (`src/components/knowledge/glossary-command.tsx`, `glossary-trigger.tsx`)
 - **Cmd+K / Ctrl+K / Ctrl+Л**: Глобальный поиск по терминам из любого места приложения (русская раскладка поддерживается)
@@ -378,21 +380,25 @@ src/
 - **Хранилище видео**: **ИСКЛЮЧИТЕЛЬНО внешние облачные ссылки** (YouTube, Rutube, Яндекс Диск, VK) — S3 Selectel для видео НЕ используется с Sprint 7
 - **Article расширения**: 18+ колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage, quiz, practical_task, timecodes)
 - **ProcessingQueue**: Новая таблица для асинхронной обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft)
-- **API маршруты** (5+ новых):
+- **API маршруты** (7+ новых):
   - `/api/knowledge/import` — ZIP-импорт (JSZip extraction, auto-create articles)
   - `/api/knowledge/process` — Создание задач обработки
   - `/api/knowledge/process/[id]` — Управление задачей (GET/PUT/DELETE)
   - `/api/knowledge/queue` — Список очереди обработки
   - `/api/knowledge/ai` — AI-обработчик (metadata, glossary, graph, course через z-ai-web-dev-sdk)
+  - `/api/knowledge/ai/video-article/` — YouTube→AI статья пайплайн (v0.23.0)
+  - `/api/knowledge/video/transcript/` — Извлечение субтитров из YouTube через Z-AI SDK (v0.23.0)
   - `/api/knowledge/quiz/submit` — Отправка результатов квиза (v0.17.0)
   - `/api/knowledge/spaces/[id]/path` — Learning path API (v0.17.0 улучшен)
-- **UI компоненты** (5+ новых):
+- **UI компоненты** (6+ новых):
   - `VideoEmbed` — Универсальный видео-плеер (YouTube, Rutube, VK, Яндекс Диск, прямая ссылка)
   - `UrlImportForm` — Форма ввода URL для видео/PDF/PPTX
   - `ZipUpload` — Загрузка ZIP-архива с drag-and-drop
   - `ProcessingQueue` — Отображение очереди обработки с прогрессом
   - Materials Library (`/knowledge/materials`) — Страница библиотеки материалов с фильтрами
   - `QuizBlock` — Интерактивный квиз с таймером, single-question режимом, XP расчётом (v0.17.0)
+  - `CreateArticleDialog` — Диалог создания статьи: вкладка «Вручную» + вкладка «Из видео» (v0.23.0)
+- **VideoEmbed inline (v0.22.0)**: YouTube видео встроено прямо на страницу урока без модала. Используется `youtube.com/embed/` (не youtube-nocookie.com). Для Edge/Safari — подсказка о возможных проблемах с встраиванием.
 - **VideoEmbed**: Универсальный видео-плеер с авто-детектом источника по URL (без S3):
   - **YouTube**: `YouTubePlayer` — 3 стратегии fallback: (1) youtube-nocookie.com (privacy), (2) youtube.com (direct), (3) ссылка-кнопка (8s timeout)
   - **Rutube**: iframe embed `rutube.ru/play/embed/{id}`
@@ -420,6 +426,23 @@ src/
 - **Сортировка по сложности** (v0.17.0): Внутри одного ранга статьи сортируются по difficulty (easy → medium → hard) через `difficultyOrder` mapping `{ easy: 0, medium: 1, hard: 2 }`
 - **Результат**: `{ spaceId, path, levels, totalArticles, maxRank }` — каждый article содержит hasQuiz, hasPractice, hasTimecodes, hasVideo, keyConcepts
 - **Fallback**: Если Sprint 7 колонки не существуют → fallback-запрос без quiz/practical_task/timecodes
+
+### 3.20 YouTube→AI Article Pipeline (v0.23.0) — `/api/knowledge/ai/video-article/`
+- **Поток**: Вставка YouTube ссылки → Z-AI SDK извлекает субтитры → AI генерирует статью/глоссарий/квиз/практику
+- **Транскрипт**: POST `/api/knowledge/video/transcript/` — Z-AI SDK web_search для получения субтитров YouTube видео
+- **Генерация статьи**: POST `/api/knowledge/ai/video-article/` — AI генерирует: контент статьи, метаданные (difficulty, keyConcepts, estimatedTime), глоссарий (5-10 терминов), квиз (5-10 вопросов), практическое задание
+- **CreateArticleDialog «Из видео» вкладка**: Отдельная вкладка для создания статьи из YouTube видео. Ввод URL → предпросмотр → подтверждение → AI-обработка в фоне. Ручной выбор раздела (Select) удалён — AI определяет раздел и сложность автоматически.
+- **sourceType**: Видео-статьи получают `sourceType = 'youtube'` / `'rutube'` / `'vk'` / `'yandex_disk'`
+
+### 3.21 Карта курса (v0.23.0) — `/knowledge/course-map`
+- **Горизонтальная карта**: Прогресс-бар с точками-уроками, замки для заблокированных уроков
+- **Гранулярные статусы**: processing (жёлтый Loader2), error (красный AlertCircle), published (зелёный), видео-бейдж
+- **Кнопка «Начать курс»**: На дашборде ведёт на /knowledge/course-map вместо БЗ
+- **Навигация**: Клик на урок → переход к изучению (если опубликован). Processing/error — некликабельные
+
+### 3.22 Video Articles Fix (v0.18.0)
+- **Проблема**: Видео-статьи создавались как `pending` + `isPublished=false`, хотя контент уже AI-сгенерирован. Фоновая обработка `content_extract` пыталась извлечь PDF для видео, вызывая ошибку.
+- **Исправления**: (1) Видео-статьи создаются как `published` сразу. (2) `processContentExtraction` пропускает PDF для youtube/rutube/vk. (3) `ensure-queue-items` проверяет `sourceType` перед добавлением `content_extract`. (4) Фоновые функции обновляют статусы очереди (processing→done/error). (5) Новое действие `fix-video-articles` для исправления уже зависших статей. (6) Карта курса показывает гранулярные статусы.
 
 ---
 
@@ -470,10 +493,13 @@ src/
 - **Quiz Submit API (v0.17.0)** — POST `/api/knowledge/quiz/submit` — серверная валидация, XP начисление, xp_logs
 - **Learning Path (v0.17.0)** — Сортировка по сложности внутри ранга (easy → medium → hard)
 - **AI Course Pipeline (v0.17.0)** — Обязательные 5+ quiz вопросов и practical_task для каждого урока
-- **Карта курса (v0.23.0)** — /knowledge/course-map — горизонтальная карта с прогрессом, точками, замками. Кнопка «Начать курс» ведёт сюда вместо БЗ.
-- **YouTube→AI статья (v0.23.0)** — Вставка YouTube ссылки → Z-AI SDK извлекает содержание → AI генерирует статью, глоссарий, квиз, практику. Вкладка «Из видео» в CreateArticleDialog.
-- **AI авто-раздел (v0.23.0)** — Удалён ручной Select выбора раздела из CreateArticleDialog. AI определяет раздел и сложность автоматически.
+- **Auto-migration Sprint 7 (v0.17.2)** — Автоматический `ALTER TABLE ADD COLUMN IF NOT EXISTS` для quiz/practical_task/timecodes колонок. Quiz Submit fallback при ошибке 42703.
+- **Violet квиз кнопки (v0.17.3)** — Мягкий пастельный `bg-violet-400/50` вместо ядовитого `bg-purple-600`. «🔄 Пройти заново» кнопка на экране завершения урока.
+- **Video Articles Fix (v0.18.0)** — Видео-статьи публикуются сразу, PDF extraction пропускается для youtube/rutube/vk, очередь статусов отслеживается, карта курса показывает гранулярные статусы, кнопка «Исправить видео»
 - **VideoEmbed inline (v0.22.0)** — youtube.com/embed/ (НЕ nocookie), видео прямо на странице урока без модала, подсказка для Edge/Safari
+- **Карта курса (v0.23.0)** — /knowledge/course-map — горизонтальная карта с прогрессом, точками, замками. Кнопка «Начать курс» ведёт сюда вместо БЗ.
+- **YouTube→AI статья (v0.23.0)** — Вставка YouTube ссылки → Z-AI SDK извлекает субтитры → AI генерирует статью, глоссарий, квиз, практику. Вкладка «Из видео» в CreateArticleDialog.
+- **AI авто-раздел (v0.23.0)** — Удалён ручной Select выбора раздела из CreateArticleDialog. AI определяет раздел и сложность автоматически.
 
 ### Работает частично
 - **Activity chart**: Верхняя граница может перекрывать числа при высоких значениях
@@ -527,7 +553,7 @@ src/
 20. **Quiz < 5 вопросов** — AI может сгенерировать < 5 вопросов, warning в логах, но нет автоматической перегенерации
 
 ### Минорные (P2)
-21. **Версия не совпадает** — ~~package.json `0.3.0`, sidebar `v2.5.0`~~ **ИСПРАВЛЕНО**: package.json `0.17.0`, sidebar показывает NEXT_PUBLIC_APP_VERSION
+21. **Версия не совпадает** — ~~package.json `0.3.0`, sidebar `v2.5.0`~~ **ИСПРАВЛЕНО**: package.json `0.23.0`, sidebar показывает NEXT_PUBLIC_APP_VERSION
 22. **Stale .env.example** — Содержит GITHUB_ID/EMAIL_SERVER, которые не используются
 23. **Мёртвые зависимости** — next-intl, @mdxeditor/editor, sharp, playwright не используются в src/
 24. **Vercel Toolbar hack** — Скрипт+куки для убийства тулбара вместо нормального отключения
@@ -588,3 +614,8 @@ src/
 
 > **Корневая причина**: Кнопки «Следующий вопрос» и «Проверить ответы» использовали `bg-purple-600 hover:bg-purple-500` — насыщенный яркий фиолетовый (#9333ea), который выглядел слишком кричащим в тёмной теме.
 > **Исправление**: Заменено на `bg-violet-400/50 hover:bg-violet-400/70` — мягкий пастельный фиолетовый с полупрозрачностью, органично вписывается в midnight-тему. Также смягчены: иконка HelpCircle (`text-purple-400` → `text-violet-300`), точка активного вопроса (`bg-purple-400` → `bg-violet-300/70`).
+
+### Видео-статьи зависали в pending — ✅ ИСПРАВЛЕНО v0.18.0
+
+> **Корневая причина**: (1) Видео-статьи создавались как `pending` + `isPublished=false`, хотя контент уже AI-сгенерирован. Фоновая цепочка `fire-and-forget` не гарантировала завершение на Vercel serverless. (2) При нажатии «Обработать все» система создавала задачу `content_extract` для видео-статей (проверяла только pdfUrl/media, не sourceType), что вызывало ошибку «PDF не загружен в хранилище». (3) Очередь не отслеживала статусы фоновой обработки — задачи оставались `pending` навсегда.
+> **Исправления**: (1) Видео-статьи теперь создаются как `published` сразу. (2) `processContentExtraction` пропускает PDF для youtube/rutube/vk. (3) `ensure-queue-items` проверяет `sourceType` перед добавлением `content_extract`. (4) Фоновые функции обновляют статусы очереди (processing→done/error). (5) Новое действие `fix-video-articles` для исправления уже зависших статей. (6) Карта курса показывает гранулярные статусы вместо «AI обрабатывает».

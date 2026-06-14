@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { validateChallengeBody } from "@/lib/validate";
 
 function genId(): string {
   return "c" + Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
@@ -10,11 +11,17 @@ function genId(): string {
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const body = await request.json();
+
+    const validation = validateChallengeBody(body);
+    if (!validation.valid) {
+      return NextResponse.json({ error: "Ошибка валидации", details: validation.errors }, { status: 400 });
+    }
+
     const {
       title, description, difficulty, type, category,
       xpReward, content, options, correctAnswer, explanation,

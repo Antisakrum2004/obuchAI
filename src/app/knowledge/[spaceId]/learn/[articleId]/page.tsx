@@ -42,10 +42,8 @@ import {
   Sparkles,
   List,
   Timer,
-  RotateCcw,
-  Play,
 } from "lucide-react";
-import { xpForQuiz, QUIZ_TIME_PER_QUESTION, xpProgressInLevel } from "@/lib/gamification";
+import { xpForQuiz, QUIZ_TIME_PER_QUESTION } from "@/lib/gamification";
 import { useUserStore } from "@/store/user-store";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -155,26 +153,6 @@ export default function LearnLessonPage({
   const [showSolution, setShowSolution] = useState(false);
   const [practiceAttempted, setPracticeAttempted] = useState(false);
 
-  // Lesson completion state
-  const [lessonXpResult, setLessonXpResult] = useState<{
-    xpEarned: number;
-    totalXp: number;
-    newLevel: number;
-    grade: string;
-    xpToNextLevel: number;
-    progressInLevel: { current: number; required: number; percentage: number };
-    nextLesson: { id: string; title: string } | null;
-  } | null>(null);
-  const [lessonSubmitting, setLessonSubmitting] = useState(false);
-
-  // Scroll to top when switching blocks — runs after render so content is in DOM
-  useEffect(() => {
-    const mainEl = document.querySelector('main.flex-1.overflow-y-auto');
-    if (mainEl) {
-      mainEl.scrollTop = 0;
-    }
-  }, [activeBlock]);
-
   // Parse params
   useEffect(() => {
     params.then((p) => {
@@ -224,7 +202,7 @@ export default function LearnLessonPage({
   const getAvailableBlocks = useCallback((): LessonBlock[] => {
     if (!article) return ["summary"];
     const blocks: LessonBlock[] = ["summary"];
-    if (article.videoUrl) blocks.push("materials");
+    if (article.videoUrl || article.timecodes?.length) blocks.push("materials");
     if (article.content && article.content.length > 100) blocks.push("article");
     if (article.quiz && article.quiz.length > 0) blocks.push("quiz");
     if (article.practical_task) blocks.push("practice");
@@ -255,52 +233,21 @@ export default function LearnLessonPage({
 
   // Mark block as completed and auto-advance to next block
   const completeBlock = useCallback((block: LessonBlock) => {
-    // Check if this will complete all blocks
-    const willCompleteAll = completedBlocks.size + 1 >= availableBlocks.length;
-
     setCompletedBlocks((prev) => {
       const next = new Set(prev);
       next.add(block);
+      // Check if all blocks are now completed
+      if (next.size >= availableBlocks.length) {
+        setLessonCompleted(true);
+      }
       return next;
     });
-
-    if (willCompleteAll) {
-      setLessonCompleted(true);
-      // Submit lesson completion for XP — outside state updater
-      (async () => {
-        try {
-          setLessonSubmitting(true);
-          const res = await fetch("/api/knowledge/lessons/complete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              articleId,
-              blocksCompleted: completedBlocks.size + 1,
-              totalBlocks: availableBlocks.length,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setLessonXpResult(data);
-            // Update user store
-            const store = useUserStore.getState();
-            store.addXp(data.xpEarned);
-            store.setLevel(data.newLevel);
-          }
-        } catch (err) {
-          console.error("Failed to submit lesson completion:", err);
-        } finally {
-          setLessonSubmitting(false);
-        }
-      })();
-    }
-
     // Auto-advance to the next available block
     const currentIdx = availableBlocks.indexOf(block);
     if (currentIdx >= 0 && currentIdx < availableBlocks.length - 1) {
       setActiveBlock(availableBlocks[currentIdx + 1]);
     }
-  }, [completedBlocks.size, availableBlocks, articleId]);
+  }, [availableBlocks]);
 
   const goToNextBlock = useCallback(() => {
     const currentIdx = availableBlocks.indexOf(activeBlock);
@@ -509,10 +456,7 @@ export default function LearnLessonPage({
             return (
               <button
                 key={block.id}
-                onClick={() => {
-                  setActiveBlock(block.id);
-                  if (lessonCompleted) setLessonCompleted(false);
-                }}
+                onClick={() => { setActiveBlock(block.id); setLessonCompleted(false); }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap transition-all ${
                   isActive
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -536,114 +480,47 @@ export default function LearnLessonPage({
               key="lesson-complete"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
+              transition={{ duration: 0.3 }}
             >
-              <Card className="glass border-emerald-500/20 text-center overflow-hidden">
-                {/* Gradient top accent */}
-                <div className="h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" />
-                <CardContent className="py-4 px-5 space-y-3">
-                  {/* Emoji + Title */}
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200, delay: 0.1 }}
-                  >
-                    <div className="text-3xl mb-1">🎉</div>
-                  </motion.div>
-                  <h3 className="text-xl font-bold text-foreground">Урок завершён!</h3>
-                  <p className="text-xs text-muted-foreground">
+              <Card className="glass border-white/5 text-center">
+                <CardContent className="py-10 space-y-4">
+                  <div className="text-5xl mb-4">🎉</div>
+                  <h3 className="text-xl font-semibold text-foreground">Урок завершён!</h3>
+                  <p className="text-sm text-muted-foreground">
                     Вы прошли все разделы урока «{article.title}»
                   </p>
-
-                  {/* XP Earned Display */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="inline-block"
-                  >
-                    <div className="px-4 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                      {lessonSubmitting ? (
-                        <span className="text-amber-400 text-sm font-bold animate-pulse">Начисляем XP...</span>
-                      ) : lessonXpResult ? (
-                        <span className="text-amber-400 text-xl font-black">+{lessonXpResult.xpEarned} XP</span>
-                      ) : (
-                        <span className="text-amber-400 text-sm font-bold">+XP</span>
-                      )}
-                    </div>
-                  </motion.div>
-
-                  {/* Level progress motivation — compact inline */}
-                  {lessonXpResult && !lessonSubmitting && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.5 }}
-                      className="space-y-1.5"
-                    >
-                      <div className="flex items-center justify-center gap-2 text-xs">
-                        <span className="text-muted-foreground">Уровень {lessonXpResult.newLevel}</span>
-                        <span className="text-cyan-400 font-medium">{lessonXpResult.grade}</span>
-                        <span className="text-muted-foreground">· {lessonXpResult.xpToNextLevel} XP до ур. {lessonXpResult.newLevel + 1}</span>
-                      </div>
-                      <div className="max-w-xs mx-auto">
-                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${lessonXpResult.progressInLevel.percentage}%` }}
-                            transition={{ delay: 0.7, duration: 0.8, ease: "easeOut" }}
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <Separator className="bg-white/5" />
-
-                  {/* Action buttons — compact row */}
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    {(() => {
-                      const next = lessonXpResult?.nextLesson || nextLesson;
-                      return next ? (
-                        <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${next.id}`}>
-                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 gap-1.5">
-                            Дальше
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Link href="/knowledge/materials">
-                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 gap-1.5">
-                            К материалам
-                            <ChevronRight className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
-                      );
-                    })()}
-                    <Link href="/dashboard">
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4">
+                    {nextLesson ? (
+                      <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
+                        <Button className="bg-emerald-600 hover:bg-emerald-500 gap-2">
+                          Следующий урок: {nextLesson.title}
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link href="/knowledge/materials">
+                        <Button className="bg-emerald-600 hover:bg-emerald-500 gap-2">
+                          Вернуться к материалам
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    )}
+                    <Link href={`/knowledge/article/${article.id}`}>
                       <Button variant="outline" size="sm">
-                        На главную
+                        Перечитать статью
                       </Button>
                     </Link>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       onClick={() => {
-                        setLessonCompleted(false);
-                        setLessonXpResult(null);
                         setCompletedBlocks(new Set());
-                        setActiveBlock("summary");
-                        setQuizAnswers(new Map());
-                        setQuizChecked(false);
-                        setShowHint(false);
-                        setShowSolution(false);
-                        setPracticeAttempted(false);
+                        setLessonCompleted(false);
+                        setActiveBlock(availableBlocks[0] || "summary");
                       }}
-                      className="text-muted-foreground"
+                      className="text-violet-300 border-violet-500/30 hover:bg-violet-500/10"
                     >
-                      <RotateCcw className="h-3 w-3 mr-1" />
-                      Заново
+                      🔄 Пройти заново
                     </Button>
                   </div>
                 </CardContent>
@@ -669,6 +546,7 @@ export default function LearnLessonPage({
             {activeBlock === "materials" && (
               <MaterialsBlock
                 article={article}
+                timecodes={timecodes}
                 nextBlockLabel={getNextBlockLabel("materials", availableBlocks)}
                 onComplete={() => completeBlock("materials")}
               />
@@ -707,6 +585,51 @@ export default function LearnLessonPage({
           </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Navigation Footer — hidden when lesson is completed */}
+        {!lessonCompleted && (
+        <div className="flex items-center justify-between pt-4">
+          {prevLesson ? (
+            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${prevLesson.id}`}>
+              <Button variant="outline" size="sm" className="gap-1">
+                <ArrowLeft className="h-4 w-4" />
+                {prevLesson.title}
+              </Button>
+            </Link>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2">
+            {activeBlock !== availableBlocks[availableBlocks.length - 1] ? (
+              <Button
+                onClick={goToNextBlock}
+                size="sm"
+                className="gap-1 bg-emerald-600 hover:bg-emerald-500"
+              >
+                Далее
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <span className="text-sm text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="h-4 w-4" />
+                Урок пройден!
+              </span>
+            )}
+          </div>
+
+          {nextLesson ? (
+            <Link href={`/knowledge/${encodeURIComponent(spaceId)}/learn/${nextLesson.id}`}>
+              <Button variant="outline" size="sm" className="gap-1">
+                {nextLesson.title}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          ) : (
+            <div />
+          )}
+        </div>
+        )}
       </div>
     </AppLayout>
   );
@@ -766,85 +689,56 @@ function SummaryBlock({
           </div>
         )}
 
-        {/* What you'll learn — structure overview */}
-        <div className="space-y-3">
-          <h4 className="text-sm font-medium flex items-center gap-1.5">
-            <List className="h-4 w-4 text-blue-400" />
-            Что вас ждёт в уроке
-          </h4>
-          <div className="grid grid-cols-1 gap-2">
-            {/* Summary block */}
-            <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 shrink-0">
-                <BookOpen className="h-4 w-4 text-emerald-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium">Обзор</span>
-                <p className="text-xs text-muted-foreground">Краткое содержание и ключевые концепции</p>
-              </div>
+        {/* Lesson Structure (timecodes preview) */}
+        {timecodes.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium flex items-center gap-1.5">
+              <List className="h-4 w-4 text-blue-400" />
+              Структура урока
+            </h4>
+            <div className="space-y-1">
+              {timecodes.map((tc, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 text-sm py-1"
+                >
+                  <span className="text-xs text-muted-foreground font-mono shrink-0 mt-0.5 w-14">
+                    {tc.time}
+                  </span>
+                  <div>
+                    <span className="font-medium">{tc.title}</span>
+                    {tc.summary && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {tc.summary}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
+          </div>
+        )}
 
-            {/* Video block */}
+        {/* What you'll learn */}
+        <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {article.videoUrl && (
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 shrink-0">
-                  <Video className="h-4 w-4 text-blue-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Видеоматериалы</span>
-                  <p className="text-xs text-muted-foreground">Видеоурок с таймкодами для навигации</p>
-                </div>
-              </div>
+              <Badge variant="outline" className="border-blue-500/20 text-blue-400 text-xs">
+                <Video className="h-3 w-3 mr-1" /> Видео
+              </Badge>
             )}
-
-            {/* Article block */}
-            {article.content && article.content.length > 100 && (
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 shrink-0">
-                  <FileText className="h-4 w-4 text-violet-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Конспект</span>
-                  <p className="text-xs text-muted-foreground">Подробный текстовый разбор материала</p>
-                </div>
-              </div>
-            )}
-
-            {/* Quiz block */}
             {article.quiz && (
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-400/10 shrink-0">
-                  <HelpCircle className="h-4 w-4 text-violet-300" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Проверка знаний</span>
-                  <p className="text-xs text-muted-foreground">Квиз для закрепления материала</p>
-                </div>
-              </div>
+              <Badge variant="outline" className="border-purple-500/20 text-purple-400 text-xs">
+                <HelpCircle className="h-3 w-3 mr-1" /> Квиз
+              </Badge>
             )}
-
-            {/* Practice block */}
             {article.practical_task && (
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/10 shrink-0">
-                  <Code className="h-4 w-4 text-orange-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium">Практическое задание</span>
-                  <p className="text-xs text-muted-foreground">Примените знания на практике</p>
-                </div>
-              </div>
+              <Badge variant="outline" className="border-orange-500/20 text-orange-400 text-xs">
+                <Code className="h-3 w-3 mr-1" /> Практика
+              </Badge>
             )}
           </div>
         </div>
-
-        {/* Estimated time */}
-        {article.estimatedTime && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" />
-            Примерное время прохождения: {article.estimatedTime}
-          </div>
-        )}
 
         <Button
           onClick={onComplete}
@@ -865,75 +759,86 @@ function SummaryBlock({
 
 function MaterialsBlock({
   article,
+  timecodes,
   nextBlockLabel,
   onComplete,
 }: {
   article: ArticleData;
+  timecodes: TimecodeEntry[];
   nextBlockLabel: string;
   onComplete: () => void;
 }) {
-  // Detect video source for label
-  const videoLabel = useMemo(() => {
-    if (!article.videoUrl) return "";
-    try {
-      const h = new URL(article.videoUrl).hostname.toLowerCase();
-      if (h.includes("youtube.com") || h.includes("youtu.be")) return "YouTube";
-      if (h.includes("rutube.ru")) return "Rutube";
-      if (h.includes("vk.com") || h.includes("vkvideo")) return "VK Видео";
-      if (h.includes("disk.yandex") || h.includes("yandex")) return "Яндекс Диск";
-      return "Видео";
-    } catch {
-      return "Видео";
-    }
-  }, [article.videoUrl]);
-
   return (
-    <>
-      <Card className="glass border-white/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Video className="h-5 w-5 text-blue-400" />
-            Видеоматериалы
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Video — show directly on page (no modal) */}
-          {article.videoUrl && (
-            <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
-          )}
+    <Card className="glass border-white/5">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Video className="h-5 w-5 text-blue-400" />
+          Видеоматериалы
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Video Player */}
+        {article.videoUrl && (
+          <div className="rounded-lg overflow-hidden border border-white/5">
+            <VideoEmbed url={article.videoUrl} />
+          </div>
+        )}
 
-          {!article.videoUrl && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              Видеоматериалы не добавлены
-            </p>
-          )}
-
-          {/* Source Link */}
-          {article.sourceUrl && (
-            <div className="pt-2">
-              <a
-                href={article.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-emerald-400 hover:underline flex items-center gap-1"
-              >
-                Открыть исходный материал
-                <ChevronRight className="h-3 w-3" />
-              </a>
+        {/* Timecodes Navigation */}
+        {timecodes.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium flex items-center gap-1.5">
+              <List className="h-4 w-4 text-blue-400" />
+              Таймкоды
+            </h4>
+            <div className="glass rounded-lg p-3 space-y-1 max-h-[300px] overflow-y-auto">
+              {timecodes.map((tc, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 text-sm py-1.5 px-2 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <span className="text-xs font-mono text-emerald-400 shrink-0 mt-0.5 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                    {tc.time}
+                  </span>
+                  <div>
+                    <span className="font-medium">{tc.title}</span>
+                    {tc.summary && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {tc.summary}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          <Button
-            onClick={onComplete}
-            size="sm"
-            className="w-full bg-emerald-600 hover:bg-emerald-500"
-          >
-            {nextBlockLabel}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </CardContent>
-      </Card>
-    </>
+        {/* Source Link */}
+        {article.sourceUrl && (
+          <div className="pt-2">
+            <a
+              href={article.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-emerald-400 hover:underline flex items-center gap-1"
+            >
+              Открыть исходный материал
+              <ChevronRight className="h-3 w-3" />
+            </a>
+          </div>
+        )}
+
+        <Button
+          onClick={onComplete}
+          size="sm"
+          className="w-full bg-emerald-600 hover:bg-emerald-500"
+        >
+          {nextBlockLabel}
+          <ChevronRight className="h-4 w-4 ml-1" />
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -959,9 +864,7 @@ function ArticleBlock({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="prose prose-invert prose-sm max-w-none prose-headings:text-foreground prose-p:text-muted-foreground prose-strong:text-foreground prose-code:text-emerald-400 prose-a:text-emerald-400">
-          <MarkdownContent content={article.content} />
-        </div>
+        <MarkdownContent content={article.content} />
 
         <Separator className="bg-white/5" />
 
@@ -1218,7 +1121,7 @@ function QuizBlock({
               <Button
                 onClick={handleNextQuestion}
                 size="sm"
-                className="flex-1 bg-violet-400/50 hover:bg-violet-400/70 text-white"
+                className="flex-1 bg-violet-400/50 hover:bg-violet-400/70"
               >
                 Следующий вопрос
                 <ChevronRight className="h-4 w-4 ml-1" />
@@ -1227,7 +1130,7 @@ function QuizBlock({
               <Button
                 onClick={handleCheckAnswers}
                 size="sm"
-                className="flex-1 bg-violet-400/50 hover:bg-violet-400/70 text-white"
+                className="flex-1 bg-violet-400/50 hover:bg-violet-400/70"
               >
                 Проверить ответы
               </Button>
@@ -1474,132 +1377,17 @@ function PracticeBlock({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Markdown Renderer (lightweight, no external deps)
+// Markdown Renderer (using react-markdown for security & features)
 // ═══════════════════════════════════════════════════════════════════
 
+import ReactMarkdown from "react-markdown";
+
 function MarkdownContent({ content }: { content: string }) {
-  const lines = content.split("\n");
-  const elements: React.ReactNode[] = [];
-  let inCodeBlock = false;
-  let codeContent = "";
-  let codeLang = "";
-  let inList = false;
-  let listItems: string[] = [];
-
-  const flushList = () => {
-    if (listItems.length > 0) {
-      elements.push(
-        <ul key={`list-${elements.length}`} className="list-disc pl-5 space-y-1">
-          {listItems.map((item, i) => (
-            <li key={i} className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: inlineFormat(item) }} />
-          ))}
-        </ul>
-      );
-      listItems = [];
-      inList = false;
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Code blocks
-    if (line.startsWith("```")) {
-      if (inCodeBlock) {
-        elements.push(
-          <pre
-            key={`code-${elements.length}`}
-            className="bg-black/40 rounded-lg p-3 overflow-x-auto text-xs font-mono text-emerald-300 border border-white/5"
-          >
-            <code>{codeContent.trimEnd()}</code>
-          </pre>
-        );
-        codeContent = "";
-        inCodeBlock = false;
-      } else {
-        flushList();
-        inCodeBlock = true;
-        codeLang = line.slice(3).trim();
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeContent += line + "\n";
-      continue;
-    }
-
-    // Headings
-    if (line.startsWith("# ")) {
-      flushList();
-      elements.push(
-        <h1 key={`h1-${elements.length}`} className="text-2xl font-bold mt-6 mb-3 first:mt-0">
-          {line.slice(2)}
-        </h1>
-      );
-      continue;
-    }
-    if (line.startsWith("## ")) {
-      flushList();
-      elements.push(
-        <h2 key={`h2-${elements.length}`} className="text-xl font-bold mt-5 mb-2">
-          {line.slice(3)}
-        </h2>
-      );
-      continue;
-    }
-    if (line.startsWith("### ")) {
-      flushList();
-      elements.push(
-        <h3 key={`h3-${elements.length}`} className="text-lg font-semibold mt-4 mb-2">
-          {line.slice(4)}
-        </h3>
-      );
-      continue;
-    }
-
-    // Unordered list items
-    if (line.match(/^[\s]*[-*]\s/)) {
-      inList = true;
-      listItems.push(line.replace(/^[\s]*[-*]\s/, ""));
-      continue;
-    }
-
-    // Ordered list items
-    if (line.match(/^[\s]*\d+\.\s/)) {
-      inList = true;
-      listItems.push(line.replace(/^[\s]*\d+\.\s/, ""));
-      continue;
-    }
-
-    // Empty line
-    if (line.trim() === "") {
-      flushList();
-      continue;
-    }
-
-    // Regular paragraph
-    flushList();
-    elements.push(
-      <p
-        key={`p-${elements.length}`}
-        className="my-2 leading-relaxed text-muted-foreground"
-        dangerouslySetInnerHTML={{ __html: inlineFormat(line) }}
-      />
-    );
-  }
-
-  flushList();
-
-  return <>{elements}</>;
-}
-
-function inlineFormat(text: string): string {
-  return text
-    .replace(/`([^`]+)`/g, '<code class="bg-white/5 px-1 py-0.5 rounded text-xs font-mono text-emerald-400">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-emerald-400 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>');
+  return (
+    <div className="prose-custom">
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  );
 }
 
 

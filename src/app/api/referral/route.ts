@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query, pool } from "@/lib/db";
-
-function genId(): string {
-  return "c" + Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
-}
+import { processReferralReward, ensureReferralCode } from "@/lib/referral";
 
 // GET: Return current user's referral info
 export async function GET() {
@@ -15,10 +12,10 @@ export async function GET() {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
 
     const result = await query(
-      `SELECT "referralCode", "referralCount", "referredBy" FROM users WHERE id = $1`,
+      `SELECT "referralCode", "referralCount", "referredBy", email FROM users WHERE id = $1`,
       [userId]
     );
 
@@ -28,35 +25,11 @@ export async function GET() {
 
     const user = result.rows[0];
 
-    // Auto-generate referral code if missing
+    // Auto-generate referral code if missing (using shared function)
     if (!user.referralCode) {
-      const emailResult = await query(
-        `SELECT email FROM users WHERE id = $1`,
-        [userId]
-      );
-      const email = emailResult.rows[0]?.email || "user";
-      const emailPrefix = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 8);
-      const randomSuffix = Math.random().toString(36).substring(2, 6);
-      const referralCode = `${emailPrefix}-${randomSuffix}`;
-
-      try {
-        await query(
-          `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
-          [referralCode, userId]
-        );
-        user.referralCode = referralCode;
-      } catch {
-        const altSuffix = Math.random().toString(36).substring(2, 6);
-        const altCode = `${emailPrefix}-${altSuffix}`;
-        try {
-          await query(
-            `UPDATE users SET "referralCode" = $1 WHERE id = $2 AND "referralCode" IS NULL`,
-            [altCode, userId]
-          );
-          user.referralCode = altCode;
-        } catch {
-          // Silently fail
-        }
+      const code = await ensureReferralCode(userId, user.email || "user");
+      if (code) {
+        user.referralCode = code;
       }
     }
 
@@ -80,7 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
     const body = await request.json();
     const { code } = body;
 
@@ -130,28 +103,8 @@ export async function POST(request: NextRequest) {
         [referrerId, userId]
       );
 
-      // Increment referrer's referral count and award XP to both
-      await client.query(
-        `UPDATE users SET "referralCount" = COALESCE("referralCount", 0) + 1, xp = xp + 50 WHERE id = $1`,
-        [referrerId]
-      );
-
-      await client.query(
-        `UPDATE users SET xp = xp + 50 WHERE id = $1`,
-        [userId]
-      );
-
-      // Log XP for referrer
-      await client.query(
-        `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус', $3)`,
-        [genId(), referrerId, userId]
-      );
-
-      // Log XP for referee
-      await client.query(
-        `INSERT INTO xp_logs (id, "userId", amount, reason, "referenceId") VALUES ($1, $2, 50, 'Реферальный бонус (приглашённый)', $3)`,
-        [genId(), userId, referrerId]
-      );
+      // Award referral XP to both users and log it
+      await processReferralReward(userId, referrerId, client);
 
       await client.query("COMMIT");
 

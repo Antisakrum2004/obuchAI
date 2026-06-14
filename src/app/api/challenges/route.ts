@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
     const session = await getServerSession(authOptions);
     if (session?.user) {
-      const userId = (session.user as Record<string, unknown>).id as string;
+      const userId = session.user.id;
       if (userId) {
         // Get all correct attempts for this user
         const solvedResult = await query(

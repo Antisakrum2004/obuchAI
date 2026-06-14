@@ -517,7 +517,7 @@ export default function MaterialsPage() {
   const { role: storeRole } = useUserStore();
   const sessionResult = useSession();
   const session = sessionResult?.data ?? null;
-  const sessionRole = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined;
+  const sessionRole = session?.user?.role;
   const [apiAdmin, setApiAdmin] = useState(false);
   const isAdmin = storeRole === "admin" || sessionRole === "admin" || apiAdmin;
 
@@ -529,7 +529,7 @@ export default function MaterialsPage() {
         try { return r.json(); } catch { return null; }
       })
       .then((data) => {
-        if (data && typeof data === "object" && (data as Record<string, unknown>).role === "admin") {
+        if (data && typeof data === "object" && "role" in data && (data as { role?: string }).role === "admin") {
           setApiAdmin(true);
         }
       })

@@ -3,21 +3,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { calculateLevel } from "@/lib/gamification";
+import { validateUserUpdateBody } from "@/lib/validate";
 
-/** Ensure the `banned` and `hearts` columns exist on the users table */
-async function ensureColumns() {
-  const alterStatements = [
-    `ALTER TABLE users ADD COLUMN IF NOT EXISTS "banned" BOOLEAN NOT NULL DEFAULT false;`,
-    `ALTER TABLE users ADD COLUMN IF NOT EXISTS "hearts" INTEGER NOT NULL DEFAULT 3;`,
-  ];
-  for (const sql of alterStatements) {
-    try {
-      await pool.query(sql);
-    } catch {
-      // Column already exists — ignore
-    }
-  }
-}
+// NOTE: The `banned` and `hearts` columns on the users table must already exist.
+// If they are missing, run the /api/admin/migrate endpoint once to create them.
+console.warn(
+  "[admin/users/[id]] Ensure the 'banned' and 'hearts' columns exist on the users table. " +
+    "If missing, run /api/admin/migrate to create them."
+);
 
 export async function PUT(
   request: Request,
@@ -25,15 +18,17 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
     const { id } = await params;
     const body = await request.json();
 
-    // Ensure banned & hearts columns exist
-    await ensureColumns();
+    const validation = validateUserUpdateBody(body);
+    if (!validation.valid) {
+      return NextResponse.json({ error: "Ошибка валидации", details: validation.errors }, { status: 400 });
+    }
 
     // Build SET clauses dynamically based on provided fields
     const setClauses: string[] = [];
@@ -130,7 +125,7 @@ export async function DELETE(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 

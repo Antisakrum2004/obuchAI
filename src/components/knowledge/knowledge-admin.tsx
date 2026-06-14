@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus,
   Trash2,
@@ -24,47 +25,9 @@ import {
   Loader2,
   Video,
   Paperclip,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
-
-// ── Video Source Detection ──────────────────────────────────────
-
-function detectSourceType(url: string): string | null {
-  if (!url) return null;
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
-    if (hostname.includes("rutube.ru")) return "rutube";
-    if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
-    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
-    if (hostname.endsWith(".mp4") || url.endsWith(".mp4")) return "direct";
-    return "other";
-  } catch {
-    return null;
-  }
-}
-
-const sourceTypeLabels: Record<string, { label: string; color: string }> = {
-  youtube: { label: "YouTube", color: "border-red-500/30 text-red-400 bg-red-500/10" },
-  rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
-  vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
-  yandex_disk: { label: "Яндекс", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
-  direct: { label: "MP4", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
-  other: { label: "Ссылка", color: "border-white/10 text-muted-foreground" },
-};
-
-function VideoSourceBadge({ url }: { url: string }) {
-  const type = detectSourceType(url);
-  if (!type) return null;
-  const config = sourceTypeLabels[type] || sourceTypeLabels.other;
-  return (
-    <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0 shrink-0", config.color)}>
-      {config.label}
-    </Badge>
-  );
-}
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -253,14 +216,14 @@ export function KnowledgeAdmin() {
 
   // ── Articles CRUD ────────────────────────────────────────────
 
-  const emptyArtForm = { title: "", slug: "", content: "", summary: "", spaceId: null as string | null, isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
+  const emptyArtForm = { title: "", slug: "", content: "", summary: "", spaceId: "__none__", isPublished: true, tags: "", keyTopics: "", videoUrl: "", pdfUrl: "", pptxUrl: "", sourceUrl: "" };
   const [artForm, setArtForm] = useState(emptyArtForm);
   const [editingArtId, setEditingArtId] = useState<string | null>(null);
   const [editArtForm, setEditArtForm] = useState<Record<string, unknown>>({});
   const [showPreview, setShowPreview] = useState(false);
 
   const createArticle = async () => {
-    if (!artForm.title || !artForm.slug) { showToast("title и slug обязательны", "err"); return; }
+    if (!artForm.title || !artForm.slug || !artForm.spaceId || artForm.spaceId === "__none__") { showToast("title, slug и spaceId обязательны", "err"); return; }
     setSaving(true);
     try {
       const tags = artForm.tags ? artForm.tags.split(",").map((t) => t.trim()).filter(Boolean) : null;
@@ -273,7 +236,7 @@ export function KnowledgeAdmin() {
           slug: artForm.slug,
           content: artForm.content,
           summary: artForm.summary || null,
-          spaceId: null, // AI auto-categorizes
+          spaceId: artForm.spaceId,
           isPublished: artForm.isPublished,
           tags,
           keyTopics,
@@ -281,56 +244,12 @@ export function KnowledgeAdmin() {
           pdfUrl: artForm.pdfUrl || null,
           pptxUrl: artForm.pptxUrl || null,
           sourceUrl: artForm.sourceUrl || null,
-          sourceType: artForm.videoUrl ? detectSourceType(artForm.videoUrl) : (artForm.sourceUrl ? detectSourceType(artForm.sourceUrl) : null),
         }),
       });
       if (res.ok) {
-        const article = await res.json();
-        showToast("Статья создана. AI определяет раздел и сложность...");
+        showToast("Статья создана");
         setArtForm(emptyArtForm);
         fetchArticles();
-
-        // Fire-and-forget AI processing chain
-        const articleId = article.id;
-        const processChain = async () => {
-          try {
-            // Step 0: Ensure queue items
-            try {
-              await fetch("/api/knowledge/queue", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "ensure-queue-items", articleId }),
-              });
-            } catch {}
-            // Step 1: Metadata + Categorization
-            await fetch("/api/knowledge/ai", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ articleId, type: "metadata" }),
-            });
-            // Step 2: Glossary
-            await fetch("/api/knowledge/ai", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ articleId, type: "glossary" }),
-            });
-            // Step 3: Graph
-            await fetch("/api/knowledge/ai", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ articleId, type: "graph" }),
-            });
-            // Step 4: Course
-            await fetch("/api/knowledge/ai", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ articleId, type: "course" }),
-            });
-          } catch (err) {
-            console.error("[KnowledgeAdmin] AI processing chain failed:", err);
-          }
-        };
-        processChain();
       } else {
         const err = await res.json();
         showToast(err.error || "Ошибка", "err");
@@ -599,13 +518,17 @@ export function KnowledgeAdmin() {
               </div>
               <Input placeholder="Краткое описание" value={artForm.summary} onChange={(e) => setArtForm({ ...artForm, summary: e.target.value })} className="bg-white/5 border-white/10" />
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-medium">Раздел</label>
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                    <Sparkles className="h-3 w-3" />
-                    AI автоматически определит подходящий раздел
-                  </div>
-                </div>
+                <Select value={artForm.spaceId} onValueChange={(v) => setArtForm({ ...artForm, spaceId: v })}>
+                  <SelectTrigger className="bg-white/5 border-white/10"><SelectValue placeholder="Раздел" /></SelectTrigger>
+                  <SelectContent className="bg-[#111118] border-white/10">
+                    <SelectItem value="__none__" disabled className="text-muted-foreground">Выберите раздел</SelectItem>
+                    {spaces.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.icon || "📚"} {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input placeholder="Теги (через запятую)" value={artForm.tags} onChange={(e) => setArtForm({ ...artForm, tags: e.target.value })} className="bg-white/5 border-white/10" />
               </div>
 
@@ -639,15 +562,7 @@ export function KnowledgeAdmin() {
 
               {/* URL Fields */}
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Input placeholder="Ссылка на видео (YouTube, Rutube, VK, MP4)" value={artForm.videoUrl} onChange={(e) => setArtForm({ ...artForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10" />
-                    {artForm.videoUrl && <VideoSourceBadge url={artForm.videoUrl} />}
-                  </div>
-                  {artForm.videoUrl && detectSourceType(artForm.videoUrl) && (
-                    <p className="text-[10px] text-muted-foreground">Видео появится в разделе «Материалы» при прохождении курса</p>
-                  )}
-                </div>
+                <Input placeholder="Ссылка на видео (YouTube, Rutube...)" value={artForm.videoUrl} onChange={(e) => setArtForm({ ...artForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10" />
                 <Input placeholder="Ссылка на PDF" value={artForm.pdfUrl} onChange={(e) => setArtForm({ ...artForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10" />
                 <Input placeholder="Ссылка на презентацию (PPTX)" value={artForm.pptxUrl} onChange={(e) => setArtForm({ ...artForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10" />
                 <Input placeholder="Ссылка на источник" value={artForm.sourceUrl} onChange={(e) => setArtForm({ ...artForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10" />
@@ -685,10 +600,7 @@ export function KnowledgeAdmin() {
                     />
                     <Input value={typeof editArtForm.tags === "string" ? editArtForm.tags : (Array.isArray(editArtForm.tags) ? editArtForm.tags.join(", ") : "")} onChange={(e) => setEditArtForm({ ...editArtForm, tags: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Теги (через запятую)" />
                     <div className="grid gap-2 md:grid-cols-2">
-                      <div className="flex items-center gap-2">
-                        <Input value={(editArtForm.videoUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на видео" />
-                        {(editArtForm.videoUrl as string) && <VideoSourceBadge url={editArtForm.videoUrl as string} />}
-                      </div>
+                      <Input value={(editArtForm.videoUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, videoUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на видео" />
                       <Input value={(editArtForm.pdfUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pdfUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на PDF" />
                       <Input value={(editArtForm.pptxUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, pptxUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на презентацию" />
                       <Input value={(editArtForm.sourceUrl as string) || ""} onChange={(e) => setEditArtForm({ ...editArtForm, sourceUrl: e.target.value })} className="bg-white/5 border-white/10 h-9 text-sm" placeholder="Ссылка на источник" />

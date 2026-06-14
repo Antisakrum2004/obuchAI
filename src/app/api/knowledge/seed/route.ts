@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { genId } from "@/lib/gen-id";
+import { ensureSchema } from "@/lib/db-migrate";
+
+// Knowledge Hub seed endpoint — seeds spaces, articles, glossary terms
+// For FULL database seed (users, skills, challenges), use: npx prisma db seed
+// This route is separate because knowledge hub data uses raw SQL (not Prisma Client)
 
 // Ensure knowledge hub tables exist before seeding
 async function ensureKnowledgeTables() {
@@ -83,91 +88,8 @@ async function ensureKnowledgeTables() {
     }
   }
 
-  // Add spaceId column to articles if it doesn't exist (migration for old DBs)
-  try {
-    await pool.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS "spaceId" TEXT`);
-  } catch {
-    // Column may already exist
-  }
-
-  // Add aliases column to glossary_terms if it doesn't exist
-  try {
-    await pool.query(`ALTER TABLE glossary_terms ADD COLUMN IF NOT EXISTS aliases TEXT`);
-  } catch {
-    // Column may already exist
-  }
-
-  // Add fileKey column to media if it doesn't exist
-  try {
-    await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS "fileKey" TEXT`);
-  } catch {
-    // Column may already exist
-  }
-
-  // Add Sprint 6 columns to articles if they don't exist
-  const sprint6Columns = [
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "videoUrl" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pdfUrl" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "pptxUrl" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "sourceType" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS difficulty TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "estimatedTime" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "aiGenerated" BOOLEAN NOT NULL DEFAULT false`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3)`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "errorMessage" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "keyConcepts" TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS prerequisites TEXT`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "nextTopics" TEXT`,
-  ];
-
-  for (const sql of sprint6Columns) {
-    try {
-      await pool.query(sql);
-    } catch {
-      // Column may already exist or default may conflict
-    }
-  }
-
-  // Add Sprint 7 columns to articles if they don't exist (JSONB for interactive lessons)
-  const sprint7Columns = [
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS quiz JSONB`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS practical_task JSONB`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS timecodes JSONB`,
-    `ALTER TABLE articles ADD COLUMN IF NOT EXISTS "complexityOrder" INTEGER`,
-  ];
-
-  for (const sql of sprint7Columns) {
-    try {
-      await pool.query(sql);
-    } catch {
-      // Column may already exist
-    }
-  }
-
-  // Make categoryId nullable (for backward compat during transition)
-  try {
-    await pool.query(`ALTER TABLE articles ALTER COLUMN "categoryId" DROP NOT NULL`);
-  } catch {
-    // Column may not exist or already nullable
-  }
-
-  // Add foreign keys (ignore errors if already exist)
-  const fkStatements = [
-    `ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_spaceId_fkey`,
-    `ALTER TABLE articles ADD CONSTRAINT articles_spaceId_fkey FOREIGN KEY ("spaceId") REFERENCES knowledge_spaces(id) ON DELETE CASCADE ON UPDATE CASCADE`,
-    `ALTER TABLE media DROP CONSTRAINT IF EXISTS media_articleId_fkey`,
-    `ALTER TABLE media ADD CONSTRAINT media_articleId_fkey FOREIGN KEY ("articleId") REFERENCES articles(id) ON DELETE CASCADE ON UPDATE CASCADE`,
-  ];
-
-  for (const fkSql of fkStatements) {
-    try {
-      await pool.query(fkSql);
-    } catch {
-      // FK may already exist, ignore
-    }
-  }
+  // Delegate all ALTER TABLE / FK migrations to centralized module
+  await ensureSchema();
 
   // Create indexes
   const indexStatements = [

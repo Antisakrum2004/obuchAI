@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import {
   xpForDifficulty,
   streakBonus,
@@ -31,7 +32,17 @@ export async function POST(
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    const userId = (session.user as Record<string, unknown>).id as string;
+    const userId = session.user.id;
+
+    // Rate limit: 10 submissions per minute per user
+    const rateResult = checkRateLimit(`submit:${userId}`, RATE_LIMITS.submit);
+    if (!rateResult.allowed) {
+      return NextResponse.json(
+        { error: "Слишком много попыток. Подождите немного.", retryAfter: Math.ceil((rateResult.resetAt - Date.now()) / 1000) },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((rateResult.resetAt - Date.now()) / 1000)) } }
+      );
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { answer, timeSpent } = body;
@@ -362,8 +373,8 @@ export async function POST(
       baseXp,
       bonusXp: 0,
       explanation: challenge.explanation,
-      newLevel: ((session.user as Record<string, unknown>).level as number) || 1,
-      newStreak: ((session.user as Record<string, unknown>).streak as number) || 0,
+      newLevel: session.user.level || 1,
+      newStreak: session.user.streak || 0,
       leveledUp: false,
     });
   } catch (error) {

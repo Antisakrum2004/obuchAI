@@ -2,26 +2,17 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { ensureSchema } from "@/lib/db-migrate";
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user || (session.user as Record<string, unknown>).role !== "admin") {
+    if (!session?.user || session.user.role !== "admin") {
       return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
-    // Ensure banned & hearts columns exist before querying
-    const alterStatements = [
-      `ALTER TABLE users ADD COLUMN IF NOT EXISTS "banned" BOOLEAN NOT NULL DEFAULT false;`,
-      `ALTER TABLE users ADD COLUMN IF NOT EXISTS "hearts" INTEGER NOT NULL DEFAULT 3;`,
-    ];
-    for (const sql of alterStatements) {
-      try {
-        await pool.query(sql);
-      } catch {
-        // Column already exists — ignore
-      }
-    }
+    // Ensure schema is up-to-date (banned, hearts, etc.)
+    await ensureSchema();
 
     // Use raw SQL to avoid Prisma schema sync issues with ALTER TABLE columns
     const usersResult = await pool.query(`

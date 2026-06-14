@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Home, Target, Trophy, Flame, Info, Award } from "lucide-react";
+import { Home, Target, Trophy, Flame, Info, Award, BookOpen } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard", label: "Главная", icon: Home },
   { href: "/challenges", label: "Задачи", icon: Target },
   { href: "/marathon", label: "Марафон", icon: Flame },
+  { href: "/knowledge", label: "База знаний", icon: BookOpen },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
   { href: "/achievements", label: "Ачивки", icon: Award },
 ];
@@ -46,7 +47,7 @@ export function MobileTabBar() {
           );
         })}
         {/* Version indicator */}
-        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION || "0.16.0"}</span>
+        <span className="absolute bottom-1 right-3 text-[8px] text-muted-foreground/30 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION || "0.24.3"}</span>
       </div>
     </nav>
   );

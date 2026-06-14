@@ -1,7 +1,6 @@
 "use client";
 
 import { create } from "zustand";
-import { calculateLevel } from "@/lib/gamification";
 
 interface UserState {
   id: string | null;
@@ -15,6 +14,7 @@ interface UserState {
   maxStreak: number;
   completedChallenges: number;
   rank: number;
+  difficultyBoost: string | null;
   isLoading: boolean;
   setUser: (user: Partial<UserState>) => void;
   addXp: (amount: number) => void;
@@ -36,17 +36,14 @@ const initialState = {
   maxStreak: 0,
   completedChallenges: 0,
   rank: 0,
+  difficultyBoost: null,
   isLoading: true,
 };
 
 export const useUserStore = create<UserState>((set) => ({
   ...initialState,
   setUser: (user) => set((state) => ({ ...state, ...user })),
-  addXp: (amount) => set((state) => {
-    const newXp = state.xp + amount;
-    const newLevel = calculateLevel(newXp);
-    return { xp: newXp, level: newLevel };
-  }),
+  addXp: (amount) => set((state) => ({ xp: state.xp + amount })),
   setLevel: (level) => set({ level }),
   setStreak: (streak) => set({ streak }),
   setLoading: (isLoading) => set({ isLoading }),

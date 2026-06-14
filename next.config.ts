@@ -4,14 +4,12 @@ const nextConfig: NextConfig = {
   // NOTE: "standalone" removed — Vercel uses its own optimized build output.
   // Using "standalone" was causing serverless function timeouts for ALL dynamic pages.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
-  reactStrictMode: false,
+  reactStrictMode: true,
   experimental: {
     viewTransition: true,
   },
-  // Exclude heavy native modules from serverless bundle
-  serverExternalPackages: ["sharp"],
   images: {
     unoptimized: false,
   },

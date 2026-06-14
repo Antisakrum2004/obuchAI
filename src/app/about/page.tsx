@@ -149,7 +149,7 @@ export default function AboutPage() {
         className="mb-8"
       >
         <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 glow-emerald">
             <Sparkles className="h-5 w-5 text-emerald-400" />
           </div>
           <div>

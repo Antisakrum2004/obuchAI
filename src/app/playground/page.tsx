@@ -1,12 +1,15 @@
 "use client";
 
 import { AppLayout } from "@/components/layout/app-layout";
-import { FlaskConical, Copy, Check, Sparkles, ArrowRight, Zap } from "lucide-react";
+import { FlaskConical, Copy, Check, Sparkles, ArrowRight, Zap, Send, Loader2, MessageSquare, Bot, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import ReactMarkdown from "react-markdown";
+import { cn } from "@/lib/utils";
 
 const promptTemplates = [
   {
@@ -38,7 +41,7 @@ const promptTemplates = [
 
 1. **Производительность** — оптимизация запросов, индексы
 2. **Безопасность** — SQL-инъекции, права доступа
-3. **Чистота кода** —命名, структура, дублирование
+3. **Чистота кода** — именование, структура, дублирование
 4. **Best practices** — стандарты 1С
 
 Код для ревью:
@@ -98,13 +101,62 @@ const goodBadComparisons = [
   },
 ];
 
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export default function PlaygroundPage() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  // AI Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const copyToClipboard = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const handleChatSend = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+
+    const userMessage: ChatMessage = { role: "user", content: chatInput.trim() };
+    const newMessages = [...chatMessages, userMessage];
+    setChatMessages(newMessages);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const res = await fetch("/api/playground/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages([...newMessages, { role: "assistant", content: data.content }]);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setChatMessages([...newMessages, { role: "assistant", content: `❌ Ошибка: ${data.error || "Не удалось получить ответ"}` }]);
+      }
+    } catch {
+      setChatMessages([...newMessages, { role: "assistant", content: "❌ Сетевая ошибка. Проверьте подключение." }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleTemplateTry = (template: string) => {
+    setChatInput(template);
   };
 
   return (
@@ -121,12 +173,15 @@ export default function PlaygroundPage() {
             <h1 className="text-2xl font-bold">Песочница</h1>
           </div>
           <p className="text-muted-foreground">
-            Экспериментируй с промптами, изучай лучшие практики и шаблоны
+            Экспериментируй с промптами, изучай лучшие практики и тестируй AI-ответы
           </p>
         </motion.div>
 
-        <Tabs defaultValue="templates" className="space-y-6">
+        <Tabs defaultValue="chat" className="space-y-6">
           <TabsList className="bg-white/5 border border-white/5">
+            <TabsTrigger value="chat" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+              💬 Попробовать
+            </TabsTrigger>
             <TabsTrigger value="templates" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
               📝 Шаблоны
             </TabsTrigger>
@@ -137,6 +192,103 @@ export default function PlaygroundPage() {
               🔄 Workflow
             </TabsTrigger>
           </TabsList>
+
+          {/* AI Chat Tab */}
+          <TabsContent value="chat" className="space-y-4">
+            <div className="glass rounded-xl overflow-hidden flex flex-col" style={{ minHeight: "500px" }}>
+              {/* Chat messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ maxHeight: "60vh" }}>
+                {chatMessages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <MessageSquare className="h-12 w-12 text-emerald-400/30 mb-4" />
+                    <h3 className="text-lg font-medium text-muted-foreground mb-2">Попробуй написать промпт</h3>
+                    <p className="text-sm text-muted-foreground/60 max-w-md">
+                      Введи свой промпт для AI-ассистента или выбери шаблон из вкладки &quot;Шаблоны&quot; и нажми &quot;Попробовать&quot;
+                    </p>
+                    <div className="flex gap-2 mt-4 flex-wrap justify-center">
+                      {promptTemplates.filter(t => t.good).map((t) => (
+                        <Button
+                          key={t.id}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs border-white/10 text-muted-foreground hover:text-foreground"
+                          onClick={() => handleTemplateTry(t.template)}
+                        >
+                          {t.title}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
+                    {msg.role === "assistant" && (
+                      <div className="shrink-0 h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                        <Bot className="h-4 w-4 text-emerald-400" />
+                      </div>
+                    )}
+                    <div className={cn(
+                      "max-w-[80%] rounded-xl px-4 py-3 text-sm",
+                      msg.role === "user"
+                        ? "bg-emerald-500/15 text-foreground"
+                        : "bg-white/5 text-foreground"
+                    )}>
+                      {msg.role === "assistant" ? (
+                        <div className="prose prose-invert prose-sm max-w-none [&>p]:mb-2 [&>pre]:bg-black/30 [&>pre]:rounded-lg [&>pre]:p-3">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      )}
+                    </div>
+                    {msg.role === "user" && (
+                      <div className="shrink-0 h-8 w-8 rounded-full bg-white/5 flex items-center justify-center">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div className="flex gap-3 justify-start">
+                    <div className="shrink-0 h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                      <Bot className="h-4 w-4 text-emerald-400" />
+                    </div>
+                    <div className="bg-white/5 rounded-xl px-4 py-3">
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              {/* Input */}
+              <div className="border-t border-white/5 p-3">
+                <div className="flex gap-2">
+                  <Textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleChatSend();
+                      }
+                    }}
+                    placeholder="Напиши промпт для AI-ассистента..."
+                    className="min-h-[44px] max-h-[120px] resize-none bg-white/5 border-white/10"
+                    rows={1}
+                    disabled={chatLoading}
+                  />
+                  <Button
+                    onClick={handleChatSend}
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white shrink-0"
+                    size="icon"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
 
           {/* Templates Tab */}
           <TabsContent value="templates" className="space-y-4">
@@ -159,24 +311,35 @@ export default function PlaygroundPage() {
                           : "bg-red-500/20 text-red-400 border-red-500/30"
                       }
                     >
-                      {template.good ? "✅ Хороший" : "❌ Плохой"}
+                      {template.good ? "Хороший" : "Плохой"}
                     </Badge>
                     <Badge variant="outline" className="bg-white/5 text-muted-foreground border-white/10">
                       {template.category}
                     </Badge>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-foreground shrink-0"
-                    onClick={() => copyToClipboard(template.template, template.id)}
-                  >
-                    {copiedId === template.id ? (
-                      <Check className="h-4 w-4 text-emerald-400" />
-                    ) : (
-                      <Copy className="h-4 w-4" />
-                    )}
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 shrink-0 gap-1"
+                      onClick={() => handleTemplateTry(template.template)}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span className="text-xs">Попробовать</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      onClick={() => copyToClipboard(template.template, template.id)}
+                    >
+                      {copiedId === template.id ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
                 <pre className="text-sm text-muted-foreground bg-black/30 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap font-mono">
@@ -185,7 +348,7 @@ export default function PlaygroundPage() {
 
                 {!template.good && template.fixSuggestion && (
                   <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                    <p className="text-xs text-amber-400 font-medium mb-1">💡 Как улучшить:</p>
+                    <p className="text-xs text-amber-400 font-medium mb-1">Как улучшить:</p>
                     <p className="text-sm text-muted-foreground">{template.fixSuggestion}</p>
                   </div>
                 )}

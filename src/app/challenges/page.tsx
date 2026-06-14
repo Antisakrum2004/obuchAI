@@ -145,6 +145,23 @@ export default function ChallengesPage() {
           <div className="flex items-center gap-2 mb-2">
             <Target className="h-6 w-6 text-emerald-400" />
             <h1 className="text-2xl font-bold">Задачи</h1>
+            {difficultyBoost && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs gap-1",
+                  difficultyBoost === "harder"
+                    ? "border-orange-500/40 text-orange-400 bg-orange-500/10"
+                    : "border-blue-500/40 text-blue-400 bg-blue-500/10"
+                )}
+              >
+                {difficultyBoost === "harder" ? (
+                  <><Flame className="h-3 w-3" /> Усиленный режим</>
+                ) : (
+                  <><Shield className="h-3 w-3" /> Поддержка</>
+                )}
+              </Badge>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -156,6 +173,8 @@ export default function ChallengesPage() {
           </div>
           <p className="text-muted-foreground">
             Выбирай задачи по навыкам и сложности, зарабатывай опыт
+            {difficultyBoost === "harder" && " — тебе подбираются задачи посложнее, так как ты отлично справляешься!"}
+            {difficultyBoost === "easier" && " — сейчас задачи полегче, чтобы помочь освоиться"}
           </p>
         </motion.div>
 

@@ -176,7 +176,6 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminKey: "seed-v1.5.0" }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -200,7 +199,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/migrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: "seed-v1.5.0" }),
+        body: JSON.stringify({}),
       });
       if (res.ok) {
         showToast("Миграция выполнена успешно");
