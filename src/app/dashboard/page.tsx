@@ -12,6 +12,7 @@ import { AvatarFrame } from "@/components/gamification/avatar-frame";
 import { Roadmap, type RoadmapModule } from "@/components/dashboard/roadmap";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { WeeklyXpChart } from "@/components/dashboard/weekly-xp-chart";
+import { PhilippovCourseCard } from "@/components/dashboard/philippov-course-card";
 import { useUserStore } from "@/store/user-store";
 import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
@@ -271,6 +272,9 @@ export default function DashboardPage() {
 
           {/* ═══ LEFT COLUMN — 9 COLS ═══ */}
           <div className="lg:col-span-9 flex flex-col gap-5">
+
+            {/* PHILIPPOV COURSE CARD — Recommended course */}
+            <PhilippovCourseCard />
 
             {/* LESSON HERO — Dynamic from API */}
             <motion.div

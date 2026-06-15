@@ -49,7 +49,7 @@ import {
   PlayCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { VideoEmbed } from "@/components/knowledge/video-embed";
+import { VideoPlayer } from "@/components/knowledge/video-player";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -655,7 +655,7 @@ export function ArticleClient({
             {/* Video */}
             {article.videoUrl && (
               <div className="mb-6">
-                <VideoEmbed url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
+                <VideoPlayer url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
               </div>
             )}
 

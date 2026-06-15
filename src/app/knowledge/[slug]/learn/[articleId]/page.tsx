@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
-import { VideoEmbed } from "@/components/knowledge/video-embed";
+import { VideoPlayer } from "@/components/knowledge/video-player";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -906,7 +906,7 @@ function MaterialsBlock({
         {/* Video Player */}
         {article.videoUrl && (
           <div className="rounded-lg overflow-hidden border border-white/5">
-            <VideoEmbed url={article.videoUrl} />
+            <VideoPlayer url={article.videoUrl} sourceType={article.sourceType || undefined} title={article.title} />
           </div>
         )}
 
