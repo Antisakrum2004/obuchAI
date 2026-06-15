@@ -295,6 +295,12 @@ function YandexDiskPlayer({ url, title }: { url: string; title?: string }) {
     }
   }, [url]);
 
+  const handleVideoError = useCallback(() => {
+    // If the direct URL fails (e.g. expired), re-fetch a fresh URL from our API
+    console.log("[YandexDiskPlayer] Video element error — re-fetching fresh URL...");
+    fetchDirectUrl();
+  }, [fetchDirectUrl]);
+
   useEffect(() => {
     fetchDirectUrl();
   }, [fetchDirectUrl]);
@@ -357,12 +363,6 @@ function YandexDiskPlayer({ url, title }: { url: string; title?: string }) {
   }
 
   // Playing state — native <video> with direct .mp4 URL
-  const handleVideoError = useCallback(() => {
-    // If the direct URL fails (e.g. expired), re-fetch a fresh URL from our API
-    console.log("[YandexDiskPlayer] Video element error — re-fetching fresh URL...");
-    fetchDirectUrl();
-  }, [fetchDirectUrl]);
-
   return (
     <div className="space-y-2">
       <PlayerHeader
