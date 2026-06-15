@@ -14,6 +14,7 @@ import {
   BookOpen,
   Archive,
   Map,
+  MonitorPlay,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -22,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.37.1";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.37.3";
 
 /**
  * Navigation items for all users.
@@ -47,6 +48,7 @@ const userNavItems = [
 const adminNavItems = [
   { href: "/knowledge", label: "База знаний", icon: BookOpen },
   { href: "/knowledge/materials", label: "Материалы", icon: Archive },
+  { href: "/knowledge/local-videos", label: "Видео", icon: MonitorPlay },
   { href: "/admin", label: "Управление", icon: Settings },
 ];
 
