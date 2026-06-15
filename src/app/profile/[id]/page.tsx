@@ -9,6 +9,7 @@ import { XPBar } from "@/components/gamification/xp-bar";
 import { StreakCounter } from "@/components/gamification/streak-counter";
 import { ShareCardButton } from "@/components/profile/share-card";
 import { ReferralCard } from "@/components/profile/referral-card";
+import { AvatarUploader } from "@/components/profile/avatar-uploader";
 import { PremiumAchievementCard, type AchievementRarity } from "@/components/gamification/premium-achievement-card";
 import { type AchievementIconName } from "@/components/gamification/achievement-icons";
 import { categoryLabel } from "@/lib/gamification";
@@ -261,14 +262,22 @@ export default function ProfilePage() {
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative flex flex-col sm:flex-row items-center gap-6">
-              {/* Avatar with tier frame */}
-              <AvatarFrame
-                level={profile.level}
-                image={profile.image}
-                name={profile.name}
-                size="lg"
-                role={profile.role}
-              />
+              {/* Avatar — uploader for own profile, frame for others */}
+              {isOwnProfile ? (
+                <AvatarUploader
+                  currentImage={profile.image}
+                  name={profile.name}
+                  isOwn={true}
+                />
+              ) : (
+                <AvatarFrame
+                  level={profile.level}
+                  image={profile.image}
+                  name={profile.name}
+                  size="lg"
+                  role={profile.role}
+                />
+              )}
 
               {/* Name + details */}
               <div className="flex-1 text-center sm:text-left">

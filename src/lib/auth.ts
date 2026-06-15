@@ -258,7 +258,12 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
 
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
+      // Handle session update (e.g. avatar change via update({ image: newUrl }))
+      if (trigger === "update" && session?.image) {
+        token.picture = session.image;
+      }
+
       // On initial sign-in, user object is available
       if (user) {
         token.id = user.id;
@@ -291,10 +296,10 @@ export const authOptions: NextAuthOptions = {
         }
       } else if (token.id) {
         // Subsequent requests (user is NOT set) — refresh user data from DB
-        // so the JWT stays fresh even if the user's role/xp/level/streak changed
+        // so the JWT stays fresh even if the user's role/xp/level/streak/image changed
         try {
           const result = await pool.query(
-            `SELECT role, xp, level, streak FROM users WHERE id = $1`,
+            `SELECT role, xp, level, streak, image FROM users WHERE id = $1`,
             [token.id]
           );
           if (result.rows[0]) {
@@ -302,6 +307,7 @@ export const authOptions: NextAuthOptions = {
             token.xp = result.rows[0].xp || 0;
             token.level = result.rows[0].level || 1;
             token.streak = result.rows[0].streak || 0;
+            token.picture = result.rows[0].image || token.picture;
           }
         } catch {
           // DB unavailable — keep existing token values (graceful degradation)
