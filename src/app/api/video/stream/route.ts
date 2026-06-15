@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getMediaServerUrl } from "@/lib/media-server-url";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,10 @@ export const dynamic = "force-dynamic";
  *   - The media server URL may not have CORS headers
  *   - We want to avoid exposing the internal server URL to the client
  *   - Range requests (byte serving) are forwarded for seeking support
+ *
+ * URL resolution order:
+ *   1. Dynamic URL from app_settings (key = "media_server_url") — updated via webhook
+ *   2. Fallback: process.env.MEDIA_SERVER_URL
  *
  * Supports HTTP Range requests for video seeking.
  */
@@ -25,7 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
   }
 
-  const serverUrl = process.env.MEDIA_SERVER_URL;
+  const serverUrl = await getMediaServerUrl();
   if (!serverUrl) {
     return NextResponse.json({ error: "Media server not configured" }, { status: 503 });
   }

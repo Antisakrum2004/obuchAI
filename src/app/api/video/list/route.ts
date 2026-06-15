@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getMediaServerUrl } from "@/lib/media-server-url";
 
 export const dynamic = "force-dynamic";
 
@@ -8,16 +9,20 @@ export const dynamic = "force-dynamic";
  * Reads the file listing from the local media server (Serveo tunnel)
  * and returns a JSON array of .mp4 file names.
  *
+ * URL resolution order:
+ *   1. Dynamic URL from app_settings (key = "media_server_url") — updated via webhook
+ *   2. Fallback: process.env.MEDIA_SERVER_URL
+ *
  * The media server serves a simple "Index of /" HTML page with links
  * to all files. We parse it with a regex to extract .mp4 filenames.
  *
  * Returns: { files: string[] }
  */
 export async function GET() {
-  const serverUrl = process.env.MEDIA_SERVER_URL;
+  const serverUrl = await getMediaServerUrl();
 
   if (!serverUrl) {
-    console.warn("[video/list] MEDIA_SERVER_URL is not set");
+    console.warn("[video/list] No media server URL configured (DB or env)");
     return NextResponse.json({ files: [] });
   }
 
