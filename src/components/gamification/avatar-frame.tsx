@@ -77,13 +77,17 @@ const tierRingStyle: Record<FrameTier, string> = {
   rainbow: "ring-1 ring-pink-400/30",
 };
 
-export function AvatarFrame({ level, image, name, size = "md", role, className }: AvatarFrameProps) {
+// Cache-bust key: forces <img> re-render when URL changes
+function avatarKey(image: string | null | undefined): string {
+  return image ? image + Date.now() : "fallback";
+}
+
+export function AvatarFrame({ level, image, name, size = "md", className }: AvatarFrameProps) {
   const { avatarFrames } = useAppSettings();
   const tier = getTier(level);
   const px = sizeMap[size];
   const textSize = sizeTextMap[size];
   const initial = name?.charAt(0)?.toUpperCase() || "U";
-  const isAdmin = role === "admin";
 
   const badgeSize = levelBadgeSizeMap[size];
   const badgeText = levelBadgeTextMap[size];
@@ -96,7 +100,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
           className="rounded-full border-2 border-white/10"
           style={{ width: px, height: px }}
         >
-          <AvatarImage key={image || "fallback"} src={image || undefined} alt={name || ""} />
+          <AvatarImage key={avatarKey(image)} src={image || undefined} alt={name || ""} />
           <AvatarFallback className={cn("bg-gray-500/20 text-gray-400", textSize)}>
             {initial}
           </AvatarFallback>
@@ -105,50 +109,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★ ADMIN — same rounded-full, no dragon frame overlay, just admin-specific ring
-  if (isAdmin) {
-    return (
-      <div
-        className={cn("relative inline-flex items-center justify-center", className)}
-        style={{ width: px, height: px }}
-      >
-        <Avatar
-          className="relative z-[2] rounded-full ring-2 ring-cyan-400/40"
-          style={{ width: px, height: px }}
-        >
-          <AvatarImage
-            key={image || "fallback"}
-            src={image || undefined}
-            alt={name || "Admin"}
-          />
-          <AvatarFallback className={cn("bg-gray-900 text-cyan-400 font-bold", textSize)}>
-            {initial}
-          </AvatarFallback>
-        </Avatar>
-
-        {/* Level badge */}
-        <span
-          className={cn(
-            "absolute z-[4] flex items-center justify-center rounded-full font-bold text-white border border-white/30",
-            badgeText
-          )}
-          style={{
-            width: badgeSize,
-            height: badgeSize,
-            bottom: 0,
-            right: 0,
-            fontSize: size === "sm" ? 7 : size === "md" ? 9 : 12,
-            lineHeight: 1,
-            background: "linear-gradient(135deg, #0d9488, #0891b2)",
-          }}
-        >
-          {level}
-        </span>
-      </div>
-    );
-  }
-
-  // ★★★ TIERED USER FRAMES — subtle ring, no glow ★★★
+  // ★★★ ALL USERS — same component, no ADMIN special case ★★★
   const ring = tierRingStyle[tier];
 
   return (
@@ -160,7 +121,7 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
         className={cn("relative z-[2] rounded-full", ring)}
         style={{ width: px, height: px }}
       >
-        <AvatarImage key={image || "fallback"} src={image || undefined} alt={name || ""} />
+        <AvatarImage key={avatarKey(image)} src={image || undefined} alt={name || ""} />
         <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
           {initial}
         </AvatarFallback>

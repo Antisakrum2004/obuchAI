@@ -39,7 +39,7 @@ export function AvatarUploader({
   // Displayed image: uploaded URL (with cache-bust) > currentImage
   // key prop on AvatarImage forces re-render when URL changes
   const displayImage = avatarUrl || currentImage;
-  const avatarKey = displayImage || "fallback";
+  const avatarKey = displayImage ? displayImage + Date.now() : "fallback";
   const initial = name?.charAt(0)?.toUpperCase() || "U";
 
   const handleClick = useCallback(() => {
