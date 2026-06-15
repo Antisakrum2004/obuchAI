@@ -7,7 +7,7 @@ import { GraduationCap, Clock, Zap, ArrowRight, Sparkles, MonitorPlay } from "lu
 import { Button } from "@/components/ui/button";
 
 /**
- * PhilippovCourseCard — карточка «Курс Филиппова» на Dashboard.
+ * PhilippovCourseCard — карточка «Платные курсы» на Dashboard.
  * Секция «Рекомендуемый курс» с акцентным purple-стилем.
  * Динамически подтягивает количество видеоуроков с медиа-сервера.
  */
@@ -58,7 +58,7 @@ export function PhilippovCourseCard() {
           </div>
 
           <h3 className="text-lg font-bold text-white mb-1.5">
-            Курс Филиппова
+            Платные курсы
           </h3>
 
           <p className="text-sm text-purple-200/70 leading-relaxed mb-3">

@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.38.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.39.0";
 
 /**
  * Navigation items for all users.
@@ -49,7 +49,6 @@ const userNavItems = [
 const adminNavItems = [
   { href: "/knowledge", label: "База знаний", icon: BookOpen },
   { href: "/knowledge/materials", label: "Материалы", icon: Archive },
-  { href: "/knowledge/local-videos", label: "Курс Филиппова", icon: MonitorPlay },
   { href: "/admin", label: "Управление", icon: Settings },
 ];
 
