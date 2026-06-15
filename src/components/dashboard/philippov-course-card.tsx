@@ -9,18 +9,32 @@ import { Button } from "@/components/ui/button";
 /**
  * PhilippovCourseCard — карточка «Платные курсы» на Dashboard.
  * Секция «Рекомендуемый курс» с акцентным purple-стилем.
- * Динамически подтягивает количество видеоуроков с медиа-сервера.
+ * Динамически подтягивает количество видеоуроков и название/описание из API.
  */
 export function PhilippovCourseCard() {
   const [videoCount, setVideoCount] = useState<number>(0);
+  const [sectionTitle, setSectionTitle] = useState("Платные курсы");
+  const [sectionDescription, setSectionDescription] = useState(
+    "Практический курс по интеграции AI в 1С-разработку.\nРеальные кейсы автоматизации, промпт-инжиниринг и генерация кода\n— от основ до продвинутых техник."
+  );
 
   useEffect(() => {
+    // Fetch video count
     fetch("/api/video/list")
       .then((r) => r.json())
       .then((data) => {
         if (data.files && Array.isArray(data.files)) {
           setVideoCount(data.files.length);
         }
+      })
+      .catch(() => {});
+
+    // Fetch section title & description
+    fetch("/api/video/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.title) setSectionTitle(data.title);
+        if (data.description) setSectionDescription(data.description);
       })
       .catch(() => {});
   }, []);
@@ -58,13 +72,11 @@ export function PhilippovCourseCard() {
           </div>
 
           <h3 className="text-lg font-bold text-white mb-1.5">
-            Платные курсы
+            {sectionTitle}
           </h3>
 
           <p className="text-sm text-purple-200/70 leading-relaxed mb-3">
-            Практический курс по интеграции AI в 1С-разработку.
-            Реальные кейсы автоматизации, промпт-инжиниринг и генерация кода
-            — от основ до продвинутых техник.
+            {sectionDescription}
           </p>
 
           {/* Tags */}
