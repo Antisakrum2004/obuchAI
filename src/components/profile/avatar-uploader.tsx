@@ -29,16 +29,17 @@ export function AvatarUploader({
 }: AvatarUploaderProps) {
   const { update: updateSession } = useSession();
   const setUser = useUserStore((s) => s.setUser);
-  const storeImage = useUserStore((s) => s.image);
 
   const [uploading, setUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Determine displayed image: preview > current
-  const displayImage = previewUrl || currentImage;
+  // Displayed image: uploaded URL (with cache-bust) > currentImage
+  // key prop on AvatarImage forces re-render when URL changes
+  const displayImage = avatarUrl || currentImage;
+  const avatarKey = displayImage || "fallback";
   const initial = name?.charAt(0)?.toUpperCase() || "U";
 
   const handleClick = useCallback(() => {
@@ -51,7 +52,7 @@ export function AvatarUploader({
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Reset
+      // Reset error
       setError(null);
 
       // Validate type
@@ -65,10 +66,6 @@ export function AvatarUploader({
         setError("Файл слишком большой. Максимум 2 МБ");
         return;
       }
-
-      // Show local preview immediately
-      const localUrl = URL.createObjectURL(file);
-      setPreviewUrl(localUrl);
 
       // Upload
       setUploading(true);
@@ -87,23 +84,19 @@ export function AvatarUploader({
         }
 
         const data = await res.json();
-        const newUrl = data.url;
+        const newUrl = data.url; // Already contains ?t= cache-bust
 
-        // Update NextAuth session
+        // 1. Update NextAuth session FIRST (ensures consistency)
         await updateSession({ image: newUrl });
 
-        // Update Zustand store for instant header update
+        // 2. Then update Zustand store for instant header update
         setUser({ image: newUrl });
 
-        // Update preview to server URL (revoke blob)
-        URL.revokeObjectURL(localUrl);
-        setPreviewUrl(newUrl);
+        // 3. Update local state
+        setAvatarUrl(newUrl);
       } catch (err) {
         console.error("[AvatarUploader] Upload failed:", err);
         setError(err instanceof Error ? err.message : "Ошибка загрузки");
-        // Revert preview
-        URL.revokeObjectURL(localUrl);
-        setPreviewUrl(null);
       } finally {
         setUploading(false);
         // Reset file input so the same file can be re-selected
@@ -126,6 +119,7 @@ export function AvatarUploader({
       >
         <Avatar className="w-full h-full">
           <AvatarImage
+            key={avatarKey}
             src={displayImage || undefined}
             alt={name || ""}
             className="object-cover"
@@ -161,7 +155,7 @@ export function AvatarUploader({
         />
       )}
 
-      {/* Error toast */}
+      {/* Error text */}
       {error && (
         <p className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-xs text-red-400 whitespace-nowrap">
           {error}

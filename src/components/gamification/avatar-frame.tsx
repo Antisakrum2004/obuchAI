@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppSettings } from "@/hooks/use-app-settings";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 interface AvatarFrameProps {
   level: number;
@@ -80,7 +79,6 @@ const tierRingStyle: Record<FrameTier, string> = {
 
 export function AvatarFrame({ level, image, name, size = "md", role, className }: AvatarFrameProps) {
   const { avatarFrames } = useAppSettings();
-  const isMobile = useIsMobile();
   const tier = getTier(level);
   const px = sizeMap[size];
   const textSize = sizeTextMap[size];
@@ -95,10 +93,10 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     return (
       <div className={cn("relative inline-block", className)} style={{ width: px, height: px }}>
         <Avatar
-          className="border-2 border-white/10"
+          className="rounded-full border-2 border-white/10"
           style={{ width: px, height: px }}
         >
-          <AvatarImage src={image || undefined} alt={name || ""} />
+          <AvatarImage key={image || "fallback"} src={image || undefined} alt={name || ""} />
           <AvatarFallback className={cn("bg-gray-500/20 text-gray-400", textSize)}>
             {initial}
           </AvatarFallback>
@@ -107,64 +105,38 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
     );
   }
 
-  // ★★★ ADMIN DRAGON FRAME ★★★
+  // ★ ADMIN — same rounded-full, no dragon frame overlay, just admin-specific ring
   if (isAdmin) {
-    const frameThickness = Math.round(px * 0.12);
-    const containerSize = px + frameThickness * 2;
-    const badgeOffset = Math.round(frameThickness * 0.3);
-
-    // On mobile: no filter:blur(), no infinite animations — just static glow
-    // On desktop: keep the full animated experience
     return (
       <div
         className={cn("relative inline-flex items-center justify-center", className)}
-        style={{ width: containerSize, height: containerSize }}
+        style={{ width: px, height: px }}
       >
-        {/* Subtle ring — no glow layer */}
-        <div
-          className="absolute rounded-full z-[1]"
-          style={{
-            width: containerSize,
-            height: containerSize,
-          }}
-        />
-
-        {/* Avatar image at full px size */}
         <Avatar
-          className="relative z-[2] rounded-full"
+          className="relative z-[2] rounded-full ring-2 ring-cyan-400/40"
           style={{ width: px, height: px }}
         >
           <AvatarImage
-            src={image || "/avatars/admin-avatar.png"}
+            key={image || "fallback"}
+            src={image || undefined}
             alt={name || "Admin"}
           />
           <AvatarFallback className={cn("bg-gray-900 text-cyan-400 font-bold", textSize)}>
-            👑
+            {initial}
           </AvatarFallback>
         </Avatar>
-
-        {/* Dragon frame PNG overlay — no filter animations on mobile */}
-        <img
-          src="/frames/dragon-frame.png"
-          alt=""
-          className={cn("absolute inset-0 w-full h-full object-contain z-[3] pointer-events-none", !isMobile && "admin-avatar__frame")}
-          style={undefined}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
-        />
 
         {/* Level badge */}
         <span
           className={cn(
-            "absolute z-[5] flex items-center justify-center rounded-full font-bold text-white border-2 border-cyan-400/40",
+            "absolute z-[4] flex items-center justify-center rounded-full font-bold text-white border border-white/30",
             badgeText
           )}
           style={{
-            width: badgeSize + 4,
-            height: badgeSize + 4,
-            bottom: badgeOffset,
-            right: badgeOffset,
+            width: badgeSize,
+            height: badgeSize,
+            bottom: 0,
+            right: 0,
             fontSize: size === "sm" ? 7 : size === "md" ? 9 : 12,
             lineHeight: 1,
             background: "linear-gradient(135deg, #0d9488, #0891b2)",
@@ -184,12 +156,11 @@ export function AvatarFrame({ level, image, name, size = "md", role, className }
       className={cn("relative inline-flex items-center justify-center", className)}
       style={{ width: px, height: px }}
     >
-      {/* Avatar image */}
       <Avatar
         className={cn("relative z-[2] rounded-full", ring)}
         style={{ width: px, height: px }}
       >
-        <AvatarImage src={image || undefined} alt={name || ""} />
+        <AvatarImage key={image || "fallback"} src={image || undefined} alt={name || ""} />
         <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
           {initial}
         </AvatarFallback>
