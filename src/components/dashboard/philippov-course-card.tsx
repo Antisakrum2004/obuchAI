@@ -1,15 +1,34 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { GraduationCap, Clock, Zap, ArrowRight, Sparkles } from "lucide-react";
+import { GraduationCap, Clock, Zap, ArrowRight, Sparkles, MonitorPlay } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
  * PhilippovCourseCard — карточка «Курс Филиппова» на Dashboard.
  * Секция «Рекомендуемый курс» с акцентным purple-стилем.
+ * Динамически подтягивает количество видеоуроков с медиа-сервера.
  */
 export function PhilippovCourseCard() {
+  const [videoCount, setVideoCount] = useState<number>(0);
+
+  useEffect(() => {
+    fetch("/api/video/list")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.files && Array.isArray(data.files)) {
+          setVideoCount(data.files.length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const lessonLabel = videoCount > 0
+    ? `${videoCount} ${pluralize(videoCount, "урок", "урока", "уроков")}`
+    : "Загрузка...";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -43,20 +62,20 @@ export function PhilippovCourseCard() {
           </h3>
 
           <p className="text-sm text-purple-200/70 leading-relaxed mb-3">
-            Практический курс по интеграции AI в 1С-разработку. 
-            Реальные кейсы автоматизации, промпт-инжиниринг и генерация кода 
+            Практический курс по интеграции AI в 1С-разработку.
+            Реальные кейсы автоматизации, промпт-инжиниринг и генерация кода
             — от основ до продвинутых техник.
           </p>
 
           {/* Tags */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/25">
-              <Sparkles className="h-3 w-3" />
-              AI для 1С
+              <MonitorPlay className="h-3 w-3" />
+              {lessonLabel}
             </span>
             <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-white/5 text-purple-200/70 border border-white/10">
-              <Clock className="h-3 w-3" />
-              15 мин
+              <Sparkles className="h-3 w-3" />
+              AI для 1С
             </span>
             <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
               <Zap className="h-3 w-3" />
@@ -65,7 +84,7 @@ export function PhilippovCourseCard() {
           </div>
 
           {/* CTA */}
-          <Link href="/knowledge/course-map">
+          <Link href="/knowledge/local-videos">
             <Button
               size="sm"
               className="bg-purple-500/25 text-purple-200 border border-purple-500/40 hover:bg-purple-500/40 hover:text-white transition-all duration-200"
@@ -78,4 +97,13 @@ export function PhilippovCourseCard() {
       </div>
     </motion.div>
   );
+}
+
+function pluralize(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
 }

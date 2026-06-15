@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, ArrowRight, CheckCircle, Lock, PlayCircle, Clock, Loader2, AlertCircle } from "lucide-react";
+import { BookOpen, ArrowRight, CheckCircle, Lock, PlayCircle, Clock, Loader2, AlertCircle, MonitorPlay } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { cn } from "@/lib/utils";
 import {
@@ -41,6 +41,7 @@ export default function CourseMapPage() {
   const [spaces, setSpaces] = useState<CourseSpace[]>([]);
   const [spaceArticles, setSpaceArticles] = useState<Record<string, ArticleData[]>>({});
   const [loading, setLoading] = useState(true);
+  const [localVideoCount, setLocalVideoCount] = useState<number>(0);
 
   useEffect(() => {
     fetch("/api/knowledge/spaces")
@@ -64,6 +65,18 @@ export default function CourseMapPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }, []);
+
+  // Fetch local video count for the Филиппов course
+  useEffect(() => {
+    fetch("/api/video/list")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.files && Array.isArray(data.files)) {
+          setLocalVideoCount(data.files.length);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Determine article status based on user progress + processing status
@@ -212,6 +225,12 @@ export default function CourseMapPage() {
               const progress = getSpaceProgress(space.id);
               const isSpaceLocked = spaceIdx > 0 && progress === 0 && articles.length > 0 && getArticleStatus(articles[0], 0, articles.length) === "locked";
 
+              // Detect Филиппов space — uses local media server videos
+              const isPhilippov = space.name.toLowerCase().includes("филиппов");
+
+              // Effective lesson count: for Филиппов, use localVideoCount; otherwise use DB articles
+              const effectiveCount = isPhilippov ? localVideoCount : articles.length;
+
               return (
                 <motion.div
                   key={space.id}
@@ -225,9 +244,11 @@ export default function CourseMapPage() {
                     <div className="flex items-center gap-3">
                       <div className={cn(
                         "flex h-11 w-11 items-center justify-center rounded-xl text-xl",
-                        isSpaceLocked ? "bg-white/5" : "bg-emerald-500/15"
+                        isSpaceLocked ? "bg-white/5" : isPhilippov ? "bg-purple-500/15" : "bg-emerald-500/15"
                       )}>
-                        {space.icon && isEmoji(space.icon) ? (
+                        {isPhilippov ? (
+                          <MonitorPlay className="h-5 w-5 text-purple-400" />
+                        ) : space.icon && isEmoji(space.icon) ? (
                           <span>{space.icon}</span>
                         ) : (
                           <span className="text-base font-bold text-emerald-400">{spaceIdx + 1}</span>
@@ -241,84 +262,118 @@ export default function CourseMapPage() {
                           {space.name}
                         </h2>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {articles.length} {pluralize(articles.length, "урок", "урока", "уроков")}
-                          {space.description && ` · ${space.description}`}
+                          {effectiveCount} {pluralize(effectiveCount, "урок", "урока", "уроков")}
+                          {isPhilippov && localVideoCount > 0 && " · Видео с медиа-сервера"}
+                          {!isPhilippov && space.description && ` · ${space.description}`}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       {/* Progress bar */}
-                      <div className="hidden sm:flex items-center gap-2">
-                        <div className="w-28 h-2 rounded-full bg-white/5 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-emerald-500/60 transition-all duration-500"
-                            style={{ width: `${progress}%` }}
-                          />
+                      {!isPhilippov && (
+                        <div className="hidden sm:flex items-center gap-2">
+                          <div className="w-28 h-2 rounded-full bg-white/5 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-emerald-500/60 transition-all duration-500"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">{progress}%</span>
                         </div>
-                        <span className="text-[11px] text-muted-foreground">{progress}%</span>
-                      </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Articles Grid */}
-                  {articles.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {articles.map((article, artIdx) => {
-                        const status = getArticleStatus(article, artIdx, articles.length);
-                        return (
-                          <Tooltip key={article.id} delayDuration={200}>
-                            <TooltipTrigger asChild>
-                              <Link
-                                href={status !== "locked" && status !== "processing" && status !== "error" ? `/knowledge/${space.slug}/learn/${article.id}` : "#"}
-                                className={cn(
-                                  "block rounded-xl p-4 border transition-all",
-                                  getStatusBg(status),
-                                  status !== "locked" && status !== "processing" && status !== "error" && "hover:scale-[1.02] cursor-pointer",
-                                  status === "locked" && "opacity-50 cursor-not-allowed",
-                                  (status === "processing" || status === "error") && "opacity-70 cursor-not-allowed"
-                                )}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className="mt-0.5 shrink-0">
-                                    {getStatusIcon(status)}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h3 className={cn(
-                                      "font-semibold text-sm leading-tight",
-                                      getStatusColor(status)
-                                    )}>
-                                      {article.title}
-                                    </h3>
-                                    <div className="flex items-center gap-2 mt-2">
-                                      {getDifficultyBadge(article.difficulty)}
-                                      {article.estimatedTime && (
-                                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                          <Clock className="h-3 w-3" />
-                                          {article.estimatedTime}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {status !== "locked" && status !== "processing" && status !== "error" && (
-                                    <ArrowRight className={cn("h-4 w-4 mt-1 shrink-0", getStatusColor(status))} />
-                                  )}
-                                </div>
-                              </Link>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="bg-card border-border text-foreground">
-                              <span className="font-medium">{article.title}</span>
-                              {status === "completed" && <span className="ml-1.5 text-emerald-400">✓</span>}
-                              {status === "current" && <span className="ml-1.5 text-blue-400 text-xs">← начни здесь</span>}
-                              {status === "locked" && <span className="ml-1.5 text-muted-foreground text-xs">🔒 пройдите предыдущие</span>}
-                              {status === "processing" && <span className="ml-1.5 text-yellow-400 text-xs">⏳ AI обрабатывает</span>}
-                              {status === "error" && <span className="ml-1.5 text-red-400 text-xs">⚠ ошибка обработки</span>}
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      })}
+                  {/* Филиппов — Local video course card */}
+                  {isPhilippov ? (
+                    <div className="space-y-3">
+                      {localVideoCount > 0 ? (
+                        <Link
+                          href="/knowledge/local-videos"
+                          className="group block rounded-xl p-5 border border-purple-500/20 bg-purple-500/5 hover:bg-purple-500/10 hover:border-purple-500/30 transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <MonitorPlay className="h-8 w-8 text-purple-400" />
+                              <div>
+                                <p className="text-sm font-semibold text-foreground group-hover:text-purple-300 transition-colors">
+                                  {localVideoCount} {pluralize(localVideoCount, "видеоурок", "видеоурока", "видеоуроков")} доступно
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  SDD, Memory Bank, SPEC-KIT, KIRO, Claude Code, MCP, Cursor и другие
+                                </p>
+                              </div>
+                            </div>
+                            <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-purple-400 group-hover:translate-x-1 transition-all" />
+                          </div>
+                        </Link>
+                      ) : (
+                        <p className="text-sm text-muted-foreground/50">Медиа-сервер недоступен — видео пока не загружены</p>
+                      )}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground/50">Уроки ещё не добавлены</p>
+                    <>
+                      {/* Articles Grid */}
+                      {articles.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {articles.map((article, artIdx) => {
+                            const status = getArticleStatus(article, artIdx, articles.length);
+                            return (
+                              <Tooltip key={article.id} delayDuration={200}>
+                                <TooltipTrigger asChild>
+                                  <Link
+                                    href={status !== "locked" && status !== "processing" && status !== "error" ? `/knowledge/${space.slug}/learn/${article.id}` : "#"}
+                                    className={cn(
+                                      "block rounded-xl p-4 border transition-all",
+                                      getStatusBg(status),
+                                      status !== "locked" && status !== "processing" && status !== "error" && "hover:scale-[1.02] cursor-pointer",
+                                      status === "locked" && "opacity-50 cursor-not-allowed",
+                                      (status === "processing" || status === "error") && "opacity-70 cursor-not-allowed"
+                                    )}
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div className="mt-0.5 shrink-0">
+                                        {getStatusIcon(status)}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <h3 className={cn(
+                                          "font-semibold text-sm leading-tight",
+                                          getStatusColor(status)
+                                        )}>
+                                          {article.title}
+                                        </h3>
+                                        <div className="flex items-center gap-2 mt-2">
+                                          {getDifficultyBadge(article.difficulty)}
+                                          {article.estimatedTime && (
+                                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                              <Clock className="h-3 w-3" />
+                                              {article.estimatedTime}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {status !== "locked" && status !== "processing" && status !== "error" && (
+                                        <ArrowRight className={cn("h-4 w-4 mt-1 shrink-0", getStatusColor(status))} />
+                                      )}
+                                    </div>
+                                  </Link>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="bg-card border-border text-foreground">
+                                  <span className="font-medium">{article.title}</span>
+                                  {status === "completed" && <span className="ml-1.5 text-emerald-400">✓</span>}
+                                  {status === "current" && <span className="ml-1.5 text-blue-400 text-xs">← начни здесь</span>}
+                                  {status === "locked" && <span className="ml-1.5 text-muted-foreground text-xs">🔒 пройдите предыдущие</span>}
+                                  {status === "processing" && <span className="ml-1.5 text-yellow-400 text-xs">⏳ AI обрабатывает</span>}
+                                  {status === "error" && <span className="ml-1.5 text-red-400 text-xs">⚠ ошибка обработки</span>}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground/50">Уроки ещё не добавлены</p>
+                      )}
+                    </>
                   )}
                 </motion.div>
               );

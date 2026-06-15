@@ -22,6 +22,7 @@ export async function GET() {
   }
 
   try {
+    console.log("[video/list] Fetching:", serverUrl);
     const res = await fetch(serverUrl, {
       cache: "no-store",
       signal: AbortSignal.timeout(8000),

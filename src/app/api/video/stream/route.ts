@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Media server not configured" }, { status: 503 });
   }
 
-  const videoUrl = `${serverUrl}/${encodeURIComponent(fileName)}`;
+  // Ensure no double-slash if serverUrl ends with /
+  const base = serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
+  const videoUrl = `${base}/${encodeURIComponent(fileName)}`;
 
   try {
     // Forward Range header for seeking support
