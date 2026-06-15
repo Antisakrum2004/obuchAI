@@ -6,8 +6,6 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
-  HeadBucketCommand,
-  PutBucketPolicyCommand,
 } from "@aws-sdk/client-s3";
 import sharp from "sharp";
 
@@ -22,6 +20,11 @@ const DEFAULT_AVATAR_BUCKET = "avatarsmyobuch";
 // so they are accessible via direct URL without signed URLs.
 // Falls back to S3_BUCKET_NAME if the avatar-specific var is not set.
 // If nothing is set, uses DEFAULT_AVATAR_BUCKET.
+//
+// IMPORTANT: Selectel does NOT support public-read via S3 API
+// (neither ACL nor BucketPolicy works — BucketPolicy even BREAKS PutObject).
+// Public access must be enabled manually in the Selectel Control Panel:
+// my.selectel.ru → Cloud Storage → Container → Enable "Public access"
 
 function getAvatarS3Config() {
   const endpoint = process.env.S3_ENDPOINT || "https://s3.ru-7.storage.selcloud.ru";
@@ -60,7 +63,6 @@ function getAvatarS3Config() {
 const globalForAvatarS3 = globalThis as unknown as {
   avatarS3Client: S3Client | undefined;
   avatarS3Bucket: string | undefined;
-  avatarPolicyApplied: boolean | undefined;
 };
 
 function getAvatarS3Client(): { client: S3Client; bucket: string } {
@@ -93,7 +95,7 @@ function getAvatarS3Client(): { client: S3Client; bucket: string } {
 /**
  * Construct public PATH-STYLE URL for avatar.
  * Selectel path-style: https://s3.ru-7.storage.selcloud.ru/{bucket}/{key}
- * This is the direct public URL — no signed URL needed.
+ * This is the direct public URL — requires public access enabled in Selectel panel.
  */
 function getAvatarPublicUrl(bucket: string, key: string): string {
   const endpoint = process.env.S3_ENDPOINT || "https://s3.ru-7.storage.selcloud.ru";
@@ -121,74 +123,6 @@ function extractKeyFromAvatarUrl(url: string, bucket: string): string | null {
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Ensure the avatar bucket has a public read policy.
- * This allows direct URL access to avatar images without signed URLs.
- * Only applies the policy once per process lifetime (singleton flag).
- */
-async function ensureBucketPublicPolicy(
-  client: S3Client,
-  bucket: string
-): Promise<void> {
-  if (globalForAvatarS3.avatarPolicyApplied) return;
-
-  try {
-    // 1. Check if bucket exists and is accessible
-    await client.send(new HeadBucketCommand({ Bucket: bucket }));
-    console.log("[Avatar S3] Bucket accessible:", bucket);
-  } catch (headErr: any) {
-    console.error(
-      "[Avatar S3] Bucket NOT accessible:",
-      bucket,
-      headErr?.message || headErr
-    );
-    throw new Error(
-      `Бакет "${bucket}" недоступен. Проверьте название бакета и права доступа S3. ` +
-      `Ошибка: ${headErr?.message || headErr}`
-    );
-  }
-
-  try {
-    // 2. Apply public read policy for GetObject
-    const endpoint = process.env.S3_ENDPOINT || "https://s3.ru-7.storage.selcloud.ru";
-    const endpointHost = new URL(endpoint).host;
-
-    const policy = {
-      Version: "2012-10-17",
-      Statement: [
-        {
-          Sid: "PublicReadGetObject",
-          Effect: "Allow",
-          Principal: { AWS: ["*"] },
-          Action: ["s3:GetObject"],
-          Resource: [`arn:aws:s3:::${bucket}/*`],
-        },
-      ],
-    };
-
-    await client.send(
-      new PutBucketPolicyCommand({
-        Bucket: bucket,
-        Policy: JSON.stringify(policy),
-      })
-    );
-
-    console.log("[Avatar S3] Public read policy applied to bucket:", bucket);
-    globalForAvatarS3.avatarPolicyApplied = true;
-  } catch (policyErr: any) {
-    // Policy application failed — log but don't block upload
-    // The bucket might already have the correct policy, or
-    // the credentials might not have permission to set policy
-    console.warn(
-      "[Avatar S3] Could not apply bucket policy (non-fatal):",
-      policyErr?.message || policyErr,
-      "| Bucket may already be public, or credentials lack s3:PutBucketPolicy permission."
-    );
-    // Mark as applied to avoid retrying on every upload
-    globalForAvatarS3.avatarPolicyApplied = true;
   }
 }
 
@@ -229,30 +163,27 @@ export async function POST(request: NextRequest) {
     // 5. Get S3 client (with auto-diagnostics)
     const { client, bucket } = getAvatarS3Client();
 
-    // 6. Ensure bucket has public read policy
-    await ensureBucketPublicPolicy(client, bucket);
-
-    // 7. Read file buffer
+    // 6. Read file buffer
     const arrayBuffer = await file.arrayBuffer();
     const inputBuffer = Buffer.from(arrayBuffer);
 
-    // 8. Resize with sharp — center crop to AVATAR_SIZE x AVATAR_SIZE, convert to WebP
+    // 7. Resize with sharp — center crop to AVATAR_SIZE x AVATAR_SIZE, convert to WebP
     const processedBuffer = await sharp(inputBuffer)
       .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover", position: "center" })
       .webp({ quality: 85 })
       .toBuffer();
 
-    // 9. S3 key: avatars/{userId}.webp (always webp after conversion)
+    // 8. S3 key: avatars/{userId}.webp (always webp after conversion)
     const key = `avatars/${userId}.webp`;
 
-    // 10. Get current avatar URL to delete old file later
+    // 9. Get current avatar URL to delete old file later
     const currentImageResult = await pool.query(
       `SELECT image FROM users WHERE id = $1`,
       [userId]
     );
     const currentImageUrl = currentImageResult.rows[0]?.image || null;
 
-    // 11. Upload to avatar public bucket
+    // 10. Upload to avatar public bucket
     console.log("[Avatar S3] Uploading:", { bucket, key, size: processedBuffer.length });
 
     await client.send(
@@ -264,17 +195,17 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // 12. Construct public URL (path-style)
+    // 11. Construct public URL (path-style)
     const publicUrl = getAvatarPublicUrl(bucket, key);
     console.log("[Avatar S3] Public URL:", publicUrl);
 
-    // 13. Update user image in DB
+    // 12. Update user image in DB
     await pool.query(`UPDATE users SET image = $1 WHERE id = $2`, [
       publicUrl,
       userId,
     ]);
 
-    // 14. Delete old avatar from S3 (if exists and different from new one)
+    // 13. Delete old avatar from S3 (if exists and different from new one)
     if (currentImageUrl && currentImageUrl !== publicUrl) {
       try {
         const oldKey = extractKeyFromAvatarUrl(currentImageUrl, bucket);
@@ -294,7 +225,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 15. Return new URL with cache-bust param
+    // 14. Return new URL with cache-bust param
     const cacheBustUrl = `${publicUrl}?t=${Date.now()}`;
 
     return NextResponse.json({ url: cacheBustUrl }, { status: 200 });
