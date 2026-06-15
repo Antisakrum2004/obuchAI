@@ -1,4 +1,76 @@
 import { NextRequest, NextResponse } from "next/server";
+import https from "https";
+import http from "http";
+import dns from "dns";
+
+/**
+ * Resolve HTTP redirect using native Node.js http/https module.
+ *
+ * Why not fetch (undici):
+ *   Node.js fetch (undici) cannot reliably connect to downloader.disk.yandex.ru — ETIMEDOUT.
+ *   The root cause: Node.js dns.lookup may resolve to IPv6 (2a02:6b8::2:127) which is
+ *   unreachable from this server, while the IPv4 address (77.88.21.127) works fine.
+ *   We force IPv4 via dns.lookup({ family: 4 }) and connect with the native https module.
+ */
+function resolveRedirect(url: string, timeoutMs = 15000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const isHttps = parsed.protocol === "https:";
+    const lib = isHttps ? https : http;
+
+    // Force IPv4 — IPv6 address for downloader.disk.yandex.ru is unreachable
+    dns.lookup(parsed.hostname, { family: 4 }, (dnsErr, ip) => {
+      if (dnsErr) {
+        reject(new Error(`DNS lookup failed: ${dnsErr.message}`));
+        return;
+      }
+
+      const reqOptions: https.RequestOptions = {
+        hostname: ip,
+        port: parsed.port || (isHttps ? 443 : 80),
+        path: parsed.pathname + parsed.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; bot)",
+          "Range": "bytes=0-0",
+          Host: parsed.hostname,
+        },
+      };
+
+      // Set SNI for HTTPS so the TLS handshake uses the correct hostname
+      if (isHttps) {
+        reqOptions.servername = parsed.hostname;
+      }
+
+      const req = lib.request(reqOptions, (res) => {
+        // Consume and discard the body to free the connection
+        res.resume();
+
+        const status = res.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          const location = res.headers.location;
+          if (location) {
+            resolve(location);
+          } else {
+            reject(new Error(`Redirect ${status} but no Location header`));
+          }
+        } else if (status >= 200 && status < 300) {
+          resolve(url);
+        } else {
+          reject(new Error(`Unexpected status ${status}`));
+        }
+      });
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`Timeout after ${timeoutMs}ms`));
+      });
+
+      req.on("error", reject);
+      req.end();
+    });
+  });
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -91,29 +163,23 @@ export async function GET(request: NextRequest) {
     let finalHref = downloadData.href;
 
     try {
-      const redirectCheck = await fetch(downloadData.href, {
-        method: "HEAD",
-        redirect: "manual", // Don't auto-follow — we want to get the Location header
-        signal: AbortSignal.timeout(10000),
-        headers: {
-          // Don't send Referer — Yandex may block based on it
-        },
-      });
-
-      // If it's a redirect (302), extract the final URL from Location header
-      if (redirectCheck.status === 301 || redirectCheck.status === 302 || redirectCheck.status === 303 || redirectCheck.status === 307 || redirectCheck.status === 308) {
-        const location = redirectCheck.headers.get("location");
-        if (location) {
-          finalHref = location;
-          console.log("[yandex-proxy] Followed redirect to storage URL:", location.substring(0, 80) + "...");
-        }
-      } else if (redirectCheck.ok) {
-        // No redirect needed — URL works directly
-        console.log("[yandex-proxy] Direct URL works (status 200)");
+      // downloader.disk.yandex.ru returns 302 → storage.yandex.net (which has CORS: *).
+      // We must resolve the redirect SERVER-SIDE because:
+      //   - downloader.disk.yandex.ru returns 403 in the browser (Referer/cookie check)
+      //   - storage.yandex.net works in <video> with Access-Control-Allow-Origin: *
+      //
+      // We use native Node.js https module instead of fetch (undici), because
+      // undici cannot reliably connect to downloader.disk.yandex.ru (ETIMEDOUT).
+      const storageUrl = await resolveRedirect(downloadData.href);
+      if (storageUrl !== downloadData.href) {
+        finalHref = storageUrl;
+        console.log("[yandex-proxy] Followed redirect to storage URL:", storageUrl.substring(0, 80) + "...");
+      } else {
+        console.log("[yandex-proxy] No redirect, using original URL");
       }
     } catch (redirectErr) {
       // If redirect check fails, just use the original URL — might still work
-      console.log("[yandex-proxy] Redirect check failed, using original URL:", redirectErr);
+      console.log("[yandex-proxy] Redirect follow failed, using original URL:", redirectErr);
     }
 
     return NextResponse.json({
