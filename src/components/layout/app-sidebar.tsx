@@ -22,7 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.33.1";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.35.1";
 
 /**
  * Navigation items for all users.
