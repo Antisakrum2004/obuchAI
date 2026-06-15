@@ -35,6 +35,7 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.38.0";
 const userNavItems = [
   { href: "/dashboard", label: "Главная", icon: Home },
   { href: "/knowledge/course-map", label: "Обучение", icon: Map },
+  { href: "/knowledge/local-videos", label: "Платные курсы", icon: MonitorPlay },
   { href: "/challenges", label: "Задачи", icon: Target },
   { href: "/leaderboard", label: "Рейтинг", icon: Trophy },
   { href: "/achievements", label: "Ачивки", icon: Award },
