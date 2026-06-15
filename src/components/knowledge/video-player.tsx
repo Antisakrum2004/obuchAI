@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, AlertCircle, Cloud, RefreshCw } from "lucide-react";
+import { ExternalLink, Play, AlertCircle, Cloud, RefreshCw, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,14 @@ interface VideoPlayerProps {
 
 type SourceKind = "youtube" | "rutube" | "vk" | "yandex_disk" | "direct" | "other";
 
+interface YandexVideoData {
+  href: string;
+  name: string;
+  type: string;
+  size: number;
+  preview?: string;
+}
+
 // ─── URL Detection & Parsing ───
 
 function detectSourceKind(url: string): SourceKind {
@@ -26,7 +34,7 @@ function detectSourceKind(url: string): SourceKind {
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
     if (hostname.includes("rutube.ru")) return "rutube";
     if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
-    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    if (hostname.includes("disk.yandex") || hostname.includes("yadi.sk")) return "yandex_disk";
     // Direct video file extensions
     if (/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(url)) return "direct";
     return "other";
@@ -65,41 +73,6 @@ function extractRutubeId(url: string): string | null {
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Convert a Yandex Disk public link into an embeddable iframe URL.
- *
- * Supported input formats:
- *   https://disk.yandex.ru/d/XXXXXXX
- *   https://disk.yandex.ru/i/XXXXXXX
- *   https://disk.yandex.ru/player/d/XXXXXXX
- *   https://disk.yandex.ru/iframe/#!/hash/XXXXXXX  (already embeddable)
- *
- * Strategy:
- *   1. If the URL already contains /iframe/ or /player/ — use as-is
- *   2. Otherwise convert /d/... and /i/... to /player/... (most reliable)
- */
-function buildYandexEmbedUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname;
-
-    // Already an embed URL — return as-is
-    if (path.includes("/iframe/") || path.includes("/player/")) {
-      return url;
-    }
-
-    // Public link /d/HASH or /i/HASH → convert to player
-    if (path.startsWith("/d/") || path.startsWith("/i/")) {
-      return `https://disk.yandex.ru/player${path}`;
-    }
-
-    // Fallback: try /player + original path
-    return `https://disk.yandex.ru/player${path}`;
-  } catch {
-    return url;
   }
 }
 
@@ -281,54 +254,136 @@ function YouTubePlayer({ videoId, title }: { videoId: string; title?: string }) 
   );
 }
 
-// ─── Yandex Disk Player — with iframe / fallback / retry ───
+// ─── Yandex Disk Player — API + native <video> ───
+//
+// Why NOT iframe:
+//   Yandex Disk sets X-Frame-Options: SAMEORIGIN on ALL URLs.
+//   This means iframe embedding on external sites is BLOCKED by the browser.
+//
+// How it works instead:
+//   1. Call /api/video/yandex-proxy → Yandex public API → direct .mp4 URL
+//   2. Use native <video> element with the direct URL
+//   3. CORS is allowed (Access-Control-Allow-Origin: *)
+//   4. Fallback: cloud link button if API fails
 
-type YandexStrategy = "iframe" | "link";
+type YandexLoadState = "loading" | "playing" | "error";
 
 function YandexDiskPlayer({ url, title }: { url: string; title?: string }) {
-  const [strategy, setStrategy] = useState<YandexStrategy>("iframe");
-  const [iframeFailed, setIframeFailed] = useState(false);
+  const [state, setState] = useState<YandexLoadState>("loading");
+  const [videoData, setVideoData] = useState<YandexVideoData | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
-  const embedUrl = buildYandexEmbedUrl(url);
+  const fetchDirectUrl = useCallback(async () => {
+    setState("loading");
+    setErrorMsg("");
+    try {
+      const res = await fetch(`/api/video/yandex-proxy?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data: YandexVideoData = await res.json();
+      if (!data.href) {
+        throw new Error("No download URL returned");
+      }
+      setVideoData(data);
+      setState("playing");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Не удалось получить ссылку на видео";
+      setErrorMsg(message);
+      setState("error");
+    }
+  }, [url]);
 
-  const handleRetry = useCallback(() => {
-    setIframeFailed(false);
-    setStrategy("iframe");
-  }, []);
+  useEffect(() => {
+    fetchDirectUrl();
+  }, [fetchDirectUrl]);
 
-  if (iframeFailed || strategy === "link") {
+  // Loading state
+  if (state === "loading") {
     return (
       <div className="space-y-2">
         <PlayerHeader kind="yandex_disk" />
-        <CloudLinkButton url={url} label={sourceLabels.yandex_disk} />
-        <div className="flex items-center gap-3 mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRetry}
-            className="text-[11px] text-muted-foreground hover:text-foreground gap-1.5"
-          >
-            <RefreshCw className="h-3 w-3" />
-            Попробовать плеер снова
-          </Button>
+        <div className="relative w-full aspect-video overflow-hidden rounded-xl border border-white/5 bg-black/30 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 text-yellow-400 animate-spin" />
+            <p className="text-sm text-muted-foreground">Загрузка видео с Яндекс Диска...</p>
+          </div>
         </div>
       </div>
     );
   }
 
+  // Error state — fallback to cloud link
+  if (state === "error") {
+    return (
+      <div className="space-y-2">
+        <PlayerHeader
+          kind="yandex_disk"
+          extra={
+            <span className="text-[10px] text-red-400/60 ml-1">ошибка загрузки</span>
+          }
+        />
+        <div className="glass rounded-xl p-5 border-white/5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="h-4 w-4 text-yellow-400" />
+            <p className="text-sm text-muted-foreground">
+              Не удалось загрузить плеер: {errorMsg}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors text-sm font-medium"
+            >
+              <Cloud className="h-4 w-4" />
+              Открыть на Яндекс Диске
+            </a>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchDirectUrl}
+              className="text-[11px] text-muted-foreground hover:text-foreground gap-1.5"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Попробовать снова
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Playing state — native <video> with direct .mp4 URL
   return (
     <div className="space-y-2">
-      <PlayerHeader kind="yandex_disk" />
-      <ResponsiveIframe
-        src={embedUrl}
-        title={title || "Яндекс Диск видео"}
-        onError={() => {
-          setIframeFailed(true);
-          setStrategy("link");
-        }}
+      <PlayerHeader
+        kind="yandex_disk"
+        extra={
+          videoData ? (
+            <span className="text-[10px] text-muted-foreground/50 ml-1">
+              {videoData.name} ({(videoData.size / 1024 / 1024).toFixed(0)} МБ)
+            </span>
+          ) : undefined
+        }
       />
-      <div className="flex items-center justify-between mt-2 px-1">
-        <span className="text-[10px] text-muted-foreground">Плеер Яндекс Диска</span>
+      <div className="relative w-full aspect-video overflow-hidden rounded-xl border border-white/5 bg-black">
+        <video
+          src={videoData?.href}
+          controls
+          className="absolute inset-0 w-full h-full object-contain"
+          preload="metadata"
+          poster={videoData?.preview}
+        >
+          Ваш браузер не поддерживает воспроизведение видео.
+        </video>
+      </div>
+      <div className="flex items-center justify-between mt-1 px-1">
+        <span className="text-[10px] text-muted-foreground">
+          Прямое воспроизведение через API Яндекс Диска
+        </span>
         <a
           href={url}
           target="_blank"
@@ -397,7 +452,7 @@ function DirectVideoPlayer({ url, title }: { url: string; title?: string }) {
  * - YouTube        → iframe embed
  * - RuTube         → iframe embed
  * - VK Видео       → iframe embed
- * - Яндекс.Диск    → iframe embed (/player/...) с фоллбэком на ссылку
+ * - Яндекс.Диск    → API + прямой <video> (iframe заблокирован X-Frame-Options)
  * - Прямая ссылка  → <video> элемент (.mp4, .webm, .ogg)
  * - Другое         → кнопка «Открыть в облаке»
  */
@@ -437,7 +492,7 @@ export function VideoPlayer({ url, sourceType, title, className }: VideoPlayerPr
     );
   }
 
-  // Yandex Disk
+  // Yandex Disk — API + native <video> (NOT iframe — blocked by X-Frame-Options)
   if (kind === "yandex_disk") {
     return (
       <div className={cn("space-y-2", className)}>

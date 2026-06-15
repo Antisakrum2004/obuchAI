@@ -171,6 +171,81 @@ async function transcribeYouTubeAudio(videoId: string): Promise<string> {
   }
 }
 
+// ── YANDEX DISK TRANSCRIPTION: Download .mp4 via API → ASR ──
+async function transcribeYandexDiskAudio(publicUrl: string): Promise<string> {
+  if (!isZAIConfigured()) {
+    console.log("[VideoArticle] Z-AI not configured, skipping Yandex Disk ASR");
+    return "";
+  }
+
+  try {
+    // Step 1: Get direct download URL from Yandex Disk public API
+    const downloadApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(publicUrl)}`;
+    const downloadRes = await fetch(downloadApiUrl, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!downloadRes.ok) {
+      console.log(`[VideoArticle] Yandex Disk download API returned ${downloadRes.status}`);
+      return "";
+    }
+
+    const downloadData = await downloadRes.json();
+    if (!downloadData.href) {
+      console.log("[VideoArticle] No download URL in Yandex Disk response");
+      return "";
+    }
+
+    // Step 2: Get file metadata to check size
+    const metaApiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(publicUrl)}`;
+    const metaRes = await fetch(metaApiUrl, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    let fileSize = 0;
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      fileSize = meta.size || 0;
+    }
+
+    // Safety: skip files > 100MB for ASR
+    if (fileSize > 100 * 1024 * 1024) {
+      console.log(`[VideoArticle] Yandex Disk file too large (${Math.round(fileSize / 1024 / 1024)}MB), skipping ASR`);
+      return "";
+    }
+
+    // Step 3: Download the video file
+    console.log(`[VideoArticle] Downloading Yandex Disk video (${Math.round(fileSize / 1024 / 1024)}MB)...`);
+    const videoRes = await fetch(downloadData.href, {
+      signal: AbortSignal.timeout(120000), // 2 minutes for download
+    });
+
+    if (!videoRes.ok) {
+      console.log(`[VideoArticle] Failed to download Yandex Disk video: ${videoRes.status}`);
+      return "";
+    }
+
+    const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+    console.log(`[VideoArticle] Downloaded Yandex Disk video: ${Math.round(videoBuffer.length / 1024)}KB`);
+
+    // Step 4: Send to ASR (Z-AI handles audio extraction from video)
+    const base64Video = videoBuffer.toString("base64");
+    console.log("[VideoArticle] Sending Yandex Disk video to ASR...");
+
+    const zai = createZAI();
+    const asrResult = await zai.audio.asr.create({ file_base64: base64Video });
+
+    const transcript = asrResult.text || "";
+    console.log(`[VideoArticle] Yandex Disk ASR transcription: ${transcript.length} chars`);
+    return transcript;
+  } catch (err) {
+    console.error("[VideoArticle] Yandex Disk ASR transcription failed:", err);
+    return "";
+  }
+}
+
 // POST /api/knowledge/ai/video-article — YouTube→AI article pipeline
 // Pipeline: Real ASR transcription → AI formats into article
 export async function POST(request: NextRequest) {
@@ -197,6 +272,7 @@ export async function POST(request: NextRequest) {
     // Extract video ID and source type
     let videoId: string | null = null;
     let sourceType = "youtube";
+    let isYandexDisk = false;
     try {
       const u = new URL(url);
       if (u.hostname.includes("youtube.com") && u.searchParams.get("v")) {
@@ -209,6 +285,11 @@ export async function POST(request: NextRequest) {
         videoId = match ? match[1] : null;
       } else if (u.hostname.includes("vk.com") || u.hostname.includes("vkvideo")) {
         sourceType = "vk";
+      } else if (u.hostname.includes("disk.yandex") || u.hostname.includes("yadi.sk")) {
+        sourceType = "yandex_disk";
+        isYandexDisk = true;
+      } else if (/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(url)) {
+        sourceType = "direct";
       }
     } catch {
       return NextResponse.json({ error: "Некорректный URL" }, { status: 400 });
@@ -219,8 +300,32 @@ export async function POST(request: NextRequest) {
     let videoAuthor = "";
     let videoDescription = "";
     let searchContext = "";
+    let yandexFileName = "";
 
-    // 1a. oEmbed metadata (fast, free)
+    // 1a. Yandex Disk — get file metadata from public API
+    if (isYandexDisk) {
+      try {
+        const metaRes = await fetch(
+          `https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${encodeURIComponent(url)}`,
+          { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(8000) }
+        );
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          if (meta.name) {
+            yandexFileName = meta.name;
+            // Derive title from filename: remove extension, replace dashes/underscores
+            const derived = meta.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+            if (!videoTitle && derived) videoTitle = derived;
+          }
+          if (meta.media_type) videoDescription = `Тип: ${meta.media_type}`;
+          if (meta.size) videoDescription += `, Размер: ${Math.round(meta.size / 1024 / 1024)} МБ`;
+        }
+      } catch (err) {
+        console.log("[VideoArticle] Yandex Disk metadata fetch failed:", err);
+      }
+    }
+
+    // 1b. oEmbed metadata (fast, free)
     if (videoId && sourceType === "youtube") {
       const meta = await getYouTubeMeta(videoId);
       if (meta.title && !videoTitle) videoTitle = meta.title;
@@ -231,7 +336,7 @@ export async function POST(request: NextRequest) {
       if (meta.author) videoAuthor = meta.author;
     }
 
-    // 1b. Piped API — get description and audio streams (for YouTube)
+    // 1c. Piped API — get description and audio streams (for YouTube)
     if (videoId && sourceType === "youtube") {
       const pipedData = await getPipedData(videoId);
       if (pipedData) {
@@ -241,12 +346,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 1c. Web search for additional context
+    // 1d. Web search for additional context
     const searchQuery = videoTitle
       ? `"${videoTitle}" видео урок обучение`
-      : videoId
-        ? `YouTube video ${videoId} описание содержание`
-        : url;
+      : isYandexDisk && yandexFileName
+        ? `${yandexFileName} обучение`
+        : videoId
+          ? `YouTube video ${videoId} описание содержание`
+          : url;
     searchContext = await searchVideoContext(searchQuery);
 
     // ── Step 2: REAL TRANSCRIPTION via ASR ──
@@ -259,9 +366,14 @@ export async function POST(request: NextRequest) {
       transcript = await transcribeYouTubeAudio(videoId);
     }
 
+    // Yandex Disk ASR — download .mp4 via API → send to ASR
+    if (!transcript && isYandexDisk) {
+      transcript = await transcribeYandexDiskAudio(url);
+    }
+
     // If ASR didn't work or not YouTube, try YouTube description as fallback
-    if (!transcript && videoDescription) {
-      console.log("[VideoArticle] ASR failed, using YouTube description as basis");
+    if (!transcript && videoDescription && !isYandexDisk) {
+      console.log("[VideoArticle] ASR failed, using description as basis");
       transcript = videoDescription;
     }
 
