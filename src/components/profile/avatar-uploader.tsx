@@ -6,6 +6,7 @@ import { useUserStore } from "@/store/user-store";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toProxyAvatarUrl } from "@/lib/avatar-url";
 
 interface AvatarUploaderProps {
   /** Current image URL (from profile data) */
@@ -36,9 +37,8 @@ export function AvatarUploader({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Displayed image: uploaded URL (with cache-bust) > currentImage
-  // key prop on AvatarImage forces re-render when URL changes
-  const displayImage = avatarUrl || currentImage;
+  // Convert legacy S3 URLs to proxy format
+  const displayImage = toProxyAvatarUrl(avatarUrl || currentImage);
   const avatarKey = displayImage ? displayImage + Date.now() : "fallback";
   const initial = name?.charAt(0)?.toUpperCase() || "U";
 

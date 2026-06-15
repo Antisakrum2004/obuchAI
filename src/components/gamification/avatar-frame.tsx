@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppSettings } from "@/hooks/use-app-settings";
+import { toProxyAvatarUrl } from "@/lib/avatar-url";
 
 interface AvatarFrameProps {
   level: number;
@@ -92,6 +93,9 @@ export function AvatarFrame({ level, image, name, size = "md", className }: Avat
   const badgeSize = levelBadgeSizeMap[size];
   const badgeText = levelBadgeTextMap[size];
 
+  // Convert legacy S3 URLs to proxy format
+  const proxyImage = toProxyAvatarUrl(image);
+
   // When avatar frames are disabled, render a simple circle
   if (!avatarFrames) {
     return (
@@ -100,7 +104,7 @@ export function AvatarFrame({ level, image, name, size = "md", className }: Avat
           className="rounded-full border-2 border-white/10"
           style={{ width: px, height: px }}
         >
-          <AvatarImage key={avatarKey(image)} src={image || undefined} alt={name || ""} />
+          <AvatarImage key={avatarKey(proxyImage)} src={proxyImage || undefined} alt={name || ""} />
           <AvatarFallback className={cn("bg-gray-500/20 text-gray-400", textSize)}>
             {initial}
           </AvatarFallback>
@@ -121,7 +125,7 @@ export function AvatarFrame({ level, image, name, size = "md", className }: Avat
         className={cn("relative z-[2] rounded-full", ring)}
         style={{ width: px, height: px }}
       >
-        <AvatarImage key={avatarKey(image)} src={image || undefined} alt={name || ""} />
+        <AvatarImage key={avatarKey(proxyImage)} src={proxyImage || undefined} alt={name || ""} />
         <AvatarFallback className={cn(tierFallbackBg[tier], textSize)}>
           {initial}
         </AvatarFallback>

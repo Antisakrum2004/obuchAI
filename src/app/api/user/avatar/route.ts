@@ -16,15 +16,13 @@ const AVATAR_SIZE = 512; // px — resize to this square
 const DEFAULT_AVATAR_BUCKET = "avatarsmyobuch";
 
 // ── Avatar S3 config ───────────────────────────────────────────
-// Avatars go to a SEPARATE public bucket (S3_AVATAR_BUCKET_NAME)
-// so they are accessible via direct URL without signed URLs.
-// Falls back to S3_BUCKET_NAME if the avatar-specific var is not set.
-// If nothing is set, uses DEFAULT_AVATAR_BUCKET.
+// Avatars are stored in S3 and served through /api/avatars/ proxy.
+// Selectel does NOT support public-read via S3 API, so we proxy
+// all avatar reads through our Next.js server with authenticated S3 access.
 //
-// IMPORTANT: Selectel does NOT support public-read via S3 API
-// (neither ACL nor BucketPolicy works — BucketPolicy even BREAKS PutObject).
-// Public access must be enabled manually in the Selectel Control Panel:
-// my.selectel.ru → Cloud Storage → Container → Enable "Public access"
+// URL flow:
+//   DB stores: /api/avatars/avatars/{userId}.webp
+//   Browser → /api/avatars/avatars/{userId}.webp → S3 GetObject → image
 
 function getAvatarS3Config() {
   const endpoint = process.env.S3_ENDPOINT || "https://s3.ru-7.storage.selcloud.ru";
@@ -36,23 +34,9 @@ function getAvatarS3Config() {
     process.env.S3_BUCKET_NAME ||
     DEFAULT_AVATAR_BUCKET;
 
-  // Log current env state for diagnostics
-  console.log("[Avatar S3] Config:", {
-    endpoint,
-    region,
-    bucket,
-    hasAccessKey: !!accessKeyId,
-    hasSecretKey: !!secretAccessKey,
-    S3_AVATAR_BUCKET_NAME: process.env.S3_AVATAR_BUCKET_NAME || "(not set)",
-    S3_BUCKET_NAME: process.env.S3_BUCKET_NAME || "(not set)",
-  });
-
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      "[Avatar S3] Missing S3_ACCESS_KEY_ID or S3_SECRET_ACCESS_KEY env vars. " +
-      "Current env: S3_ENDPOINT=" + endpoint + ", S3_AVATAR_BUCKET_NAME=" +
-      (process.env.S3_AVATAR_BUCKET_NAME || "(not set)") + ", S3_BUCKET_NAME=" +
-      (process.env.S3_BUCKET_NAME || "(not set)")
+      "[Avatar S3] Missing S3_ACCESS_KEY_ID or S3_SECRET_ACCESS_KEY env vars."
     );
   }
 
@@ -93,30 +77,35 @@ function getAvatarS3Client(): { client: S3Client; bucket: string } {
 }
 
 /**
- * Construct public PATH-STYLE URL for avatar.
- * Selectel path-style: https://s3.ru-7.storage.selcloud.ru/{bucket}/{key}
- * This is the direct public URL — requires public access enabled in Selectel panel.
+ * Construct avatar URL that goes through our API proxy.
+ * Format: /api/avatars/avatars/{userId}.webp
+ * The /api/avatars/[...path] route will fetch from S3 with credentials.
  */
-function getAvatarPublicUrl(bucket: string, key: string): string {
-  const endpoint = process.env.S3_ENDPOINT || "https://s3.ru-7.storage.selcloud.ru";
-  // Remove trailing slash
-  const cleanEndpoint = endpoint.replace(/\/+$/, "");
-  // Path-style: endpoint/bucket/key
-  return `${cleanEndpoint}/${bucket}/${key}`;
+function getAvatarUrl(key: string): string {
+  return `/api/avatars/${key}`;
 }
 
 /**
- * Extract key from avatar URL (handles path-style).
+ * Extract S3 key from avatar URL.
+ * Handles both /api/avatars/ URLs and legacy direct S3 URLs.
  */
-function extractKeyFromAvatarUrl(url: string, bucket: string): string | null {
+function extractKeyFromAvatarUrl(url: string): string | null {
   try {
+    // New format: /api/avatars/avatars/{userId}.webp
+    if (url.startsWith("/api/avatars/")) {
+      return url.slice("/api/avatars/".length);
+    }
+
+    // Legacy: https://s3.ru-7.storage.selcloud.ru/{bucket}/avatars/{userId}.webp
     const parsed = new URL(url);
-    // Path-style: s3.ru-7.storage.selcloud.ru/bucket/key
+    const bucket =
+      process.env.S3_AVATAR_BUCKET_NAME ||
+      process.env.S3_BUCKET_NAME ||
+      DEFAULT_AVATAR_BUCKET;
     const prefix = `/${bucket}/`;
     if (parsed.pathname.startsWith(prefix)) {
       return decodeURIComponent(parsed.pathname.slice(prefix.length));
     }
-    // Virtual-hosted style fallback: bucket.s3.ru-7.storage.selcloud.ru/key
     if (parsed.host.startsWith(bucket + ".")) {
       return decodeURIComponent(parsed.pathname.slice(1));
     }
@@ -160,7 +149,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 5. Get S3 client (with auto-diagnostics)
+    // 5. Get S3 client
     const { client, bucket } = getAvatarS3Client();
 
     // 6. Read file buffer
@@ -183,7 +172,7 @@ export async function POST(request: NextRequest) {
     );
     const currentImageUrl = currentImageResult.rows[0]?.image || null;
 
-    // 10. Upload to avatar public bucket
+    // 10. Upload to S3 bucket
     console.log("[Avatar S3] Uploading:", { bucket, key, size: processedBuffer.length });
 
     await client.send(
@@ -195,20 +184,20 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // 11. Construct public URL (path-style)
-    const publicUrl = getAvatarPublicUrl(bucket, key);
-    console.log("[Avatar S3] Public URL:", publicUrl);
+    // 11. Construct avatar URL (through API proxy)
+    const avatarUrl = getAvatarUrl(key);
+    console.log("[Avatar S3] Avatar URL:", avatarUrl);
 
     // 12. Update user image in DB
     await pool.query(`UPDATE users SET image = $1 WHERE id = $2`, [
-      publicUrl,
+      avatarUrl,
       userId,
     ]);
 
     // 13. Delete old avatar from S3 (if exists and different from new one)
-    if (currentImageUrl && currentImageUrl !== publicUrl) {
+    if (currentImageUrl && currentImageUrl !== avatarUrl) {
       try {
-        const oldKey = extractKeyFromAvatarUrl(currentImageUrl, bucket);
+        const oldKey = extractKeyFromAvatarUrl(currentImageUrl);
         // Only delete if it's an avatar file (safety check)
         if (oldKey && oldKey.startsWith("avatars/")) {
           await client.send(
@@ -226,13 +215,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 14. Return new URL with cache-bust param
-    const cacheBustUrl = `${publicUrl}?t=${Date.now()}`;
+    const cacheBustUrl = `${avatarUrl}?t=${Date.now()}`;
 
     return NextResponse.json({ url: cacheBustUrl }, { status: 200 });
   } catch (err: any) {
     console.error("[Avatar S3] Upload failed:", err?.message || err);
 
-    // Return detailed error for diagnostics
     const errorMessage =
       err?.message || "Ошибка при загрузке аватара";
 
