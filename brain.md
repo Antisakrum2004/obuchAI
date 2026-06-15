@@ -39,7 +39,9 @@
 - **Avatar Frames:** 6 тиров (bronze → rainbow) + admin dragon frame
 
 ### База знаний (Knowledge)
-- Статьи создаются из PDF или видео (YouTube/Rutube/VK)
+- Статьи создаются из PDF или видео (YouTube/Rutube)
+- ⛔ Яндекс.Диск ДЕПРЕКЕЙТЕД (v0.37.2) — 403 из-за IP-привязки подписей URL
+- 🆕 Локальные видео стримятся через MEDIA_SERVER_URL (туннель Serveo, диск D)
 - **Очередь обработки:** pending → processing → done/error
 - Типы очереди: content_extract, ai_metadata, glossary_extract, graph_build, course_draft
 - Видео-статьи публикуются сразу (контент генерируется при создании)

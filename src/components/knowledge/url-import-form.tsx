@@ -28,7 +28,7 @@ function detectSourceType(url: string): string | null {
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
     if (hostname.includes("rutube.ru")) return "rutube";
     if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
-    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
+    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "local";
     // Detect S3 HTTPS URLs (Selectel Object Storage)
     if (hostname.includes("storage.selcloud.ru") || (hostname.includes("s3.") && hostname.includes(".storage."))) return "s3";
     if (hostname.includes(".pdf")) return "pdf";
@@ -42,7 +42,7 @@ const sourceTypeBadgeConfig: Record<string, { label: string; color: string }> = 
   youtube: { label: "YouTube", color: "border-red-500/30 text-red-400 bg-red-500/10" },
   rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
-  yandex_disk: { label: "Яндекс Диск", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
+  local: { label: "Локальное видео", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
   s3: { label: "S3 Хранилище", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   pdf: { label: "PDF", color: "border-orange-500/30 text-orange-400 bg-orange-500/10" },
   other: { label: "Ссылка", color: "border-white/10 text-muted-foreground" },

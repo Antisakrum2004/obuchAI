@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ExternalLink, Play, AlertCircle, Cloud } from "lucide-react";
+import { ExternalLink, Play, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface VideoEmbedProps {
@@ -19,10 +19,10 @@ function detectSourceType(url: string): string {
     if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
     if (hostname.includes("rutube.ru")) return "rutube";
     if (hostname.includes("vk.com") || hostname.includes("vkvideo")) return "vk";
-    if (hostname.includes("disk.yandex") || hostname.includes("yandex")) return "yandex_disk";
     return "direct";
   } catch {
-    return "other";
+    // Not a valid URL — treat as local filename
+    return "local";
   }
 }
 
@@ -63,7 +63,7 @@ const sourceTypeLabels: Record<string, string> = {
   youtube: "YouTube",
   rutube: "Rutube",
   vk: "VK Видео",
-  yandex_disk: "Яндекс Диск",
+  local: "Видео",
   direct: "Видео",
   other: "Ссылка",
 };
@@ -100,8 +100,6 @@ function CloudLinkButton({ url, label, className }: { url: string; label: string
 }
 
 // ─── YouTube Player — simplified, no IFrame API ───
-// Error 153 was caused by YT IFrame API trying to re-initialize an already-loaded iframe.
-// Fix: use plain <iframe> with youtube.com/embed/ (NOT nocookie), no JSAPI, no referrer suppression.
 
 type YTStrategy = "embed" | "link";
 
@@ -111,41 +109,30 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
   const [showFallback, setShowFallback] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // youtube.com/embed/ — the reliable option (NOT nocookie which is worse for embedding)
   const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
 
-  // Show fallback link after 6 seconds if video hasn't loaded
   useEffect(() => {
     if (strategy === "link") return;
-    const timer = setTimeout(() => {
-      setShowFallback(true);
-    }, 6000);
+    const timer = setTimeout(() => setShowFallback(true), 6000);
     return () => clearTimeout(timer);
   }, [strategy]);
 
-  // Detect iframe load failure via postMessage from YouTube
   useEffect(() => {
     if (strategy === "link") return;
-
     const handler = (event: MessageEvent) => {
-      // YouTube sends postMessage events with error info
       try {
         if (typeof event.data === "string") {
           const data = JSON.parse(event.data);
-          // YouTube iframe error events
-          if (data.event === "onError" || data.event === "infoDelivery" && data?.info?.errorCode) {
-            console.warn("[YouTubePlayer] postMessage error:", data);
+          if (data.event === "onError" || (data.event === "infoDelivery" && data?.info?.errorCode)) {
             setIframeError(true);
           }
         }
       } catch {}
     };
-
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, [strategy]);
 
-  // Link-only mode (iframe completely failed)
   if (strategy === "link") {
     return (
       <div className={cn("space-y-2", className)}>
@@ -158,7 +145,7 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
         </div>
         <div className="glass rounded-xl p-5 border-white/5">
           <p className="text-sm text-muted-foreground mb-3">
-            Не удалось загрузить встроенный плеер. Владелец видео ограничил встраивание, или браузер блокирует YouTube-iframe. Откройте видео напрямую на YouTube.
+            Не удалось загрузить встроенный плеер. Откройте видео напрямую на YouTube.
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
@@ -202,7 +189,7 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
           <p className="text-[10px] text-muted-foreground/60">
             {iframeError
               ? "Видео не загрузилось из-за ограничений встраивания."
-              : "Если видео не загружается — откройте на YouTube. В Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → Основной."}
+              : "Если видео не загружается — откройте на YouTube."}
           </p>
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
@@ -219,62 +206,35 @@ function YouTubePlayer({ videoId, title, className }: { videoId: string; title?:
   );
 }
 
-// ─── Yandex Disk Video Player with fallback strategies ───
+// ─── Local Video Player — streams via /api/video/stream?file=... ───
 
-type YandexStrategy = "iframe" | "link";
-
-function YandexDiskPlayer({ url, title, className }: { url: string; title?: string; className?: string }) {
-  const [strategy, setStrategy] = useState<YandexStrategy>("iframe");
-  const [iframeFailed, setIframeFailed] = useState(false);
-
-  // If iframe also fails, show link
-  if (iframeFailed || strategy === "link") {
-    return (
-      <CloudLinkButton url={url} label={sourceTypeLabels.yandex_disk} className={className} />
-    );
-  }
-
-  let playerSrc = url;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes("disk.yandex") && parsed.pathname) {
-      playerSrc = `https://disk.yandex.ru/player${parsed.pathname}`;
-    }
-  } catch {}
+function LocalVideoPlayer({ fileName, title, className }: { fileName: string; title?: string; className?: string }) {
+  const streamUrl = `/api/video/stream?file=${encodeURIComponent(fileName)}`;
 
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2 mb-2">
         <Play className="h-4 w-4 text-emerald-400" />
         <span className="text-sm font-medium">Видео</span>
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-yellow-500/30 text-yellow-400 bg-yellow-500/10">
-          {sourceTypeLabels.yandex_disk}
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+          {sourceTypeLabels.local}
         </Badge>
+        <span className="text-[10px] text-muted-foreground/50 ml-1">{fileName}</span>
       </div>
-      <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
-        <iframe
-          src={playerSrc}
-          title={title || "Яндекс Диск видео"}
-          allowFullScreen
-          allow="autoplay; encrypted-media; fullscreen"
-          className="absolute inset-0 h-full w-full"
-          onError={() => {
-            setIframeFailed(true);
-            setStrategy("link");
-          }}
-        />
-      </div>
-      <div className="flex items-center justify-between mt-2 px-1">
-        <span className="text-[10px] text-muted-foreground">Плеер Яндекс Диска</span>
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-emerald-400 transition-colors"
+      <div className="relative w-full aspect-video overflow-hidden rounded-xl border border-white/5 bg-black">
+        <video
+          src={streamUrl}
+          controls
+          className="absolute inset-0 w-full h-full object-contain"
+          preload="metadata"
         >
-          <ExternalLink className="h-2.5 w-2.5" />
-          Открыть на Яндекс Диске
-        </a>
+          Ваш браузер не поддерживает воспроизведение видео.
+        </video>
+      </div>
+      <div className="flex items-center justify-between mt-1 px-1">
+        <span className="text-[10px] text-muted-foreground">
+          Локальное воспроизведение через медиа-сервер
+        </span>
       </div>
     </div>
   );
@@ -287,7 +247,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
 
   const type = sourceType || detectSourceType(url);
 
-  // YouTube → simple embed, no IFrame API
+  // YouTube → simple embed
   if (type === "youtube") {
     const videoId = extractYoutubeId(url);
     if (!videoId) return null;
@@ -304,7 +264,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
           <Play className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium">Видео</span>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10">
-            {sourceTypeLabels[type]}
+            {sourceTypeLabels.rutube}
           </Badge>
         </div>
         <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
@@ -326,7 +286,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
           <Play className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium">Видео</span>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10">
-            {sourceTypeLabels[type]}
+            {sourceTypeLabels.vk}
           </Badge>
         </div>
         <div className="relative w-full overflow-hidden rounded-xl border border-white/5" style={{ paddingBottom: "56.25%" }}>
@@ -341,9 +301,9 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
     );
   }
 
-  // Yandex Disk — iframe → fallback to cloud link button
-  if (type === "yandex_disk") {
-    return <YandexDiskPlayer url={url} title={title} className={className} />;
+  // Local video file — stream via /api/video/stream?file=...
+  if (type === "local") {
+    return <LocalVideoPlayer fileName={url} title={title} className={className} />;
   }
 
   // Direct video URL — native <video> element
@@ -354,7 +314,7 @@ export function VideoEmbed({ url, sourceType, title, className }: VideoEmbedProp
           <Play className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-medium">Видео</span>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-            Прямая ссылка
+            {sourceTypeLabels.direct}
           </Badge>
         </div>
         <div className="glass rounded-xl p-2 border-white/5 overflow-hidden">

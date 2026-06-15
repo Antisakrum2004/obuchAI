@@ -58,7 +58,7 @@ export const articleUpdateSchema = z.object({
   pdfUrl: z.string().url().max(1000).optional().or(z.literal("")),
   pptxUrl: z.string().url().max(1000).optional().or(z.literal("")),
   sourceUrl: z.string().url().max(1000).optional().or(z.literal("")),
-  sourceType: z.enum(["youtube", "rutube", "vk", "yandex_disk", "video", "direct", "pdf", "pptx", "url", "manual"]).optional(),
+  sourceType: z.enum(["youtube", "rutube", "vk", "local", "video", "direct", "pdf", "pptx", "url", "manual"]).optional(),
   difficulty: z.enum(["easy", "medium", "hard"]).optional(),
   estimatedTime: z.union([z.string().max(50), z.number().int().min(1).max(999)]).optional(),
   status: z.enum(["pending", "processing", "done", "error"]).optional(),

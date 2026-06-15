@@ -32,7 +32,7 @@ interface ArticleData {
   estimatedTime: string | null;
   isPublished: boolean;
   status: string | null; // 'pending' | 'processing' | 'done' | 'error' | null
-  sourceType: string | null; // 'youtube' | 'rutube' | 'vk' | 'yandex_disk' | 'pdf' | null
+  sourceType: string | null; // 'youtube' | 'rutube' | 'vk' | 'local' | 'pdf' | null
   videoUrl: string | null;
 }
 

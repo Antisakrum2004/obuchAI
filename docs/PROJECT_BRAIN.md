@@ -58,7 +58,11 @@
 | `ZAI_API_KEY` | Z-AI SDK API key |
 | `OPENROUTER_API_KEY` | OpenRouter/OpenAI API key (AI content processing) |
 
-> ⚠️ **КРИТИЧЕСКИ ВАЖНО**: S3 бакет `ati-lab` используется **ТОЛЬКО для статических документов** (PDF, PPTX, DOCX, изображения). **ВИДЕО НЕ ХРАНИТСЯ НА S3** — эта архитектура действует с Sprint 7 (v0.9.0) и окончательно закреплена. Видео размещается **ИСКЛЮЧИТЕЛЬНО** через внешние облачные встраивания (YouTube, VK, Rutube, Яндекс Диск). S3 Signed URL роуты для видео удалены. Проксирование видео через Vercel полностью ликвидировано.
+> ⚠️ **КРИТИЧЕСКИ ВАЖНО**: S3 бакет `ati-lab` используется **ТОЛЬКО для статических документов** (PDF, PPTX, DOCX, изображения). **ВИДЕО НЕ ХРАНИТСЯ НА S3** — эта архитектура действует с Sprint 7 (v0.9.0) и окончательно закреплена.
+>
+> ⛔ **Яндекс.Диск ДЕПРЕКЕЙТЕД (v0.37.2)**: Интеграция с Яндекс.Диском полностью отменена. Яндекс привязывает подписи URL к IP-адресу сервера — браузер клиента получает 403 на downloader.disk.yandex.ru (preview) и storage.yandex.net (video). Резолв редиректа на сервере не помогает — финальный URL тоже привязан к IP. Роут `/api/video/yandex-proxy` удалён. Компонент `YandexDiskPlayer` заменён на `LocalVideoPlayer`.
+>
+> 🆕 **Локальный стриминг видео (v0.37.2)**: Кастомные видео (не YouTube/Rutube) стримятся с локального ПК разработчика (диск D) через туннель Serveo. Переменная окружения `MEDIA_SERVER_URL` указывает на туннель. Плеер рендерит `<video>` с src `/api/video/stream?file=...`, который проксирует запрос к локальному медиа-серверу.
 
 ---
 
@@ -368,16 +372,16 @@ src/
 - **Поддерживаемые типы**: PDF (100 МБ), PPTX (200 МБ), DOCX (100 МБ), изображения (20 МБ). **ВИДЕО — только через внешние облачные ссылки**
 - **Формат ключей**: knowledge/{entityType}s/{entityId}/{timestamp}_{filename}
 - **API**: POST /api/knowledge/media/upload, GET /api/knowledge/media, GET/DELETE /api/knowledge/media/[id]
-- **Видео через облачные ссылки**: Видео **НЕ загружается на S3** (с Sprint 7). Админ указывает `videoUrl` (YouTube, Rutube, Яндекс Диск, VK) через UrlImportForm. Плеер VideoEmbed автоматически определяет тип ссылки и рендерит соответствующий iframe или кнопку «Смотреть видеоурок в облаке».
+- **Видео через облачные ссылки**: Видео **НЕ загружается на S3** (с Sprint 7). Админ указывает `videoUrl` (YouTube, Rutube, локальный файл через MEDIA_SERVER_URL) через UrlImportForm. Плеер VideoPlayer автоматически определяет тип ссылки и рендерит соответствующий iframe или `<video>`. ⛔ Яндекс Диск убран (v0.37.2) — 403 из-за IP-привязки.
 - **S3 Signed URL роуты для видео УДАЛЕНЫ**: `/api/knowledge/video/[id]` и `/api/knowledge/video/by-article/[articleId]` удалены в Sprint 7. Больше нет проксирования через Vercel.
-- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (документы, изображения + лайтбокс + видео-модалка), VideoEmbed (YouTube/Rutube/VK/Яндекс Диск/прямая ссылка)
+- **UI**: MediaUpload (drag&drop + прогресс), MediaViewer (документы, изображения + лайтбокс + видео-модалка), VideoPlayer (YouTube/Rutube/локальное видео через MEDIA_SERVER_URL)
 - **Переключение хранилища**: env var STORAGE_PROVIDER → **s3** (активный, Selectel) / vercel-blob / minio (будущие)
 - **Blob Store**: Selectel S3 (ati-lab, приватный, region ru-7) — **ТОЛЬКО для документов/изображений**
 
 ### 3.17 AI Content Processing Pipeline — Sprint 6+v0.17.0 (`src/app/api/knowledge/ai/`, `src/components/knowledge/`)
 - **Видение**: НЕ строить курсы вручную. Загрузить сырые материалы → AI анализирует → глоссарий → граф знаний → курсы появляются автоматически
 - **Поток**: Materials → AI Analysis → Glossary → Knowledge Graph → Learning Path → Course
-- **Хранилище видео**: **ИСКЛЮЧИТЕЛЬНО внешние облачные ссылки** (YouTube, Rutube, Яндекс Диск, VK) — S3 Selectel для видео НЕ используется с Sprint 7
+- **Хранилище видео**: YouTube/Rutube (iframe embed) + локальные видео через MEDIA_SERVER_URL (туннель Serveo, диск D). ⛔ Яндекс Диск убран (v0.37.2). S3 Selectel для видео НЕ используется с Sprint 7
 - **Article расширения**: 18+ колонок (difficulty, prerequisites, nextTopics, keyConcepts, estimatedTime, status, aiGenerated, videoUrl, pdfUrl, pptxUrl, sourceUrl, sourceType, processedAt, errorMessage, quiz, practical_task, timecodes)
 - **ProcessingQueue**: Новая таблица для асинхронной обработки (zip_import, ai_metadata, glossary_extract, graph_build, course_draft)
 - **API маршруты** (7+ новых):
@@ -391,7 +395,7 @@ src/
   - `/api/knowledge/quiz/submit` — Отправка результатов квиза (v0.17.0)
   - `/api/knowledge/spaces/[id]/path` — Learning path API (v0.17.0 улучшен)
 - **UI компоненты** (6+ новых):
-  - `VideoEmbed` — Универсальный видео-плеер (YouTube, Rutube, VK, Яндекс Диск, прямая ссылка)
+  - `VideoPlayer` — Универсальный видео-плеер (YouTube, Rutube, локальное видео через MEDIA_SERVER_URL)
   - `UrlImportForm` — Форма ввода URL для видео/PDF/PPTX
   - `ZipUpload` — Загрузка ZIP-архива с drag-and-drop
   - `ProcessingQueue` — Отображение очереди обработки с прогрессом
@@ -399,13 +403,12 @@ src/
   - `QuizBlock` — Интерактивный квиз с таймером, single-question режимом, XP расчётом (v0.17.0)
   - `CreateArticleDialog` — Диалог создания статьи: вкладка «Вручную» + вкладка «Из видео» (v0.23.0)
 - **VideoEmbed inline (v0.22.0)**: YouTube видео встроено прямо на страницу урока без модала. Используется `youtube.com/embed/` (не youtube-nocookie.com). Для Edge/Safari — подсказка о возможных проблемах с встраиванием.
-- **VideoEmbed**: Универсальный видео-плеер с авто-детектом источника по URL (без S3):
-  - **YouTube**: `YouTubePlayer` — 3 стратегии fallback: (1) youtube-nocookie.com (privacy), (2) youtube.com (direct), (3) ссылка-кнопка (8s timeout)
+- **VideoPlayer**: Универсальный видео-плеер с авто-детектом источника по URL:
+  - **YouTube**: `YouTubePlayer` — iframe embed + fallback на ссылку-кнопку (6s timeout)
   - **Rutube**: iframe embed `rutube.ru/play/embed/{id}`
-  - **VK**: iframe embed
-  - **Яндекс Диск**: `YandexDiskPlayer` — iframe → fallback на кнопку «Смотреть видеоурок в облаке»
+  - **Локальное видео**: `LocalVideoPlayer` — нативный `<video>` через `/api/video/stream?file=...` (прокси к MEDIA_SERVER_URL)
   - **Direct/Other**: Нативный `<video>` элемент или `CloudLinkButton`
-  - **CloudLinkButton**: Красивая кнопка-заглушка «Смотреть видеоурок в облаке» с прямой ссылкой — используется когда iframe невозможно встроить
+  - ⛔ **Яндекс Диск убран** (v0.37.2): YandexDiskPlayer удалён, /api/video/yandex-proxy удалён. Причина: 403 из-за IP-привязки подписей URL
 - **AI Content Processing Pipeline** — ✅ ИСПРАВЛЕНО в v0.15.5: PDF→статья пайплайн не работал на Vercel serverless из-за fire-and-forget (Promise.allSettled без await/waitUntil — функция терминировалась после отправки ответа). Три исправления: (1) waitUntil() от @vercel/functions для server-side, (2) клиентский триггер AI-обработки после загрузки как backup, (3) maxDuration=120 для AI-роута. Добавлена защита от дублирования (skip если очередь уже processing/done).
 - **Sidebar**: Добавлен пункт «Материалы» (Archive icon) перед «База знаний»
 - **gen-id.ts**: Общий модуль генерации ID — замена дублированию genId() в 5+ файлах

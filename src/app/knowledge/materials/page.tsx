@@ -98,7 +98,7 @@ const sourceTypeConfig: Record<string, { label: string; color: string }> = {
   youtube: { label: "YouTube", color: "border-red-500/30 text-red-400 bg-red-500/10" },
   rutube: { label: "Rutube", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
   vk: { label: "VK Видео", color: "border-blue-500/30 text-blue-400 bg-blue-500/10" },
-  yandex_disk: { label: "Яндекс Диск", color: "border-yellow-500/30 text-yellow-400 bg-yellow-500/10" },
+  local: { label: "Видео", color: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
   direct: { label: "Прямая ссылка", color: "border-white/10 text-muted-foreground bg-white/5" },
   other: { label: "Другое", color: "border-white/10 text-muted-foreground bg-white/5" },
 };
@@ -787,7 +787,7 @@ export default function MaterialsPage() {
                   <SelectItem value="all">Все источники</SelectItem>
                   <SelectItem value="youtube">YouTube</SelectItem>
                   <SelectItem value="rutube">Rutube</SelectItem>
-                  <SelectItem value="yandex_disk">Яндекс Диск</SelectItem>
+                  <SelectItem value="local">Локальное видео</SelectItem>
                   <SelectItem value="direct">Прямая ссылка</SelectItem>
                   <SelectItem value="other">Другое</SelectItem>
                 </SelectContent>

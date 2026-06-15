@@ -286,7 +286,7 @@ export async function POST(request: NextRequest) {
       } else if (u.hostname.includes("vk.com") || u.hostname.includes("vkvideo")) {
         sourceType = "vk";
       } else if (u.hostname.includes("disk.yandex") || u.hostname.includes("yadi.sk")) {
-        sourceType = "yandex_disk";
+        sourceType = "local";
         isYandexDisk = true;
       } else if (/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(url)) {
         sourceType = "direct";

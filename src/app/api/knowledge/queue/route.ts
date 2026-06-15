@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       const article = articleRows[0];
       const hasPdf = article?.pdfUrl;
       const sourceType = article?.sourceType || "";
-      const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(sourceType) ||
+      const isVideoArticle = ["youtube", "rutube", "vk", "local", "video"].includes(sourceType) ||
         (article?.videoUrl && !hasPdf);
       // Also check media table for PDF
       let hasMediaPdf = false;
@@ -311,12 +311,12 @@ export async function POST(request: NextRequest) {
 
     if (action === "fix-video-articles") {
       // Fix video articles that are stuck in pending/error status
-      // Video articles (youtube/rutube/vk/yandex_disk) should be published immediately
+      // Video articles (youtube/rutube/vk/local) should be published immediately
       // since their content comes from the video URL, not PDF extraction
       const { rows: videoArticles } = await pool.query(
         `SELECT id, title, "sourceType", "videoUrl", status, "isPublished"
          FROM articles
-         WHERE "sourceType" IN ('youtube', 'rutube', 'vk', 'yandex_disk')
+         WHERE "sourceType" IN ('youtube', 'rutube', 'vk', 'local')
            AND (status IN ('pending', 'processing', 'error') OR "isPublished" = false)`
       );
 

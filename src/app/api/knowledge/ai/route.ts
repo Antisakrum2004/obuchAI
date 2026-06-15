@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         // Skip content extraction for video articles — they don't have PDF content
         const sourceType = (article.sourceType as string) || "";
         const videoUrl = (article.videoUrl as string) || "";
-        const isVideoArticle = ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(sourceType) ||
+        const isVideoArticle = ["youtube", "rutube", "vk", "local", "video"].includes(sourceType) ||
           (videoUrl && !article.pdfUrl);
         if (isVideoArticle) {
           console.log(`[AI] Skipping content extraction for video article ${articleId} (sourceType=${sourceType})`);
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
         [articleId]
       );
       const isVideoForAutoPublish = articlePdfCheck[0]?.videoUrl &&
-        ["youtube", "rutube", "vk", "yandex_disk", "video"].includes(articlePdfCheck[0]?.sourceType || "");
+        ["youtube", "rutube", "vk", "local", "video"].includes(articlePdfCheck[0]?.sourceType || "");
       if (articlePdfCheck[0]?.pdfUrl && !isVideoForAutoPublish) {
         expectedTypes.unshift("content_extract");
       }
