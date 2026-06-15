@@ -357,6 +357,12 @@ function YandexDiskPlayer({ url, title }: { url: string; title?: string }) {
   }
 
   // Playing state — native <video> with direct .mp4 URL
+  const handleVideoError = useCallback(() => {
+    // If the direct URL fails (e.g. expired), re-fetch a fresh URL from our API
+    console.log("[YandexDiskPlayer] Video element error — re-fetching fresh URL...");
+    fetchDirectUrl();
+  }, [fetchDirectUrl]);
+
   return (
     <div className="space-y-2">
       <PlayerHeader
@@ -371,11 +377,13 @@ function YandexDiskPlayer({ url, title }: { url: string; title?: string }) {
       />
       <div className="relative w-full aspect-video overflow-hidden rounded-xl border border-white/5 bg-black">
         <video
+          key={videoData?.href}
           src={videoData?.href}
           controls
           className="absolute inset-0 w-full h-full object-contain"
           preload="metadata"
           poster={videoData?.preview}
+          onError={handleVideoError}
         >
           Ваш браузер не поддерживает воспроизведение видео.
         </video>

@@ -313,8 +313,13 @@ export async function POST(request: NextRequest) {
           const meta = await metaRes.json();
           if (meta.name) {
             yandexFileName = meta.name;
-            // Derive title from filename: remove extension, replace dashes/underscores
-            const derived = meta.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+            // Derive title from filename: remove extension, replace dashes/underscores,
+            // remove leading numbers like "01 ", "1. ", etc.
+            const derived = meta.name
+              .replace(/\.[^.]+$/, "")          // remove extension
+              .replace(/^(\d+[\s._-])+/, "")    // remove leading "01 ", "1.", "01_", "1-"
+              .replace(/[_-]+/g, " ")           // replace underscores/dashes with spaces
+              .trim();
             if (!videoTitle && derived) videoTitle = derived;
           }
           if (meta.media_type) videoDescription = `Тип: ${meta.media_type}`;
@@ -347,10 +352,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 1d. Web search for additional context
+    // IMPORTANT: Add platform context (AI, 1C, development) to avoid misinterpretation
+    // e.g. "SDD" should be interpreted as "Spec-Driven Documentation", not "SSD storage"
     const searchQuery = videoTitle
-      ? `"${videoTitle}" видео урок обучение`
+      ? `"${videoTitle}" AI разработка 1С документация`
       : isYandexDisk && yandexFileName
-        ? `${yandexFileName} обучение`
+        ? `${yandexFileName.replace(/\.[^.]+$/, "")} AI агент разработка`
         : videoId
           ? `YouTube video ${videoId} описание содержание`
           : url;
@@ -384,10 +391,11 @@ export async function POST(request: NextRequest) {
         const contextParts: string[] = [];
         if (videoTitle) contextParts.push(`Название видео: ${videoTitle}`);
         if (videoAuthor) contextParts.push(`Автор/канал: ${videoAuthor}`);
-        if (videoDescription) contextParts.push(`Описание видео с YouTube:\n${videoDescription}`);
+        if (videoDescription) contextParts.push(`Описание видео:\n${videoDescription}`);
         if (searchContext) contextParts.push(`Результаты поиска:\n${searchContext}`);
         contextParts.push(`URL: ${url}`);
         contextParts.push(`Тип источника: ${sourceType}`);
+        contextParts.push(`КОНТЕКСТ ПЛАТФОРМЫ: Это обучающая платформа по AI для 1С-разработчиков. Видео из раздела про AI-агентов, промпт-инжиниринг и автоматизацию. Если название короткое или аббревиатура (SDD, SDD и т.д.), интерпретируй его в контексте разработки ПО и AI — например SDD = Spec-Driven Documentation, а НЕ твердотельный накопитель (SSD).`);
         const contextForAI = contextParts.join("\n\n");
 
         const zai = createZAI();
@@ -477,7 +485,8 @@ export async function POST(request: NextRequest) {
       {
         role: "system",
         content:
-          "Ты — технический писатель и эксперт по продуктам. Твоя задача — создать полноценную, самостоятельную статью о ПРОДУКТЕ или ТЕХНОЛОГИИ, которую обсуждают в видео. Статья НЕ должна быть пересказом видео — она должна быть независимым учебным материалом, который человек может прочитать БЕЗ просмотра видео и полностью понять продукт.\n\n" +
+          "Ты — технический писатель и эксперт по AI и разработке ПО. Твоя задача — создать полноценную, самостоятельную статью о ПРОДУКТЕ или ТЕХНОЛОГИИ, которую обсуждают в видео. Статья НЕ должна быть пересказом видео — она должна быть независимым учебным материалом, который человек может прочитать БЕЗ просмотра видео и полностью понять продукт.\n\n" +
+          "ВАЖНЫЙ КОНТЕКСТ: Это обучающая платформа по AI для 1С-разработчиков. Все видео на этой платформе — про AI-агентов, промпт-инжиниринг, автоматизацию и разработку ПО. Аббревиатуры должны интерпретироваться в контексте разработки: SDD = Spec-Driven Documentation (НЕ твердотельный накопитель!), AI = Artificial Intelligence, LLM = Large Language Model и т.д.\n\n" +
           "КРИТИЧЕСКИ ВАЖНО:\n" +
           "1. Статья — о ПРОДУКТЕ/ТЕХНОЛОГИИ, а не о видео и не о том, что говорит автор видео\n" +
           "2. Структура статьи должна раскрывать тему продукта: что это, зачем нужно, как работает, как использовать, примеры, советы\n" +
