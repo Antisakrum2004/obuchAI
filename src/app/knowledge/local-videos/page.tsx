@@ -25,10 +25,12 @@ import {
   AlertCircle,
   ArrowRight,
   BookOpen,
+  FileText,
   Pencil,
   Check,
   X,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useUserStore } from "@/store/user-store";
@@ -44,6 +46,27 @@ function extractTitle(filename: string): string {
   return title.trim().replace(/^\w/, (c) => c.toUpperCase());
 }
 
+/** Base URL for local media server — browser accesses localhost directly */
+const LOCAL_MEDIA_URL = "http://localhost:8080";
+
+/** Parse .mp4 filenames from media server HTML directory listing */
+function parseVideoListFromHtml(html: string): string[] {
+  const regex = /href="([^"]+\.mp4)"/gi;
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(html)) !== null) {
+    const raw = match[1];
+    try {
+      const decoded = decodeURIComponent(raw);
+      const fileName = decoded.replace(/^\.\//, "").replace(/^\//, "");
+      seen.add(fileName);
+    } catch {
+      seen.add(raw);
+    }
+  }
+  return Array.from(seen).sort();
+}
+
 export default function LocalVideosPage() {
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +75,9 @@ export default function LocalVideosPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // PDF description state (client-side check)
+  const [pdfExists, setPdfExists] = useState<boolean | null>(null); // null = checking, false = no pdf, true = pdf exists
 
   // Dynamic title & description from DB
   const [sectionTitle, setSectionTitle] = useState("Платные курсы");
@@ -84,22 +110,36 @@ export default function LocalVideosPage() {
       .catch(() => {});
   }, []);
 
-  // Fetch video list from media server API
+  // Fetch video list CLIENT-SIDE — browser hits localhost directly (Vercel server can't reach it)
   useEffect(() => {
-    fetch("/api/video/list")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.files && Array.isArray(data.files)) {
-          const videoList = data.files.map((f: string) => ({
-            name: f,
-            title: extractTitle(f),
-          }));
-          setVideos(videoList);
-        }
+    fetch(LOCAL_MEDIA_URL, { cache: "no-store" })
+      .then((r) => r.text())
+      .then((html) => {
+        const files = parseVideoListFromHtml(html);
+        const videoList = files.map((f) => ({
+          name: f,
+          title: extractTitle(f),
+        }));
+        setVideos(videoList);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // Check if PDF description exists for current lesson (client-side HEAD request)
+  useEffect(() => {
+    if (videos.length === 0) return;
+    const currentVideo = videos[activeIndex]?.name;
+    if (!currentVideo) return;
+
+    setPdfExists(null); // checking state
+    const pdfFileName = currentVideo.replace(/\.mp4$/i, ".pdf");
+    const pdfSrc = `${LOCAL_MEDIA_URL}/${encodeURIComponent(pdfFileName)}`;
+
+    fetch(pdfSrc, { method: "HEAD", mode: "cors" })
+      .then((r) => setPdfExists(r.ok))
+      .catch(() => setPdfExists(false));
+  }, [activeIndex, videos]);
 
   // Focus input when editing starts
   useEffect(() => {
@@ -169,10 +209,16 @@ export default function LocalVideosPage() {
     }
   };
 
-  // Video source URL for active video
+  // Video source URL — direct link to localhost (client-side, bypasses Vercel proxy)
   const activeVideoSrc =
     videos.length > 0
-      ? `/api/video/stream?file=${encodeURIComponent(videos[activeIndex]?.name || "")}`
+      ? `${LOCAL_MEDIA_URL}/${encodeURIComponent(videos[activeIndex]?.name || "")}`
+      : "";
+
+  // PDF source URL for current lesson
+  const activePdfSrc =
+    videos.length > 0
+      ? `${LOCAL_MEDIA_URL}/${encodeURIComponent(videos[activeIndex]?.name?.replace(/\.mp4$/i, ".pdf") || "")}`
       : "";
 
   // Play/pause toggle
@@ -473,6 +519,45 @@ export default function LocalVideosPage() {
                   </div>
                 </div>
               </div>
+
+              {/* PDF Description — client-side, direct localhost URL */}
+              {pdfExists === true && videos.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="glass rounded-2xl border border-white/5 overflow-hidden"
+                >
+                  <div className="p-3 border-b border-white/5 flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-purple-400" />
+                    <h3 className="text-sm font-semibold text-foreground">Описание урока</h3>
+                    <div className="flex-1" />
+                    <a
+                      href={activePdfSrc}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-blue-400 underline hover:text-blue-300 transition-colors"
+                    >
+                      Открыть в новой вкладке
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <iframe
+                    src={activePdfSrc}
+                    width="100%"
+                    height="600px"
+                    style={{ border: "none" }}
+                    className="bg-white"
+                    title="Описание урока (PDF)"
+                  />
+                </motion.div>
+              )}
+              {pdfExists === false && videos.length > 0 && (
+                <div className="glass rounded-2xl border border-white/5 p-4 flex items-center gap-2 text-muted-foreground/40">
+                  <FileText className="h-4 w-4" />
+                  <span className="text-xs">Описание отсутствует</span>
+                </div>
+              )}
 
             </motion.div>
 
