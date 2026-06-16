@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useUserStore } from "@/store/user-store";
+import PdfTextRenderer from "@/components/course/pdf-text-renderer";
 
 interface VideoFile {
   name: string;
@@ -542,14 +543,7 @@ export default function LocalVideosPage() {
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
-                  <iframe
-                    src={activePdfSrc}
-                    width="100%"
-                    height="600px"
-                    style={{ border: "none" }}
-                    className="bg-white"
-                    title="Описание урока (PDF)"
-                  />
+                  <PdfTextRenderer src={activePdfSrc} />
                 </motion.div>
               )}
               {pdfExists === false && videos.length > 0 && (
